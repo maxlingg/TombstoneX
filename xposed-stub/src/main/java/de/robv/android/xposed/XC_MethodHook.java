@@ -1,5 +1,7 @@
 package de.robv.android.xposed;
 
+import java.lang.reflect.Method;
+
 public abstract class XC_MethodHook {
     public Unhook unhook() {
         return null;
