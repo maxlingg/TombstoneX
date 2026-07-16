@@ -10,8 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://api.xposed.info/maven") }
     }
 }
 rootProject.name = "TombstoneX"
 include(":app")
+include(":xposed-stub")

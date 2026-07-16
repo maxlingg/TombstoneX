@@ -41,7 +41,7 @@ android {
 }
 
 dependencies {
-    compileOnly(libs.xposed.api)
+    compileOnly(project(":xposed-stub"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
