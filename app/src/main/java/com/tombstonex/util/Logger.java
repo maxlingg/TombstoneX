@@ -3,9 +3,12 @@ package com.tombstonex.util;
 import android.util.Log;
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,7 +21,7 @@ public class Logger {
     private static final String LOG_DIR = "/data/system/TombstoneX";
     private static final long MAX_LOG_SIZE = 2 * 1024 * 1024; // 2MB
     private static volatile boolean debugEnabled = false;
-    private static FileWriter logWriter;
+    private static OutputStreamWriter logWriter;
     private static final Object writerLock = new Object();
 
     /** ThreadLocal 缓存 SimpleDateFormat，避免频繁创建 */
@@ -48,7 +51,7 @@ public class Logger {
                     if (oldFile.exists()) oldFile.delete();
                     logFile.renameTo(oldFile);
                 }
-                logWriter = new FileWriter(logFile, true);
+                logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
             } catch (IOException e) {
                 Log.e(TAG, "Failed to init log file", e);
             }
@@ -111,12 +114,24 @@ public class Logger {
                         logFile.renameTo(oldFile);
                         // 轮转后重建 writer 失败时的恢复
                         try {
-                            logWriter = new FileWriter(logFile, true);
+                            logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
                         } catch (IOException e2) {
                             Log.e(TAG, "Failed to recreate log writer after rotation", e2);
                             // 尝试下一次写入时重新初始化
                             logWriter = null;
                         }
+                    }
+                } else {
+                    // 尝试重建 writer
+                    try {
+                        File dir = new File(LOG_DIR);
+                        if (!dir.exists()) dir.mkdirs();
+                        File logFile = new File(dir, "current.log");
+                        logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
+                        logWriter.write(format(level, msg));
+                        logWriter.flush();
+                    } catch (IOException e) {
+                        Log.e(TAG, "Failed to recreate log writer: " + e.getMessage());
                     }
                 }
             } catch (IOException e) {
@@ -131,6 +146,8 @@ public class Logger {
                 if (logWriter != null) logWriter.close();
             } catch (IOException e) {
                 Log.d(TAG, "Failed to close log writer: " + e.getMessage());
+            } finally {
+                logWriter = null;
             }
         }
     }
@@ -145,7 +162,8 @@ public class Logger {
         if (!logFile.exists()) return "";
         List<String> lines = new ArrayList<>();
         synchronized (writerLock) {
-            try (BufferedReader reader = new BufferedReader(new FileReader(logFile))) {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(new FileInputStream(logFile), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     lines.add(line);
@@ -169,18 +187,20 @@ public class Logger {
     public static void clearLog() {
         synchronized (writerLock) {
             try {
-                if (logWriter != null) {
-                    logWriter.close();
-                }
+                if (logWriter != null) logWriter.close();
             } catch (IOException e) {
                 Log.d(TAG, "Failed to close log writer during clear: " + e.getMessage());
             }
+            logWriter = null;
             File logFile = new File(LOG_DIR, "current.log");
             File oldFile = new File(LOG_DIR, "current.log.old");
             if (oldFile.exists()) oldFile.delete();
-            if (logFile.exists()) logFile.delete();
+            if (logFile.exists() && !logFile.delete()) {
+                Log.e(TAG, "Failed to delete log file during clear");
+                return;
+            }
             try {
-                logWriter = new FileWriter(logFile, true);
+                logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
             } catch (IOException e) {
                 Log.e(TAG, "Failed to recreate log file after clear", e);
             }

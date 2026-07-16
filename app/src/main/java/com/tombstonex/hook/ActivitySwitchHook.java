@@ -118,36 +118,31 @@ public class ActivitySwitchHook {
             // 注册进程
             ProcessTracker.getInstance().registerProcess(packageName, processName, pid, uid, isSystemApp);
 
-            // 取消之前的待冻结任务（防竞态）
-            cancelPendingFreeze(pid);
-
-            // 获取配置的延迟时间
-            int delaySec = ConfigManager.getInstance().getFreezeDelay();
+            // 原子地取消旧任务并安排新任务（防竞态）
+            final int delaySec = ConfigManager.getInstance().getFreezeDelay();
             final int targetPid = pid;
             final int targetUid = uid;
             final String targetPkg = packageName;
-
-            ScheduledFuture<?> future = freezeExecutor.schedule(() -> {
-                try {
-                    // 再次检查进程是否仍然在后台
-                    AppInfo info = ProcessTracker.getInstance().getByPid(targetPid);
-                    if (info == null) return;
-                    if (info.state == AppState.FOREGROUND) {
-                        Logger.d("App returned to foreground, cancel freeze: " + targetPkg);
-                        return;
+            pendingFreezes.compute(targetPid, (k, oldFuture) -> {
+                if (oldFuture != null) oldFuture.cancel(false);
+                return freezeExecutor.schedule(() -> {
+                    try {
+                        AppInfo info = ProcessTracker.getInstance().getByPid(targetPid);
+                        if (info == null) return;
+                        if (info.state == AppState.FOREGROUND) {
+                            Logger.d("App returned to foreground, cancel freeze: " + targetPkg);
+                            return;
+                        }
+                        if (!WhitelistManager.getInstance().shouldFreeze(targetPkg, info.processName, info.isSystemApp)) {
+                            Logger.d("App added to whitelist during delay, cancel freeze: " + targetPkg);
+                            return;
+                        }
+                        FreezeManager.getInstance().freezeProcess(targetPid, targetUid);
+                    } catch (Throwable t) {
+                        Logger.e("Delayed freeze error for pid=" + targetPid, t);
                     }
-                    // 再次检查白名单（可能在延迟期间被加入白名单）
-                    if (!WhitelistManager.getInstance().shouldFreeze(targetPkg, info.processName, info.isSystemApp)) {
-                        Logger.d("App added to whitelist during delay, cancel freeze: " + targetPkg);
-                        return;
-                    }
-                    FreezeManager.getInstance().freezeProcess(targetPid, targetUid);
-                } catch (Throwable t) {
-                    Logger.e("Delayed freeze error for pid=" + targetPid, t);
-                }
-            }, delaySec, TimeUnit.SECONDS);
-
-            pendingFreezes.put(pid, future);
+                }, delaySec, TimeUnit.SECONDS);
+            });
         } catch (Throwable t) {
             Logger.e("handleActivityPaused error", t);
         }
@@ -442,7 +437,7 @@ public class ActivitySwitchHook {
         try {
             Field servicesField = ReflectionUtils.findFieldRecursive(
                 processRecord.getClass(), "mServices");
-            if (servicesField == null) return false;
+            if (servicesField == null) return true;
             Object services = ReflectionUtils.getFieldValue(processRecord, servicesField);
             if (services == null) return false;
 
@@ -458,7 +453,7 @@ public class ActivitySwitchHook {
         } catch (Throwable e) {
             Logger.d("Hook variant failed: " + e.getMessage());
         }
-        return false;
+        return true;
     }
 
     /**
@@ -470,7 +465,7 @@ public class ActivitySwitchHook {
         try {
             Field pubProvidersField = ReflectionUtils.findFieldRecursive(
                 processRecord.getClass(), "pubProviders");
-            if (pubProvidersField == null) return false;
+            if (pubProvidersField == null) return true;
             Object pubProviders = ReflectionUtils.getFieldValue(processRecord, pubProvidersField);
             if (pubProviders == null) return false;
 
@@ -488,7 +483,7 @@ public class ActivitySwitchHook {
         } catch (Throwable e) {
             Logger.d("Hook variant failed: " + e.getMessage());
         }
-        return false;
+        return true;
     }
 
     /**

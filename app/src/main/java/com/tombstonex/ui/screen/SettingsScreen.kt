@@ -80,6 +80,7 @@ fun SettingsScreen(
     var currentFreezerName by remember { mutableStateOf("未知") }
     var debugEnabled by remember { mutableStateOf(false) }
     var freezeDelay by remember { mutableFloatStateOf(3f) }
+    var committedFreezeDelay by remember { mutableFloatStateOf(3f) }
     var showModeDialog by remember { mutableStateOf(false) }
 
     // 子 Hook 开关
@@ -96,6 +97,7 @@ fun SettingsScreen(
             freezeMode = FreezeMode.values().getOrElse(cfg.freezeMode) { FreezeMode.SYSTEM_API }
             debugEnabled = cfg.debugEnabled
             freezeDelay = cfg.freezeDelay.toFloat()
+            committedFreezeDelay = cfg.freezeDelay.toFloat()
             hookAnr = cfg.hookANR
             hookBroadcast = cfg.hookBroadcast
             hookWakeLock = cfg.hookWakeLock
@@ -222,10 +224,16 @@ fun SettingsScreen(
                         value = freezeDelay,
                         onValueChange = { freezeDelay = it },
                         onValueChangeFinished = {
-                            val delay = freezeDelay.toInt()
+                            val newDelay = freezeDelay.toInt()
                             scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    runCatching { ServiceClient.setFreezeDelay(delay) }
+                                val ok = withContext(Dispatchers.IO) {
+                                    runCatching { ServiceClient.setFreezeDelay(newDelay) }.getOrDefault(false)
+                                }
+                                if (ok) {
+                                    committedFreezeDelay = newDelay.toFloat()
+                                } else {
+                                    freezeDelay = committedFreezeDelay
+                                    showSnackbar("设置未生效（模块未激活或无权限）")
                                 }
                             }
                         },

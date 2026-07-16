@@ -61,6 +61,7 @@ import com.tombstonex.provider.AppProvider
 import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.util.toImageBitmap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,6 +94,8 @@ private fun Int.toAppState(): AppState? = when (this) {
 fun HomeScreen(showSnackbar: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    var loadJob by remember { mutableStateOf<Job?>(null) }
 
     var items by remember { mutableStateOf<List<HomeAppItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -135,7 +138,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     }
 
     fun loadApps() {
-        scope.launch {
+        loadJob?.cancel()
+        loadJob = scope.launch {
             try {
                 moduleAvailable = withContext(Dispatchers.IO) { ServiceClient.isAvailable }
                 val appProvider = AppProvider.getInstance(context)

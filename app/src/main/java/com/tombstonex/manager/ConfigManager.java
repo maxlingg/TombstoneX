@@ -82,7 +82,7 @@ public class ConfigManager {
         }
     }
 
-    private void writeFileContent(String filename, String content) {
+    private boolean writeFileContent(String filename, String content) {
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
         File file = new File(dir, filename);
@@ -93,8 +93,10 @@ public class ConfigManager {
             Files.move(tmpFile.toPath(), file.toPath(),
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
+            return true;
         } catch (IOException e) {
             Logger.e("Failed to write config: " + filename);
+            return false;
         }
     }
 
@@ -142,23 +144,27 @@ public class ConfigManager {
     public boolean isDebugEnabled() { return debugEnabled; }
 
     public void setDebugEnabled(boolean enabled) {
+        boolean success;
         if (enabled) {
-            FileUtils.appendLine("debug", "");
+            success = writeFileContent("debug", "");
         } else {
-            new File(CONFIG_DIR + "/debug").delete();
+            File debugFile = new File(CONFIG_DIR, "debug");
+            success = !debugFile.exists() || debugFile.delete();
         }
-        // 文件写入成功后再更新内存字段
-        this.debugEnabled = enabled;
-        Logger.init(enabled);
+        if (success) {
+            this.debugEnabled = enabled;
+            Logger.init(enabled);
+        }
     }
 
     public int getFreezeDelay() { return freezeDelay; }
 
     public void setFreezeDelay(int seconds) {
         int clamped = Math.max(1, Math.min(10, seconds));
-        writeFileContent("freeze_delay", String.valueOf(clamped));
-        // 文件写入成功后再更新内存
-        this.freezeDelay = clamped;
+        if (writeFileContent("freeze_delay", String.valueOf(clamped))) {
+            // 文件写入成功后再更新内存
+            this.freezeDelay = clamped;
+        }
     }
 
     /**
@@ -245,11 +251,15 @@ public class ConfigManager {
      * @param paused true=暂停（停止冻结），false=恢复
      */
     public void setGlobalPaused(boolean paused) {
+        boolean success;
         if (paused) {
-            writeFileContent("paused", "1");
+            success = writeFileContent("paused", "1");
         } else {
-            new File(CONFIG_DIR, "paused").delete();
+            File pausedFile = new File(CONFIG_DIR, "paused");
+            success = !pausedFile.exists() || pausedFile.delete();
         }
-        Logger.i("Global paused: " + paused);
+        if (success) {
+            Logger.i("Global paused: " + paused);
+        }
     }
 }

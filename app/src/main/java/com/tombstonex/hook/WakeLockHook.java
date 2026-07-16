@@ -25,6 +25,9 @@ public class WakeLockHook {
      * 根据 SDK 版本确定 uid 参数在 acquireWakeLockInternal 中的索引
      */
     private static int getUidParamIndexForAcquire(int paramCount) {
+        // 特判：6 参数变体 uid 是最后一个参数（index 5）；4 参数变体无 uid 参数
+        if (paramCount == 6) return 5;  // uid 是最后一个参数
+        if (paramCount == 4) return -1; // 无 uid 参数
         // 根据 SDK 版本和参数个数硬编码 uid 索引
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             // Android 14+: acquireWakeLockInternal(IBinder, int, String, String, WorkSource, String, int, int)

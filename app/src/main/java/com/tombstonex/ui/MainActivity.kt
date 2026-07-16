@@ -6,7 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.compositionLocalOf
 import androidx.lifecycle.lifecycleScope
 import com.tombstonex.BuildConfig
 import com.tombstonex.service.ServiceClient
@@ -32,7 +32,7 @@ data class ModuleState(
 /**
  * 全局模块状态，供 SettingsScreen / AboutScreen 读取
  */
-val LocalModuleState = staticCompositionLocalOf {
+val LocalModuleState = compositionLocalOf {
     ModuleState(installed = false, entryClass = "", activated = false)
 }
 

@@ -64,11 +64,24 @@ public class TombstoneXService extends Binder {
 
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
-        // 安全：仅允许 system uid 调用
+        // 安全：仅允许 system uid 或模块自身 UI 进程调用
         int callingUid = Binder.getCallingUid();
         if (callingUid != Process.SYSTEM_UID && callingUid != 0) {
-            reply.writeException(new SecurityException("Permission denied"));
-            return true;
+            // 允许模块自身 UI 进程调用
+            String[] packages = android.app.AppGlobals.getPackageManager().getPackagesForUid(callingUid);
+            boolean isModuleCaller = false;
+            if (packages != null) {
+                for (String pkg : packages) {
+                    if ("com.tombstonex".equals(pkg)) {
+                        isModuleCaller = true;
+                        break;
+                    }
+                }
+            }
+            if (!isModuleCaller) {
+                reply.writeException(new SecurityException("Permission denied"));
+                return true;
+            }
         }
         try {
             // 验证接口描述符
@@ -156,12 +169,22 @@ public class TombstoneXService extends Binder {
                 }
                 case TX_ADD_WHITE_APP: {
                     String pkg = data.readString();
+                    if (pkg == null || pkg.isEmpty()) {
+                        reply.writeNoException();
+                        reply.writeBoolean(false);
+                        return true;
+                    }
                     WhitelistManager.getInstance().addWhiteApp(pkg);
                     reply.writeNoException();
                     return true;
                 }
                 case TX_REMOVE_WHITE_APP: {
                     String pkg = data.readString();
+                    if (pkg == null || pkg.isEmpty()) {
+                        reply.writeNoException();
+                        reply.writeBoolean(false);
+                        return true;
+                    }
                     WhitelistManager.getInstance().removeWhiteApp(pkg);
                     reply.writeNoException();
                     return true;
@@ -177,12 +200,22 @@ public class TombstoneXService extends Binder {
                 }
                 case TX_ADD_WHITE_PROCESS: {
                     String proc = data.readString();
+                    if (proc == null || proc.isEmpty()) {
+                        reply.writeNoException();
+                        reply.writeBoolean(false);
+                        return true;
+                    }
                     WhitelistManager.getInstance().addWhiteProcess(proc);
                     reply.writeNoException();
                     return true;
                 }
                 case TX_REMOVE_WHITE_PROCESS: {
                     String proc = data.readString();
+                    if (proc == null || proc.isEmpty()) {
+                        reply.writeNoException();
+                        reply.writeBoolean(false);
+                        return true;
+                    }
                     WhitelistManager.getInstance().removeWhiteProcess(proc);
                     reply.writeNoException();
                     return true;
@@ -198,12 +231,22 @@ public class TombstoneXService extends Binder {
                 }
                 case TX_ADD_BLACK_SYSTEM_APP: {
                     String pkg = data.readString();
+                    if (pkg == null || pkg.isEmpty()) {
+                        reply.writeNoException();
+                        reply.writeBoolean(false);
+                        return true;
+                    }
                     WhitelistManager.getInstance().addBlackSystemApp(pkg);
                     reply.writeNoException();
                     return true;
                 }
                 case TX_REMOVE_BLACK_SYSTEM_APP: {
                     String pkg = data.readString();
+                    if (pkg == null || pkg.isEmpty()) {
+                        reply.writeNoException();
+                        reply.writeBoolean(false);
+                        return true;
+                    }
                     WhitelistManager.getInstance().removeBlackSystemApp(pkg);
                     reply.writeNoException();
                     return true;
@@ -260,6 +303,7 @@ public class TombstoneXService extends Binder {
                 }
                 case TX_READ_LOG: {
                     int maxLines = data.readInt();
+                    if (maxLines < 0) maxLines = 0;
                     String log = Logger.readLog(maxLines);
                     reply.writeNoException();
                     reply.writeString(log != null ? log : "");

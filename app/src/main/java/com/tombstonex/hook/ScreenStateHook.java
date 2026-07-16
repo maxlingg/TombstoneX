@@ -229,6 +229,7 @@ public class ScreenStateHook {
     private static void batchFreezeAll() {
         int frozen = 0;
         int skipped = 0;
+        boolean audioPlaying = ActivitySwitchHook.isAnyAudioPlaying();
         for (Map.Entry<Integer, AppInfo> entry :
                 ProcessTracker.getInstance().getAllProcesses().entrySet()) {
             AppInfo info = entry.getValue();
@@ -275,7 +276,7 @@ public class ScreenStateHook {
                     continue;
                 }
             }
-            if (ActivitySwitchHook.isAnyAudioPlaying()) {
+            if (audioPlaying) {
                 Logger.d("Batch freeze: skip (audio playing) " + info.packageName);
                 skipped++;
                 continue;

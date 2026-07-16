@@ -61,6 +61,7 @@ public class ReflectionUtils {
      */
     private static boolean isTypeCompatible(Class<?> expected, Class<?> actual) {
         if (expected == actual) return true;
+        if (expected == null || actual == null) return false;
         if (expected.isPrimitive()) {
             return wrapperToPrimitive.get(actual) == expected;
         }

@@ -54,7 +54,7 @@ public class FileUtils {
     /**
      * 原子写入：先写到临时文件 file.tmp，再 renameTo(file)
      */
-    public static void writeLines(String filename, Set<String> lines) {
+    public static synchronized void writeLines(String filename, Set<String> lines) {
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
         File file = new File(dir, filename);
