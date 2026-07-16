@@ -7,7 +7,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class WhitelistManager {
-    private static WhitelistManager instance;
+    private static volatile WhitelistManager instance;
     private volatile Set<String> whiteApps = new HashSet<>();
     private volatile Set<String> whiteProcesses = new HashSet<>();
     private volatile Set<String> blackSystemApps = new HashSet<>();
@@ -17,34 +17,36 @@ public class WhitelistManager {
      * 默认不可冻结的系统应用包名
      * 这些应用一旦冻结会导致系统功能异常
      */
-    private static final Set<String> DEFAULT_SYSTEM_WHITE = new HashSet<>();
+    private static final Set<String> DEFAULT_SYSTEM_WHITE;
     static {
+        Set<String> tmp = new HashSet<>();
         // 核心系统
-        DEFAULT_SYSTEM_WHITE.add("android");
-        DEFAULT_SYSTEM_WHITE.add("com.android.systemui");
-        DEFAULT_SYSTEM_WHITE.add("com.android.phone");
-        DEFAULT_SYSTEM_WHITE.add("com.android.settings");
+        tmp.add("android");
+        tmp.add("com.android.systemui");
+        tmp.add("com.android.phone");
+        tmp.add("com.android.settings");
         // 启动器
-        DEFAULT_SYSTEM_WHITE.add("com.android.launcher");
-        DEFAULT_SYSTEM_WHITE.add("com.android.launcher3");
-        DEFAULT_SYSTEM_WHITE.add("com.google.android.googlequicksearchbox"); // 桌面搜索
+        tmp.add("com.android.launcher");
+        tmp.add("com.android.launcher3");
+        tmp.add("com.google.android.googlequicksearchbox"); // 桌面搜索
         // 输入法
-        DEFAULT_SYSTEM_WHITE.add("com.android.inputmethod");
-        DEFAULT_SYSTEM_WHITE.add("com.google.android.inputmethod.latin");
+        tmp.add("com.android.inputmethod");
+        tmp.add("com.google.android.inputmethod.latin");
         // 无障碍服务
-        DEFAULT_SYSTEM_WHITE.add("com.android.accessibilityservice");
+        tmp.add("com.android.accessibilityservice");
         // NFC 与蓝牙
-        DEFAULT_SYSTEM_WHITE.add("com.android.nfc");
-        DEFAULT_SYSTEM_WHITE.add("com.android.bluetooth");
+        tmp.add("com.android.nfc");
+        tmp.add("com.android.bluetooth");
         // 壁纸与主题
-        DEFAULT_SYSTEM_WHITE.add("com.android.wallpaper");
-        DEFAULT_SYSTEM_WHITE.add("com.android.wallpaperbackup");
+        tmp.add("com.android.wallpaper");
+        tmp.add("com.android.wallpaperbackup");
         // 设备管理
-        DEFAULT_SYSTEM_WHITE.add("com.android.deviceadmin");
+        tmp.add("com.android.deviceadmin");
         // 系统更新
-        DEFAULT_SYSTEM_WHITE.add("com.android.systemupdate");
-        DEFAULT_SYSTEM_WHITE.add("com.google.android.gms"); // Google 服务
-        DEFAULT_SYSTEM_WHITE.add("com.google.android.gsf"); // Google 服务框架
+        tmp.add("com.android.systemupdate");
+        tmp.add("com.google.android.gms"); // Google 服务
+        tmp.add("com.google.android.gsf"); // Google 服务框架
+        DEFAULT_SYSTEM_WHITE = Collections.unmodifiableSet(tmp);
     }
 
     private WhitelistManager() {
@@ -108,7 +110,7 @@ public class WhitelistManager {
 
     // ---- 应用白名单 ----
 
-    public synchronized void addWhiteApp(String packageName) {
+    public void addWhiteApp(String packageName) {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(whiteApps);
             copy.add(packageName);
@@ -117,7 +119,7 @@ public class WhitelistManager {
         }
     }
 
-    public synchronized void removeWhiteApp(String packageName) {
+    public void removeWhiteApp(String packageName) {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(whiteApps);
             copy.remove(packageName);
@@ -132,7 +134,7 @@ public class WhitelistManager {
 
     // ---- 进程白名单 ----
 
-    public synchronized void addWhiteProcess(String processName) {
+    public void addWhiteProcess(String processName) {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(whiteProcesses);
             copy.add(processName);
@@ -141,7 +143,7 @@ public class WhitelistManager {
         }
     }
 
-    public synchronized void removeWhiteProcess(String processName) {
+    public void removeWhiteProcess(String processName) {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(whiteProcesses);
             copy.remove(processName);
@@ -156,7 +158,7 @@ public class WhitelistManager {
 
     // ---- 系统应用冻结名单（黑名单）----
 
-    public synchronized void addBlackSystemApp(String packageName) {
+    public void addBlackSystemApp(String packageName) {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(blackSystemApps);
             copy.add(packageName);
@@ -165,7 +167,7 @@ public class WhitelistManager {
         }
     }
 
-    public synchronized void removeBlackSystemApp(String packageName) {
+    public void removeBlackSystemApp(String packageName) {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(blackSystemApps);
             copy.remove(packageName);

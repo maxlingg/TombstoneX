@@ -1,9 +1,17 @@
-# LSPosed 模块入口不能混淆
--keep class com.tombstonex.hook.MainHook { *; }
+# LSPosed 入口
+-keep class com.tombstonex.hook.** { *; }
 
-# 反射使用的类不能混淆
+# Binder 服务（运行在 system_server，不可混淆）
+-keep class com.tombstonex.service.TombstoneXService { *; }
+-keep class com.tombstonex.service.ServiceClient { *; }
+
+# 冻结器实现（通过反射实例化）
 -keep class com.tombstonex.freezer.** { *; }
+
+# 管理器单例
 -keep class com.tombstonex.manager.** { *; }
+
+# 数据模型（IPC 序列化）
 -keep class com.tombstonex.model.** { *; }
 
 # Xposed API

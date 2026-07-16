@@ -2,6 +2,7 @@ package com.tombstonex.util;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,30 +13,38 @@ public class ReflectionUtils {
     private static final ConcurrentHashMap<Class<?>, ConcurrentHashMap<String, Field>> fieldCache =
         new ConcurrentHashMap<>();
 
+    /** Method 缓存: Class -> (cacheKey -> Method) */
+    private static final ConcurrentHashMap<Class<?>, ConcurrentHashMap<String, Method>> methodCache =
+        new ConcurrentHashMap<>();
+
     /** 基本类型与包装类的映射，用于方法参数匹配 */
-    private static final Map<Class<?>, Class<?>> primitiveToWrapper = new HashMap<>();
-    private static final Map<Class<?>, Class<?>> wrapperToPrimitive = new HashMap<>();
+    private static final Map<Class<?>, Class<?>> primitiveToWrapper;
+    private static final Map<Class<?>, Class<?>> wrapperToPrimitive;
 
     static {
-        primitiveToWrapper.put(boolean.class, Boolean.class);
-        primitiveToWrapper.put(byte.class, Byte.class);
-        primitiveToWrapper.put(char.class, Character.class);
-        primitiveToWrapper.put(short.class, Short.class);
-        primitiveToWrapper.put(int.class, Integer.class);
-        primitiveToWrapper.put(long.class, Long.class);
-        primitiveToWrapper.put(float.class, Float.class);
-        primitiveToWrapper.put(double.class, Double.class);
-        primitiveToWrapper.put(void.class, Void.class);
+        Map<Class<?>, Class<?>> p2w = new HashMap<>();
+        p2w.put(boolean.class, Boolean.class);
+        p2w.put(byte.class, Byte.class);
+        p2w.put(char.class, Character.class);
+        p2w.put(short.class, Short.class);
+        p2w.put(int.class, Integer.class);
+        p2w.put(long.class, Long.class);
+        p2w.put(float.class, Float.class);
+        p2w.put(double.class, Double.class);
+        p2w.put(void.class, Void.class);
+        primitiveToWrapper = Collections.unmodifiableMap(p2w);
 
-        wrapperToPrimitive.put(Boolean.class, boolean.class);
-        wrapperToPrimitive.put(Byte.class, byte.class);
-        wrapperToPrimitive.put(Character.class, char.class);
-        wrapperToPrimitive.put(Short.class, short.class);
-        wrapperToPrimitive.put(Integer.class, int.class);
-        wrapperToPrimitive.put(Long.class, long.class);
-        wrapperToPrimitive.put(Float.class, float.class);
-        wrapperToPrimitive.put(Double.class, double.class);
-        wrapperToPrimitive.put(Void.class, void.class);
+        Map<Class<?>, Class<?>> w2p = new HashMap<>();
+        w2p.put(Boolean.class, boolean.class);
+        w2p.put(Byte.class, byte.class);
+        w2p.put(Character.class, char.class);
+        w2p.put(Short.class, short.class);
+        w2p.put(Integer.class, int.class);
+        w2p.put(Long.class, long.class);
+        w2p.put(Float.class, float.class);
+        w2p.put(Double.class, double.class);
+        w2p.put(Void.class, void.class);
+        wrapperToPrimitive = Collections.unmodifiableMap(w2p);
     }
 
     public static Class<?> findClass(String className, ClassLoader classLoader) {
@@ -75,22 +84,51 @@ public class ReflectionUtils {
         }
     }
 
+    /**
+     * 构建 Method 缓存键：方法名 + 参数类型，避免同名重载方法冲突
+     */
+    private static String buildMethodCacheKey(String methodName, Class<?>... paramTypes) {
+        if (paramTypes == null || paramTypes.length == 0) {
+            return methodName;
+        }
+        StringBuilder sb = new StringBuilder(methodName).append('#');
+        for (int i = 0; i < paramTypes.length; i++) {
+            if (i > 0) sb.append(',');
+            sb.append(paramTypes[i] == null ? "null" : paramTypes[i].getName());
+        }
+        return sb.toString();
+    }
+
     public static Method findMethodRecursive(Class<?> clazz, String methodName, Class<?>... paramTypes) {
+        String cacheKey = buildMethodCacheKey(methodName, paramTypes);
+        // 先查缓存
+        ConcurrentHashMap<String, Method> classMethods = methodCache.get(clazz);
+        if (classMethods != null) {
+            Method cached = classMethods.get(cacheKey);
+            if (cached != null) return cached;
+        }
+
         Class<?> current = clazz;
         while (current != null && current != Object.class) {
             try {
                 Method method = current.getDeclaredMethod(methodName, paramTypes);
                 method.setAccessible(true);
+                // 找到方法后存入缓存
+                methodCache.computeIfAbsent(clazz, k -> new ConcurrentHashMap<>()).put(cacheKey, method);
                 return method;
             } catch (NoSuchMethodException e) {
                 // 尝试基本类型与包装类自动匹配
                 Method fallback = findMethodWithWrapperMatch(current, methodName, paramTypes);
-                if (fallback != null) return fallback;
+                if (fallback != null) {
+                    // 找到方法后存入缓存
+                    methodCache.computeIfAbsent(clazz, k -> new ConcurrentHashMap<>()).put(cacheKey, fallback);
+                    return fallback;
+                }
                 current = current.getSuperclass();
             }
         }
         Logger.e("Method not found recursively: " + methodName + " in " + clazz.getName());
-        return null;
+        return null; // 不缓存负面结果
     }
 
     /**

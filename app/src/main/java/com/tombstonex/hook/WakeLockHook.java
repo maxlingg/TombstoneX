@@ -106,7 +106,9 @@ public class WakeLockHook {
                     Logger.i("Hooked acquireWakeLockInternal (" + paramTypes.length + " params, uidIdx=" + uidIndex + ")");
                     hooked = true;
                     break;
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    Logger.d("Hook variant failed: " + e.getMessage());
+                }
             }
 
             if (!hooked) {
@@ -159,7 +161,9 @@ public class WakeLockHook {
                     Logger.i("Hooked releaseWakeLockInternal (" + paramTypes.length + " params)");
                     hooked = true;
                     break;
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    Logger.d("Hook variant failed: " + e.getMessage());
+                }
             }
 
             if (!hooked) {

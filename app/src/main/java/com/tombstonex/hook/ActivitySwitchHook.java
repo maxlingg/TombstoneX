@@ -34,7 +34,6 @@ public class ActivitySwitchHook {
     // Android 12-13 PROCESS_STATE_FOREGROUND_SERVICE = 5
     private static final int PROCESS_STATE_FOREGROUND_SERVICE =
         Build.VERSION.SDK_INT >= 34 ? 4 : 5;
-    private static final int PROCESS_STATE_TOP_SLEEPING = 12;
 
     // P2: 2 个核心线程
     private static final ScheduledThreadPoolExecutor freezeExecutor = new ScheduledThreadPoolExecutor(2);
@@ -111,7 +110,7 @@ public class ActivitySwitchHook {
             }
 
             // 检查音频播放
-            if (isAudioPlaying(uid)) {
+            if (isAnyAudioPlaying()) {
                 Logger.d("App is playing audio, skip freeze: " + packageName);
                 return;
             }
@@ -423,7 +422,9 @@ public class ActivitySwitchHook {
                         });
                     Logger.i("Hooked " + methodName);
                     break;
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    Logger.d("Hook variant failed: " + e.getMessage());
+                }
             }
         } catch (Throwable t) {
             Logger.e("Failed to hook uid state change", t);
@@ -454,7 +455,9 @@ public class ActivitySwitchHook {
                     return (boolean) hasForeground.invoke(services);
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            Logger.d("Hook variant failed: " + e.getMessage());
+        }
         return false;
     }
 
@@ -482,7 +485,9 @@ public class ActivitySwitchHook {
                 int size = (int) sizeMethod.invoke(pubProviders);
                 return size > 0;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            Logger.d("Hook variant failed: " + e.getMessage());
+        }
         return false;
     }
 
@@ -490,7 +495,7 @@ public class ActivitySwitchHook {
      * 通过反射调用 AudioManager.isMusicActive() 检查是否有活跃音频播放
      * public 供 ScreenStateHook 复用
      */
-    public static boolean isAudioPlaying(int uid) {
+    public static boolean isAnyAudioPlaying() {
         try {
             // 在 system_server 中可以通过 ServiceManager 获取 AudioService
             Class<?> serviceManagerClass = Class.forName("android.os.ServiceManager");
@@ -510,7 +515,7 @@ public class ActivitySwitchHook {
                 return (boolean) isMusicActiveMethod.invoke(audioService);
             }
         } catch (Throwable t) {
-            Logger.d("isAudioPlaying check failed: " + t.getMessage());
+            Logger.d("isAnyAudioPlaying check failed: " + t.getMessage());
         }
         return false;
     }

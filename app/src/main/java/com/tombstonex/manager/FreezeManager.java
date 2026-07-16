@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.ArrayList;
 
 public class FreezeManager {
-    private static FreezeManager instance;
+    private static volatile FreezeManager instance;
     private volatile IFreezer currentFreezer;
     private final Object freezeLock = new Object();
 

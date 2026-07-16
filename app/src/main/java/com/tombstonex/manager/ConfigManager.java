@@ -11,7 +11,7 @@ import java.nio.file.StandardCopyOption;
 public class ConfigManager {
     private static final String CONFIG_DIR = "/data/system/TombstoneX";
 
-    private static ConfigManager instance;
+    private static volatile ConfigManager instance;
     private volatile FreezeMode freezeMode = FreezeMode.SYSTEM_API;
     private volatile boolean debugEnabled = false;
     private volatile int freezeDelay = 3; // 秒

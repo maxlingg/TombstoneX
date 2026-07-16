@@ -67,7 +67,7 @@ class FreezeTileService : TileService() {
                     !available -> {
                         tile.state = Tile.STATE_UNAVAILABLE
                         tile.label = "未激活"
-                        runCatching { tile.subtitle = "模块未启用" }
+                        tile.subtitle = "模块未启用"
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                             runCatching { tile.contentDescription = "TombstoneX 模块未激活" }
                         }
@@ -75,7 +75,7 @@ class FreezeTileService : TileService() {
                     paused -> {
                         tile.state = Tile.STATE_INACTIVE
                         tile.label = "已暂停"
-                        runCatching { tile.subtitle = "点击恢复冻结" }
+                        tile.subtitle = "点击恢复冻结"
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                             runCatching { tile.contentDescription = "TombstoneX 冻结已暂停" }
                         }
@@ -83,7 +83,7 @@ class FreezeTileService : TileService() {
                     else -> {
                         tile.state = Tile.STATE_ACTIVE
                         tile.label = "冻结中"
-                        runCatching { tile.subtitle = "已冻结 $frozenCount 个应用" }
+                        tile.subtitle = "已冻结 $frozenCount 个应用"
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                             runCatching {
                                 tile.contentDescription = "TombstoneX 冻结运行中，已冻结 $frozenCount 个应用"

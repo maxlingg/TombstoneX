@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -180,7 +183,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("白名单管理", fontWeight = FontWeight.SemiBold) }) },
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
         Column(
             modifier = Modifier
@@ -344,9 +347,9 @@ private fun WhitelistAppCard(
     isOn: Boolean,
     onToggle: () -> Unit,
 ) {
-    androidx.compose.material3.Card(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
+        colors = CardDefaults.cardColors(
             containerColor = if (isOn)
                 MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
             else
@@ -408,9 +411,9 @@ private fun WhitelistProcessCard(
     isOn: Boolean,
     onToggle: () -> Unit,
 ) {
-    androidx.compose.material3.Card(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
+        colors = CardDefaults.cardColors(
             containerColor = if (isOn)
                 MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
             else

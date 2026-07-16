@@ -1,10 +1,10 @@
 package com.tombstonex.model;
 
 public class AppInfo {
-    public String packageName;
-    public String processName;
-    public int pid;
-    public int uid;
+    public final String packageName;
+    public final String processName;
+    public final int pid;
+    public final int uid;
     public volatile AppState state;
     public volatile boolean isWhiteListed;
     public volatile boolean isSystemApp;

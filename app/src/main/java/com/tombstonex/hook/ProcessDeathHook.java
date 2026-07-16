@@ -115,7 +115,9 @@ public class ProcessDeathHook {
                         });
                         Logger.i("Hooked cleanUpApplicationRecord");
                         break;
-                    } catch (Throwable ignored) {}
+                    } catch (Throwable e) {
+                        Logger.d("Hook variant failed: " + e.getMessage());
+                    }
                 }
             } catch (Throwable t) {
                 Logger.w("Failed to hook cleanUpApplicationRecord: " + t.getMessage());
@@ -152,7 +154,9 @@ public class ProcessDeathHook {
                     Logger.i("Hooked handleAppCrashLocked (" + paramTypes.length + " params)");
                     crashHooked = true;
                     break;
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    Logger.d("Hook variant failed: " + e.getMessage());
+                }
             }
 
             if (!crashHooked) {

@@ -79,7 +79,9 @@ public class BroadcastHook {
                     });
                     Logger.i("Hooked deliverToRegisteredReceiver");
                     break;
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    Logger.d("Hook variant failed: " + e.getMessage());
+                }
             }
         } catch (Throwable t) {
             Logger.e("Failed to hook broadcast delivery", t);
@@ -126,7 +128,9 @@ public class BroadcastHook {
                     Logger.i("Hooked processNextBroadcast with " + paramTypes.length + " params");
                     hooked = true;
                     break;
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    Logger.d("Hook variant failed: " + e.getMessage());
+                }
             }
 
             if (!hooked) {
@@ -176,7 +180,9 @@ public class BroadcastHook {
         // 尝试 BroadcastFilter.owningPid
         try {
             return XposedHelpers.getIntField(receiver, "owningPid");
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            Logger.d("Hook variant failed: " + e.getMessage());
+        }
 
         // ResolveInfo: 需要分步获取 activityInfo -> applicationInfo -> uid
         try {
@@ -193,7 +199,9 @@ public class BroadcastHook {
                     }
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            Logger.d("Hook variant failed: " + e.getMessage());
+        }
 
         return -1;
     }

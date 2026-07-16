@@ -61,7 +61,9 @@ public class ScreenStateHook {
                         hasAmsHook = true;
                         hooked = true;
                         break;
-                    } catch (Throwable ignored) {}
+                    } catch (Throwable e) {
+                        Logger.d("Hook variant failed: " + e.getMessage());
+                    }
                 }
                 if (hooked) break;
             }
@@ -92,7 +94,9 @@ public class ScreenStateHook {
                             Logger.i("Hooked " + methodName + " on PMS");
                             hooked = true;
                             break;
-                        } catch (Throwable ignored) {}
+                        } catch (Throwable e) {
+                            Logger.d("Hook variant failed: " + e.getMessage());
+                        }
                     }
                     if (hooked) break;
                 }
@@ -134,7 +138,9 @@ public class ScreenStateHook {
                         hasAmsHook = true;
                         hooked = true;
                         break;
-                    } catch (Throwable ignored) {}
+                    } catch (Throwable e) {
+                        Logger.d("Hook variant failed: " + e.getMessage());
+                    }
                 }
                 if (hooked) break;
             }
@@ -166,7 +172,9 @@ public class ScreenStateHook {
                             Logger.i("Hooked " + methodName + " on PMS");
                             hooked = true;
                             break;
-                        } catch (Throwable ignored) {}
+                        } catch (Throwable e) {
+                            Logger.d("Hook variant failed: " + e.getMessage());
+                        }
                     }
                     if (hooked) break;
                 }
@@ -267,7 +275,7 @@ public class ScreenStateHook {
                     continue;
                 }
             }
-            if (ActivitySwitchHook.isAudioPlaying(info.uid)) {
+            if (ActivitySwitchHook.isAnyAudioPlaying()) {
                 Logger.d("Batch freeze: skip (audio playing) " + info.packageName);
                 skipped++;
                 continue;
@@ -291,12 +299,16 @@ public class ScreenStateHook {
             if (pidsSelfLocked != null) {
                 try {
                     return XposedHelpers.callMethod(pidsSelfLocked, "get", pid);
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    Logger.d("Hook variant failed: " + e.getMessage());
+                }
             }
             // 尝试 findProcessLocked(pid)
             try {
                 return XposedHelpers.callMethod(amsInstance, "findProcessLocked", pid);
-            } catch (Throwable ignored) {}
+            } catch (Throwable e) {
+                Logger.d("Hook variant failed: " + e.getMessage());
+            }
         } catch (Throwable t) {
             Logger.d("Failed to get ProcessRecord for pid=" + pid + ": " + t.getMessage());
         }

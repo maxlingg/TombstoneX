@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class ProcessTracker {
-    private static ProcessTracker instance;
+    private static volatile ProcessTracker instance;
     private final Map<Integer, AppInfo> processMap = new ConcurrentHashMap<>();
     private final Map<String, List<Integer>> packageToPids = new ConcurrentHashMap<>();
     private final Map<Integer, List<Integer>> uidToPids = new ConcurrentHashMap<>();

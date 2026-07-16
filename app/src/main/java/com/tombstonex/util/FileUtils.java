@@ -1,6 +1,14 @@
 package com.tombstonex.util;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -85,8 +93,19 @@ public class FileUtils {
                 new OutputStreamWriter(new FileOutputStream(tmpFile), StandardCharsets.UTF_8))) {
             // 如果原文件存在，先读取并写入原内容
             if (file.exists()) {
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+                try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
+                     BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(bis, StandardCharsets.UTF_8))) {
+                    // BOM 检测：读取前 3 个字节判断是否有 UTF-8 BOM（与 readLines 保持一致）
+                    bis.mark(3);
+                    byte[] bom = new byte[3];
+                    int read = bis.read(bom);
+                    if (read >= 3 && (bom[0] & 0xFF) == 0xEF && (bom[1] & 0xFF) == 0xBB && (bom[2] & 0xFF) == 0xBF) {
+                        // 检测到 UTF-8 BOM，已跳过，不需要 reset
+                    } else {
+                        // 没有 BOM，reset 回开头
+                        bis.reset();
+                    }
                     String existingLine;
                     while ((existingLine = reader.readLine()) != null) {
                         writer.write(existingLine);

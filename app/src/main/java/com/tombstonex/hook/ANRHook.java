@@ -72,7 +72,9 @@ public class ANRHook {
                     Logger.i("Hooked appNotResponding on ProcessRecord");
                     hooked = true;
                     break;
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    Logger.d("Hook variant failed: " + e.getMessage());
+                }
             }
         } catch (Throwable t) {
             Logger.w("ProcessRecord.appNotResponding not found, trying AnrHelper: " + t.getMessage());
@@ -122,7 +124,9 @@ public class ANRHook {
                         Logger.i("Hooked appNotResponding on AnrHelper");
                         hooked = true;
                         break;
-                    } catch (Throwable ignored) {}
+                    } catch (Throwable e) {
+                        Logger.d("Hook variant failed: " + e.getMessage());
+                    }
                 }
             } catch (Throwable t) {
                 Logger.w("AnrHelper.appNotResponding not found: " + t.getMessage());
@@ -186,7 +190,9 @@ public class ANRHook {
                     Logger.i("Hooked inputDispatchingTimedOut");
                     hooked = true;
                     break;
-                } catch (Throwable ignored) {}
+                } catch (Throwable e) {
+                    Logger.d("Hook variant failed: " + e.getMessage());
+                }
             }
 
             if (!hooked) {
