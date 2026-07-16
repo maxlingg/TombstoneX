@@ -14,6 +14,13 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0.0"
+
+        // 暴露版本号给 UI 层（AboutScreen / SettingsScreen）
+        buildConfigField("String", "VERSION_NAME", "\"${versionName}\"")
+        buildConfigField("int", "VERSION_CODE", "${versionCode}")
+        buildConfigField("String", "MODULE_ENTRY", "\"com.tombstonex.hook.MainHook\"")
+        buildConfigField("String", "LOG_PATH", "\"/data/system/TombstoneX/current.log\"")
+        buildConfigField("String", "CONFIG_DIR", "\"/data/system/TombstoneX\"")
     }
 
     buildTypes {
@@ -37,6 +44,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     lint {
