@@ -6,6 +6,7 @@ import com.tombstonex.util.Logger;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 public class ConfigManager {
     private static final String CONFIG_DIR = "/data/system/TombstoneX";
@@ -87,13 +88,11 @@ public class ConfigManager {
         try {
             Files.write(tmpFile.toPath(), content.getBytes());
             // 原子替换
-            if (file.exists()) file.delete();
-            if (!tmpFile.renameTo(file)) {
-                Logger.e("Failed to rename config tmp file: " + filename, null);
-                return;
-            }
-        } catch (Exception e) {
-            Logger.e("Failed to write config: " + filename, e);
+            Files.move(tmpFile.toPath(), file.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException e) {
+            Logger.e("Failed to write config: " + filename);
         }
     }
 
@@ -114,18 +113,16 @@ public class ConfigManager {
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
 
-        // 先写新 marker 到临时文件，再 rename（原子写）
+        // 先写新 marker 到临时文件，再原子替换
         File tmpFile = new File(dir, targetMarker + ".tmp");
         File targetFile = new File(dir, targetMarker);
         try {
             Files.write(tmpFile.toPath(), new byte[0]);
-            if (targetFile.exists()) targetFile.delete();
-            if (!tmpFile.renameTo(targetFile)) {
-                Logger.e("Failed to rename marker file: " + targetMarker, null);
-                return;
-            }
+            Files.move(tmpFile.toPath(), targetFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            Logger.e("Failed to write marker file: " + targetMarker, e);
+            Logger.e("Failed to write marker file: " + targetMarker);
             return;
         }
 

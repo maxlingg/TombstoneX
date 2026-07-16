@@ -49,6 +49,11 @@ class FreezeTileService : TileService() {
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceExecutor.shutdown()
+    }
+
     /** 刷新磁贴外观与状态（ServiceClient 调用在后台线程，UI 更新切回主线程） */
     private fun refreshTile() {
         serviceExecutor.execute {

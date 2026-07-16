@@ -6,8 +6,8 @@ public class AppInfo {
     public int pid;
     public int uid;
     public volatile AppState state;
-    public boolean isWhiteListed;
-    public boolean isSystemApp;
+    public volatile boolean isWhiteListed;
+    public volatile boolean isSystemApp;
     public volatile int oomAdj;
     public volatile long freezeTimestamp;
 

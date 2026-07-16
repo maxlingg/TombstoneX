@@ -81,8 +81,13 @@ public class Logger {
     }
 
     public static void e(String msg, Throwable t) {
-        Log.e(TAG, msg, t);
-        writeFile("E", msg + " | " + (t.getMessage() != null ? t.getMessage() : t.toString()));
+        String detail = msg;
+        if (t != null) {
+            String tMsg = t.getMessage();
+            detail = msg + " | " + (tMsg != null ? tMsg : t.toString());
+        }
+        Log.e(TAG, detail);
+        writeFile("E", detail);
     }
 
     private static void writeFile(String level, String msg) {
@@ -100,7 +105,14 @@ public class Logger {
                         File oldFile = new File(LOG_DIR, "current.log.old");
                         if (oldFile.exists()) oldFile.delete();
                         logFile.renameTo(oldFile);
-                        logWriter = new FileWriter(logFile, true);
+                        // 轮转后重建 writer 失败时的恢复
+                        try {
+                            logWriter = new FileWriter(logFile, true);
+                        } catch (IOException e2) {
+                            Log.e(TAG, "Failed to recreate log writer after rotation", e2);
+                            // 尝试下一次写入时重新初始化
+                            logWriter = null;
+                        }
                     }
                 }
             } catch (IOException ignored) {}

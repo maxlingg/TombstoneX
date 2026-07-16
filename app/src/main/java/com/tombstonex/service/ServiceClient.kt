@@ -14,6 +14,9 @@ object ServiceClient {
 
     private const val SERVICE_NAME = "tombstonex"
 
+    /** Binder 接口描述符，必须与 TombstoneXService.java 中的 DESCRIPTOR 一致 */
+    private const val DESCRIPTOR = "com.tombstonex.service.TombstoneXService"
+
     // 事务码 — 必须与 TombstoneXService.java 保持一致
     private const val TX_GET_CONFIG = 1
     private const val TX_SET_FREEZE_MODE = 2
@@ -43,6 +46,7 @@ object ServiceClient {
     private const val TX_RESELECT_FREEZER = 26
 
     /** 缓存的 IBinder 代理 */
+    @Volatile
     private var binder: android.os.IBinder? = null
 
     /** 模块是否已激活（服务是否已注册） */
@@ -64,19 +68,31 @@ object ServiceClient {
         }
     }
 
-    /** 执行一次 transact 调用，返回 reply Parcel */
-    private fun transact(code: Int, prepare: (Parcel) -> Unit = {}): Parcel? {
+    /**
+     * 执行一次 transact 调用，自动处理 Parcel 回收和异常检查。
+     * 服务端必须以 writeNoException() 开头写入 reply，此方法会先调用 readException() 消费标记，
+     * 再通过 parse 回调解析实际数据。
+     */
+    private fun <T> transact(
+        code: Int,
+        prepare: (Parcel) -> Unit = {},
+        parse: (Parcel) -> T?
+    ): T? {
         val b = getBinder() ?: return null
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         return try {
+            data.writeInterfaceToken(DESCRIPTOR)
             prepare(data)
-            b.transact(code, data, reply, 0)
-            reply
+            val ok = b.transact(code, data, reply, 0)
+            if (!ok) return null
+            reply.readException()
+            parse(reply)
         } catch (e: Throwable) {
             null
         } finally {
             data.recycle()
+            reply.recycle()
         }
     }
 
@@ -95,8 +111,7 @@ object ServiceClient {
     )
 
     fun getConfig(): ConfigSnapshot? {
-        val reply = transact(TX_GET_CONFIG) ?: return null
-        return try {
+        return transact(TX_GET_CONFIG) { reply ->
             val json = JSONObject(reply.readString() ?: "{}")
             ConfigSnapshot(
                 freezeMode = json.optInt("freezeMode", 0),
@@ -109,87 +124,72 @@ object ServiceClient {
                 hookActivitySwitch = json.optBoolean("hookActivitySwitch", true),
                 hookScreenState = json.optBoolean("hookScreenState", true),
             )
-        } finally { reply.recycle() }
+        }
     }
 
     fun setFreezeMode(modeOrdinal: Int): Boolean {
-        val reply = transact(TX_SET_FREEZE_MODE) { it.writeInt(modeOrdinal) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_SET_FREEZE_MODE, { it.writeInt(modeOrdinal) }, { it.readBoolean() }) ?: false
     }
 
     fun setFreezeDelay(delay: Int): Boolean {
-        val reply = transact(TX_SET_FREEZE_DELAY) { it.writeInt(delay) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_SET_FREEZE_DELAY, { it.writeInt(delay) }, { true }) ?: false
     }
 
     fun setDebugEnabled(enabled: Boolean): Boolean {
-        val reply = transact(TX_SET_DEBUG_ENABLED) { it.writeBoolean(enabled) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_SET_DEBUG_ENABLED, { it.writeBoolean(enabled) }, { true }) ?: false
     }
 
     /** hookId: 0=ANR, 1=Broadcast, 2=WakeLock, 3=ActivitySwitch, 4=ScreenState */
     fun setHookEnabled(hookId: Int, enabled: Boolean): Boolean {
-        val reply = transact(TX_SET_HOOK_ENABLED) {
+        return transact(TX_SET_HOOK_ENABLED, {
             it.writeInt(hookId); it.writeBoolean(enabled)
-        } ?: return false
-        reply.recycle(); return true
+        }, { it.readBoolean() }) ?: false
     }
 
     fun setGlobalPaused(paused: Boolean): Boolean {
-        val reply = transact(TX_SET_GLOBAL_PAUSED) { it.writeBoolean(paused) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_SET_GLOBAL_PAUSED, { it.writeBoolean(paused) }, { true }) ?: false
     }
 
     fun isGlobalPaused(): Boolean {
-        val reply = transact(TX_IS_GLOBAL_PAUSED) ?: return false
-        return try { reply.readBoolean() } finally { reply.recycle() }
+        return transact(TX_IS_GLOBAL_PAUSED, {}, { it.readBoolean() }) ?: false
     }
 
     // ====== 白名单 ======
 
     fun getWhiteApps(): Set<String> {
-        val reply = transact(TX_GET_WHITE_APPS) ?: return emptySet()
-        return try { jsonToStringSet(reply.readString()) } finally { reply.recycle() }
+        return transact(TX_GET_WHITE_APPS, {}, { reply -> jsonToStringSet(reply.readString()) }) ?: emptySet()
     }
 
     fun addWhiteApp(pkg: String): Boolean {
-        val reply = transact(TX_ADD_WHITE_APP) { it.writeString(pkg) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_ADD_WHITE_APP, { it.writeString(pkg) }, { true }) ?: false
     }
 
     fun removeWhiteApp(pkg: String): Boolean {
-        val reply = transact(TX_REMOVE_WHITE_APP) { it.writeString(pkg) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_REMOVE_WHITE_APP, { it.writeString(pkg) }, { true }) ?: false
     }
 
     fun getWhiteProcesses(): Set<String> {
-        val reply = transact(TX_GET_WHITE_PROCESSES) ?: return emptySet()
-        return try { jsonToStringSet(reply.readString()) } finally { reply.recycle() }
+        return transact(TX_GET_WHITE_PROCESSES, {}, { reply -> jsonToStringSet(reply.readString()) }) ?: emptySet()
     }
 
     fun addWhiteProcess(proc: String): Boolean {
-        val reply = transact(TX_ADD_WHITE_PROCESS) { it.writeString(proc) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_ADD_WHITE_PROCESS, { it.writeString(proc) }, { true }) ?: false
     }
 
     fun removeWhiteProcess(proc: String): Boolean {
-        val reply = transact(TX_REMOVE_WHITE_PROCESS) { it.writeString(proc) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_REMOVE_WHITE_PROCESS, { it.writeString(proc) }, { true }) ?: false
     }
 
     fun getBlackSystemApps(): Set<String> {
-        val reply = transact(TX_GET_BLACK_SYSTEM_APPS) ?: return emptySet()
-        return try { jsonToStringSet(reply.readString()) } finally { reply.recycle() }
+        return transact(TX_GET_BLACK_SYSTEM_APPS, {}, { reply -> jsonToStringSet(reply.readString()) }) ?: emptySet()
     }
 
     fun addBlackSystemApp(pkg: String): Boolean {
-        val reply = transact(TX_ADD_BLACK_SYSTEM_APP) { it.writeString(pkg) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_ADD_BLACK_SYSTEM_APP, { it.writeString(pkg) }, { true }) ?: false
     }
 
     fun removeBlackSystemApp(pkg: String): Boolean {
-        val reply = transact(TX_REMOVE_BLACK_SYSTEM_APP) { it.writeString(pkg) } ?: return false
-        reply.recycle(); return true
+        return transact(TX_REMOVE_BLACK_SYSTEM_APP, { it.writeString(pkg) }, { true }) ?: false
     }
 
     // ====== 进程与冻结 ======
@@ -202,8 +202,7 @@ object ServiceClient {
     )
 
     fun getAllProcesses(): List<ProcessInfo> {
-        val reply = transact(TX_GET_ALL_PROCESSES) ?: return emptyList()
-        return try {
+        return transact(TX_GET_ALL_PROCESSES, {}, { reply ->
             val arr = JSONArray(reply.readString() ?: "[]")
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
@@ -218,58 +217,49 @@ object ServiceClient {
                     oomAdj = o.optInt("oomAdj", 0),
                 )
             }
-        } finally { reply.recycle() }
+        }) ?: emptyList()
     }
 
     fun getFrozenCount(): Int {
-        val reply = transact(TX_GET_FROZEN_COUNT) ?: return 0
-        return try { reply.readInt() } finally { reply.recycle() }
+        return transact(TX_GET_FROZEN_COUNT, {}, { it.readInt() }) ?: 0
     }
 
     fun freezeProcess(pid: Int, uid: Int): Boolean {
-        val reply = transact(TX_FREEZE_PROCESS) {
+        return transact(TX_FREEZE_PROCESS, {
             it.writeInt(pid); it.writeInt(uid)
-        } ?: return false
-        return try { reply.readBoolean() } finally { reply.recycle() }
+        }, { it.readBoolean() }) ?: false
     }
 
     fun unfreezeProcess(pid: Int, uid: Int): Boolean {
-        val reply = transact(TX_UNFREEZE_PROCESS) {
+        return transact(TX_UNFREEZE_PROCESS, {
             it.writeInt(pid); it.writeInt(uid)
-        } ?: return false
-        return try { reply.readBoolean() } finally { reply.recycle() }
+        }, { it.readBoolean() }) ?: false
     }
 
     fun getCurrentFreezerName(): String {
-        val reply = transact(TX_GET_CURRENT_FREEZER_NAME) ?: return "未知"
-        return try { reply.readString() ?: "未知" } finally { reply.recycle() }
+        return transact(TX_GET_CURRENT_FREEZER_NAME, {}, { it.readString() ?: "未知" }) ?: "未知"
     }
 
     fun pauseAll(): Boolean {
-        val reply = transact(TX_PAUSE_ALL) ?: return false
-        reply.recycle(); return true
+        return transact(TX_PAUSE_ALL, {}, { true }) ?: false
     }
 
     fun resumeAll(): Boolean {
-        val reply = transact(TX_RESUME_ALL) ?: return false
-        reply.recycle(); return true
+        return transact(TX_RESUME_ALL, {}, { true }) ?: false
     }
 
     fun reselectFreezer(): Boolean {
-        val reply = transact(TX_RESELECT_FREEZER) ?: return false
-        reply.recycle(); return true
+        return transact(TX_RESELECT_FREEZER, {}, { true }) ?: false
     }
 
     // ====== 日志 ======
 
     fun readLog(maxLines: Int): String {
-        val reply = transact(TX_READ_LOG) { it.writeInt(maxLines) } ?: return ""
-        return try { reply.readString() ?: "" } finally { reply.recycle() }
+        return transact(TX_READ_LOG, { it.writeInt(maxLines) }, { it.readString() ?: "" }) ?: ""
     }
 
     fun clearLog(): Boolean {
-        val reply = transact(TX_CLEAR_LOG) ?: return false
-        reply.recycle(); return true
+        return transact(TX_CLEAR_LOG, {}, { true }) ?: false
     }
 
     // ====== 辅助 ======

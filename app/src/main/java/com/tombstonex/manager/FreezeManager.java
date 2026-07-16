@@ -11,7 +11,6 @@ import java.util.ArrayList;
 public class FreezeManager {
     private static FreezeManager instance;
     private volatile IFreezer currentFreezer;
-    private volatile boolean globalPaused = false;
     private final Object freezeLock = new Object();
 
     private FreezeManager() {
@@ -42,14 +41,25 @@ public class FreezeManager {
                 currentFreezer = new CgroupFreezerV1();
                 if (currentFreezer.isAvailable()) break;
                 Logger.w("CgroupV1 not available, falling back to Signal");
+            case SIGNAL_20:
+                currentFreezer = new SignalFreezer(true);  // SIGTSTP=20
+                if (currentFreezer.isAvailable()) break;
+                // 回退到 SIGNAL_19
             case SIGNAL_19:
+                currentFreezer = new SignalFreezer(false);  // SIGSTOP=19
+                if (currentFreezer.isAvailable()) break;
+                // 最终回退
             default:
-                // SIGSTOP (19) 不可被捕获，作为最终 fallback 更可靠
-                currentFreezer = new SignalFreezer(false);
+                Logger.w("No freezer available");
+                currentFreezer = null;
                 break;
         }
-        Logger.i("Selected freezer: " + currentFreezer.getName()
-            + " available=" + currentFreezer.isAvailable());
+        if (currentFreezer != null) {
+            Logger.i("Selected freezer: " + currentFreezer.getName()
+                + " available=" + currentFreezer.isAvailable());
+        } else {
+            Logger.w("No freezer selected");
+        }
     }
 
     public boolean freezeProcess(int pid, int uid) {
@@ -57,11 +67,9 @@ public class FreezeManager {
         synchronized (freezeLock) {
             // 通过文件标记检查全局暂停状态（跨进程同步）
             if (ConfigManager.getInstance().isGlobalPaused()) {
-                globalPaused = true;
                 Logger.d("Global paused, skip freeze: pid=" + pid);
                 return false;
             }
-            globalPaused = false;
 
             // 白名单检查作为防御层
             AppInfo info = ProcessTracker.getInstance().getByPid(pid);
@@ -134,7 +142,6 @@ public class FreezeManager {
      * 全局暂停 — 解冻所有冻结的进程，并写入暂停标记文件
      */
     public void pauseAll() {
-        globalPaused = true;
         ConfigManager.getInstance().setGlobalPaused(true);
         ProcessTracker.getInstance().unfreezeAll(this);
         Logger.i("Global paused, all processes unfrozen");
@@ -144,13 +151,12 @@ public class FreezeManager {
      * 恢复全局冻结 — 清除暂停标记文件
      */
     public void resumeAll() {
-        globalPaused = false;
         ConfigManager.getInstance().setGlobalPaused(false);
         Logger.i("Global resumed, freeze will continue normally");
     }
 
     public boolean isGlobalPaused() {
-        return globalPaused;
+        return ConfigManager.getInstance().isGlobalPaused();
     }
 
     public String getCurrentFreezerName() {
@@ -158,9 +164,11 @@ public class FreezeManager {
     }
 
     public void reselectFreezer() {
-        // 先解冻所有已冻结的进程，防止切换 freezer 后状态不一致
-        unfreezeAllFrozen();
-        selectFreezer();
+        synchronized (freezeLock) {
+            // 先解冻所有已冻结的进程，防止切换 freezer 后状态不一致
+            unfreezeAllFrozen();
+            selectFreezer();
+        }
     }
 
     /**

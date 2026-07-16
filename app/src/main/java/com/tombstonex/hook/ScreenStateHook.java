@@ -23,8 +23,10 @@ import java.util.concurrent.TimeUnit;
 public class ScreenStateHook {
 
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private static volatile ScheduledFuture<?> pendingBatchFreeze;
+    private static final Object batchFreezeLock = new Object();
+    private static ScheduledFuture<?> pendingBatchFreeze;
     private static volatile Object amsInstance;
+    private static volatile boolean hasAmsHook = false;
 
     public static void init(ClassLoader classLoader) {
         hookScreenOff(classLoader);
@@ -56,6 +58,7 @@ public class ScreenStateHook {
                             }
                         });
                         Logger.i("Hooked " + methodName + " on AMS");
+                        hasAmsHook = true;
                         hooked = true;
                         break;
                     } catch (Throwable ignored) {}
@@ -128,6 +131,7 @@ public class ScreenStateHook {
                             }
                         });
                         Logger.i("Hooked " + methodName + " on AMS");
+                        hasAmsHook = true;
                         hooked = true;
                         break;
                     } catch (Throwable ignored) {}
@@ -180,29 +184,33 @@ public class ScreenStateHook {
      * 安排批量冻结任务（使用 ScheduledExecutorService 替代裸 Thread）
      */
     private static void scheduleBatchFreeze() {
-        // 先取消之前的待执行任务
-        cancelBatchFreeze();
-
         int delaySec = ConfigManager.getInstance().getScreenOffDelay();
         Logger.i("Screen off, batch freezing in " + delaySec + "s");
 
-        pendingBatchFreeze = scheduler.schedule(() -> {
-            try {
-                batchFreezeAll();
-            } catch (Throwable t) {
-                Logger.e("Batch freeze error", t);
+        synchronized (batchFreezeLock) {
+            // 先取消之前的待执行任务（防竞态）
+            if (pendingBatchFreeze != null) {
+                pendingBatchFreeze.cancel(false);
             }
-        }, delaySec, TimeUnit.SECONDS);
+            pendingBatchFreeze = scheduler.schedule(() -> {
+                try {
+                    batchFreezeAll();
+                } catch (Throwable t) {
+                    Logger.e("Batch freeze error", t);
+                }
+            }, delaySec, TimeUnit.SECONDS);
+        }
     }
 
     /**
      * 取消待执行的批量冻结任务（亮屏时调用）
      */
     private static void cancelBatchFreeze() {
-        ScheduledFuture<?> future = pendingBatchFreeze;
-        if (future != null) {
-            future.cancel(false);
-            pendingBatchFreeze = null;
+        synchronized (batchFreezeLock) {
+            if (pendingBatchFreeze != null) {
+                pendingBatchFreeze.cancel(false);
+                pendingBatchFreeze = null;
+            }
         }
     }
 
@@ -241,6 +249,12 @@ public class ScreenStateHook {
             // 保护性检查：前台服务、ContentProvider、音频播放
             // 尝试获取 ProcessRecord 对象进行检查
             Object processRecord = getProcessRecordByPid(info.pid);
+            // 如果无法获取 ProcessRecord，跳过该进程的冻结（安全优先）
+            if (processRecord == null && hasAmsHook) {
+                Logger.d("Skip freezing " + info.packageName + ": cannot verify foreground status");
+                skipped++;
+                continue;
+            }
             if (processRecord != null) {
                 if (ActivitySwitchHook.hasForegroundService(processRecord)) {
                     Logger.d("Batch freeze: skip (foreground service) " + info.packageName);

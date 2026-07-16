@@ -2,6 +2,7 @@ package com.tombstonex.service;
 
 import android.os.Binder;
 import android.os.Parcel;
+import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 
@@ -29,6 +30,9 @@ import java.util.Set;
 public class TombstoneXService extends Binder {
 
     public static final String SERVICE_NAME = "tombstonex";
+
+    /** Binder 接口描述符，用于 enforceInterface 校验 */
+    private static final String DESCRIPTOR = "com.tombstonex.service.TombstoneXService";
 
     // 事务码
     public static final int TX_GET_CONFIG = 1;
@@ -60,7 +64,15 @@ public class TombstoneXService extends Binder {
 
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
+        // 安全：仅允许 system uid 调用
+        int callingUid = Binder.getCallingUid();
+        if (callingUid != Process.SYSTEM_UID && callingUid != 0) {
+            reply.writeException(new SecurityException("Permission denied"));
+            return true;
+        }
         try {
+            // 验证接口描述符
+            data.enforceInterface(DESCRIPTOR);
             switch (code) {
                 case TX_GET_CONFIG: {
                     JSONObject config = new JSONObject();
@@ -74,13 +86,21 @@ public class TombstoneXService extends Binder {
                     config.put("hookWakeLock", cm.isHookWakeLockEnabled());
                     config.put("hookActivitySwitch", cm.isHookActivitySwitchEnabled());
                     config.put("hookScreenState", cm.isHookScreenStateEnabled());
+                    reply.writeNoException();
                     reply.writeString(config.toString());
                     return true;
                 }
                 case TX_SET_FREEZE_MODE: {
                     int mode = data.readInt();
-                    ConfigManager.getInstance().setFreezeMode(FreezeMode.values()[mode]);
+                    FreezeMode[] modes = FreezeMode.values();
+                    if (mode < 0 || mode >= modes.length) {
+                        reply.writeNoException();
+                        reply.writeBoolean(false);
+                        return true;
+                    }
+                    ConfigManager.getInstance().setFreezeMode(modes[mode]);
                     reply.writeNoException();
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_SET_FREEZE_DELAY: {
@@ -105,8 +125,13 @@ public class TombstoneXService extends Binder {
                         case 2: cm.setHookWakeLockEnabled(enabled); break;
                         case 3: cm.setHookActivitySwitchEnabled(enabled); break;
                         case 4: cm.setHookScreenStateEnabled(enabled); break;
+                        default:
+                            reply.writeNoException();
+                            reply.writeBoolean(false);
+                            return true;
                     }
                     reply.writeNoException();
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_SET_GLOBAL_PAUSED: {
@@ -116,6 +141,7 @@ public class TombstoneXService extends Binder {
                     return true;
                 }
                 case TX_IS_GLOBAL_PAUSED: {
+                    reply.writeNoException();
                     reply.writeBoolean(ConfigManager.getInstance().isGlobalPaused());
                     return true;
                 }
@@ -124,6 +150,7 @@ public class TombstoneXService extends Binder {
                     for (String pkg : WhitelistManager.getInstance().getWhiteApps()) {
                         arr.put(pkg);
                     }
+                    reply.writeNoException();
                     reply.writeString(arr.toString());
                     return true;
                 }
@@ -144,6 +171,7 @@ public class TombstoneXService extends Binder {
                     for (String proc : WhitelistManager.getInstance().getWhiteProcesses()) {
                         arr.put(proc);
                     }
+                    reply.writeNoException();
                     reply.writeString(arr.toString());
                     return true;
                 }
@@ -164,6 +192,7 @@ public class TombstoneXService extends Binder {
                     for (String pkg : WhitelistManager.getInstance().getBlackSystemApps()) {
                         arr.put(pkg);
                     }
+                    reply.writeNoException();
                     reply.writeString(arr.toString());
                     return true;
                 }
@@ -183,6 +212,7 @@ public class TombstoneXService extends Binder {
                     int pid = data.readInt();
                     int uid = data.readInt();
                     boolean result = FreezeManager.getInstance().freezeProcess(pid, uid);
+                    reply.writeNoException();
                     reply.writeBoolean(result);
                     return true;
                 }
@@ -190,6 +220,7 @@ public class TombstoneXService extends Binder {
                     int pid = data.readInt();
                     int uid = data.readInt();
                     boolean result = FreezeManager.getInstance().unfreezeProcess(pid, uid);
+                    reply.writeNoException();
                     reply.writeBoolean(result);
                     return true;
                 }
@@ -209,6 +240,7 @@ public class TombstoneXService extends Binder {
                         obj.put("oomAdj", info.oomAdj);
                         arr.put(obj);
                     }
+                    reply.writeNoException();
                     reply.writeString(arr.toString());
                     return true;
                 }
@@ -217,16 +249,19 @@ public class TombstoneXService extends Binder {
                     for (AppInfo info : ProcessTracker.getInstance().getAllProcesses().values()) {
                         if (info.state == AppState.FROZEN) count++;
                     }
+                    reply.writeNoException();
                     reply.writeInt(count);
                     return true;
                 }
                 case TX_GET_CURRENT_FREEZER_NAME: {
+                    reply.writeNoException();
                     reply.writeString(FreezeManager.getInstance().getCurrentFreezerName());
                     return true;
                 }
                 case TX_READ_LOG: {
                     int maxLines = data.readInt();
                     String log = Logger.readLog(maxLines);
+                    reply.writeNoException();
                     reply.writeString(log != null ? log : "");
                     return true;
                 }

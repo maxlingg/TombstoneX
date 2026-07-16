@@ -8,6 +8,7 @@ import com.tombstonex.model.AppInfo;
 import com.tombstonex.model.AppState;
 import com.tombstonex.util.Logger;
 import com.tombstonex.util.ReflectionUtils;
+import android.os.Build;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedHelpers;
 import java.lang.reflect.Field;
@@ -29,7 +30,10 @@ public class ActivitySwitchHook {
 
     // AOSP 进程状态常量
     private static final int PROCESS_STATE_TOP = 2;
-    private static final int PROCESS_STATE_FOREGROUND_SERVICE = 4;
+    // Android 14+ (SDK 34) PROCESS_STATE_FOREGROUND_SERVICE = 4
+    // Android 12-13 PROCESS_STATE_FOREGROUND_SERVICE = 5
+    private static final int PROCESS_STATE_FOREGROUND_SERVICE =
+        Build.VERSION.SDK_INT >= 34 ? 4 : 5;
     private static final int PROCESS_STATE_TOP_SLEEPING = 12;
 
     // P2: 2 个核心线程
@@ -218,14 +222,15 @@ public class ActivitySwitchHook {
                                     int pid = getIntFieldValue(processRecord, "pid");
                                     if (pid <= 0) return;
 
+                                    int uid = getIntFieldValue(processRecord, "uid");
                                     if (procState <= PROCESS_STATE_TOP) {
-                                        int uid = getIntFieldValue(processRecord, "uid");
                                         cancelPendingFreeze(pid);
                                         FreezeManager.getInstance().unfreezeProcess(pid, uid);
                                         ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
                                     } else if (procState <= PROCESS_STATE_FOREGROUND_SERVICE) {
-                                        // 前台服务不冻结
+                                        // 前台服务不冻结，需解冻已冻结进程
                                         cancelPendingFreeze(pid);
+                                        FreezeManager.getInstance().unfreezeProcess(pid, uid);
                                         ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
                                     }
                                 } catch (Throwable t) {
@@ -327,13 +332,15 @@ public class ActivitySwitchHook {
                             int pid = getIntFieldValue(processRecord, "pid");
                             if (pid <= 0) return;
 
+                            int uid = getIntFieldValue(processRecord, "uid");
                             if (procState <= PROCESS_STATE_TOP) {
-                                int uid = getIntFieldValue(processRecord, "uid");
                                 cancelPendingFreeze(pid);
                                 FreezeManager.getInstance().unfreezeProcess(pid, uid);
                                 ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
                             } else if (procState <= PROCESS_STATE_FOREGROUND_SERVICE) {
+                                // 前台服务不冻结，需解冻已冻结进程
                                 cancelPendingFreeze(pid);
+                                FreezeManager.getInstance().unfreezeProcess(pid, uid);
                                 ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
                             }
                         } catch (Throwable t) {

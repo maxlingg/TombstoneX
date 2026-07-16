@@ -24,7 +24,7 @@ public class ProcessTracker {
         return instance;
     }
 
-    public void registerProcess(String packageName, String processName, int pid, int uid, boolean isSystemApp) {
+    public synchronized void registerProcess(String packageName, String processName, int pid, int uid, boolean isSystemApp) {
         // 先检查 processMap 是否已有该 pid，若有则先清理旧映射
         AppInfo oldInfo = processMap.get(pid);
         if (oldInfo != null) {
