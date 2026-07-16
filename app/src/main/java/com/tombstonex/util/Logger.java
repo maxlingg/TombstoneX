@@ -33,7 +33,9 @@ public class Logger {
             if (logWriter != null) {
                 try {
                     logWriter.close();
-                } catch (IOException ignored) {}
+                } catch (IOException e) {
+                    Log.d(TAG, "Failed to close old log writer: " + e.getMessage());
+                }
                 logWriter = null;
             }
             try {
@@ -101,7 +103,9 @@ public class Logger {
                     if (logFile.exists() && logFile.length() >= MAX_LOG_SIZE) {
                         try {
                             logWriter.close();
-                        } catch (IOException ignored) {}
+                        } catch (IOException e) {
+                            Log.d(TAG, "Failed to close log writer during rotation: " + e.getMessage());
+                        }
                         File oldFile = new File(LOG_DIR, "current.log.old");
                         if (oldFile.exists()) oldFile.delete();
                         logFile.renameTo(oldFile);
@@ -115,7 +119,9 @@ public class Logger {
                         }
                     }
                 }
-            } catch (IOException ignored) {}
+            } catch (IOException e) {
+                Log.e(TAG, "Failed to write log file: " + e.getMessage());
+            }
         }
     }
 
@@ -123,7 +129,9 @@ public class Logger {
         synchronized (writerLock) {
             try {
                 if (logWriter != null) logWriter.close();
-            } catch (IOException ignored) {}
+            } catch (IOException e) {
+                Log.d(TAG, "Failed to close log writer: " + e.getMessage());
+            }
         }
     }
 
@@ -164,7 +172,9 @@ public class Logger {
                 if (logWriter != null) {
                     logWriter.close();
                 }
-            } catch (IOException ignored) {}
+            } catch (IOException e) {
+                Log.d(TAG, "Failed to close log writer during clear: " + e.getMessage());
+            }
             File logFile = new File(LOG_DIR, "current.log");
             File oldFile = new File(LOG_DIR, "current.log.old");
             if (oldFile.exists()) oldFile.delete();
