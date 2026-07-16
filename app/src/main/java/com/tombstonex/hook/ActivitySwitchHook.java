@@ -238,8 +238,8 @@ public class ActivitySwitchHook {
                             }
                         });
                     Logger.i("Hooked setProcessState");
-                } catch (Throwable ignored) {
-                    // 某些版本可能没有此方法
+                } catch (Throwable e) {
+                    Logger.d("setProcessState hook variant failed: " + e.getMessage());
                 }
             } else {
                 // Android 14+：尝试在 ProcessStateRecord 上查找

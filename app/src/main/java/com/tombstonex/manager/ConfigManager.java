@@ -53,7 +53,9 @@ public class ConfigManager {
             if (delayStr != null && !delayStr.isEmpty()) {
                 freezeDelay = Math.max(1, Math.min(10, Integer.parseInt(delayStr.trim())));
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            Logger.d("ConfigManager: failed to parse freezeDelay: " + e.getMessage());
+        }
 
         // Hook 开关
         hookANREnabled = !FileUtils.exists("disable_anr");
@@ -86,7 +88,7 @@ public class ConfigManager {
         File file = new File(dir, filename);
         File tmpFile = new File(dir, filename + ".tmp");
         try {
-            Files.write(tmpFile.toPath(), content.getBytes());
+            Files.write(tmpFile.toPath(), content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             // 原子替换
             Files.move(tmpFile.toPath(), file.toPath(),
                 StandardCopyOption.REPLACE_EXISTING,
@@ -168,7 +170,9 @@ public class ConfigManager {
             if (delayStr != null && !delayStr.isEmpty()) {
                 return Math.max(10, Math.min(300, Integer.parseInt(delayStr.trim())));
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            Logger.d("ConfigManager: failed to parse screenOffDelay: " + e.getMessage());
+        }
         return 60; // 默认 60 秒
     }
 

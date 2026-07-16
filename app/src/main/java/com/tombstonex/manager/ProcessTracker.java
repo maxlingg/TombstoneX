@@ -183,7 +183,7 @@ public class ProcessTracker {
     /**
      * 清空所有进程记录
      */
-    public void clear() {
+    public synchronized void clear() {
         processMap.clear();
         packageToPids.clear();
         uidToPids.clear();

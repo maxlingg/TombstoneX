@@ -48,6 +48,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -247,7 +249,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 },
             )
         },
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
         Box(
             modifier = Modifier
@@ -455,7 +457,7 @@ private fun AppCard(
         ) {
             // 应用图标
             if (icon != null) {
-                androidx.compose.foundation.Image(
+                Image(
                     bitmap = icon!!,
                     contentDescription = item.label,
                     modifier = Modifier.size(40.dp),

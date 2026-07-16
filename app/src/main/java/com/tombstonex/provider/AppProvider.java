@@ -79,7 +79,7 @@ public class AppProvider {
             }
 
             // 按名称排序
-            Collections.sort(result, Comparator.comparing(a -> a.label.toLowerCase()));
+            Collections.sort(result, Comparator.comparing(a -> a.label.toLowerCase(java.util.Locale.ROOT)));
 
             Logger.i("AppProvider: loaded " + result.size() + " apps"
                 + (includeSystem ? " (including system)" : " (user only)"));
