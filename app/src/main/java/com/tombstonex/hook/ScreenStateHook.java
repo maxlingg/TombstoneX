@@ -1,5 +1,6 @@
 package com.tombstonex.hook;
 
+import com.tombstonex.manager.ConfigManager;
 import com.tombstonex.manager.FreezeManager;
 import com.tombstonex.manager.ProcessTracker;
 import com.tombstonex.manager.WhitelistManager;
@@ -7,15 +8,23 @@ import com.tombstonex.model.AppInfo;
 import com.tombstonex.model.AppState;
 import com.tombstonex.util.Logger;
 import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
+import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Hook 锁屏/息屏事件，批量冻结后台应用
  */
 public class ScreenStateHook {
 
-    private static final int SCREEN_OFF_DELAY = 60; // 锁屏后 60 秒批量冻结
+    private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private static volatile ScheduledFuture<?> pendingBatchFreeze;
+    private static volatile Object amsInstance;
 
     public static void init(ClassLoader classLoader) {
         hookScreenOff(classLoader);
@@ -23,73 +32,183 @@ public class ScreenStateHook {
     }
 
     private static void hookScreenOff(ClassLoader classLoader) {
+        boolean hooked = false;
+
+        // 1. 尝试在 AMS 上 hook
         try {
             Class<?> amsClass = XposedHelpers.findClass(
                 "com.android.server.am.ActivityManagerService", classLoader);
 
-            // Hook screenOff 方法
             String[] methodNames = {"screenOff", "goingToSleep"};
             for (String methodName : methodNames) {
-                try {
-                    XposedHelpers.findAndHookMethod(amsClass,
-                        methodName, int.class,
-                        new XC_MethodHook() {
+                // 尝试带 int 参数和无参数两种签名
+                Class<?>[][] paramVariants = {{int.class}, {}};
+                for (Class<?>[] params : paramVariants) {
+                    try {
+                        Method method = XposedHelpers.findMethodExact(amsClass, methodName, params);
+                        if (method == null) continue;
+
+                        XposedBridge.hookMethod(method, new XC_MethodHook() {
                             @Override
                             protected void afterHookedMethod(MethodHookParam param) {
-                                try {
-                                    Logger.i("Screen off, batch freezing in " + SCREEN_OFF_DELAY + "s");
-                                    new Thread(() -> {
-                                        try {
-                                            Thread.sleep(SCREEN_OFF_DELAY * 1000L);
-                                            batchFreezeAll();
-                                        } catch (InterruptedException ignored) {}
-                                    }).start();
-                                } catch (Throwable t) {
-                                    Logger.e("screenOff hook error", t);
-                                }
+                                amsInstance = param.thisObject;
+                                scheduleBatchFreeze();
                             }
                         });
-                    Logger.i("Hooked " + methodName);
-                    break;
-                } catch (Throwable ignored) {}
+                        Logger.i("Hooked " + methodName + " on AMS");
+                        hooked = true;
+                        break;
+                    } catch (Throwable ignored) {}
+                }
+                if (hooked) break;
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook screen off", t);
+            Logger.w("Failed to hook screen off on AMS: " + t.getMessage());
+        }
+
+        // 2. 尝试在 PowerManagerService 上 hook（备选目标）
+        if (!hooked) {
+            try {
+                Class<?> pmsClass = XposedHelpers.findClass(
+                    "com.android.server.power.PowerManagerService", classLoader);
+
+                String[] methodNames = {"goingToSleep", "screenOff"};
+                for (String methodName : methodNames) {
+                    Class<?>[][] paramVariants = {{int.class}, {}};
+                    for (Class<?>[] params : paramVariants) {
+                        try {
+                            Method method = XposedHelpers.findMethodExact(pmsClass, methodName, params);
+                            if (method == null) continue;
+
+                            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                                @Override
+                                protected void afterHookedMethod(MethodHookParam param) {
+                                    scheduleBatchFreeze();
+                                }
+                            });
+                            Logger.i("Hooked " + methodName + " on PMS");
+                            hooked = true;
+                            break;
+                        } catch (Throwable ignored) {}
+                    }
+                    if (hooked) break;
+                }
+            } catch (Throwable t) {
+                Logger.w("Failed to hook screen off on PMS: " + t.getMessage());
+            }
+        }
+
+        if (!hooked) {
+            Logger.w("Failed to hook screen off on any known class");
         }
     }
 
     private static void hookScreenOn(ClassLoader classLoader) {
+        boolean hooked = false;
+
+        // 1. 尝试在 AMS 上 hook
         try {
             Class<?> amsClass = XposedHelpers.findClass(
                 "com.android.server.am.ActivityManagerService", classLoader);
 
             String[] methodNames = {"screenOn", "wakingUp"};
             for (String methodName : methodNames) {
-                try {
-                    XposedHelpers.findAndHookMethod(amsClass,
-                        methodName,
-                        new XC_MethodHook() {
+                Class<?>[][] paramVariants = {{int.class}, {}};
+                for (Class<?>[] params : paramVariants) {
+                    try {
+                        Method method = XposedHelpers.findMethodExact(amsClass, methodName, params);
+                        if (method == null) continue;
+
+                        XposedBridge.hookMethod(method, new XC_MethodHook() {
                             @Override
                             protected void afterHookedMethod(MethodHookParam param) {
-                                try {
-                                    Logger.i("Screen on, keeping frozen apps frozen");
-                                    // 屏幕亮起时不自动解冻，等用户主动打开应用时再解冻
-                                } catch (Throwable t) {
-                                    Logger.e("screenOn hook error", t);
-                                }
+                                amsInstance = param.thisObject;
+                                cancelBatchFreeze();
+                                Logger.i("Screen on, cancelled pending batch freeze");
                             }
                         });
-                    Logger.i("Hooked " + methodName);
-                    break;
-                } catch (Throwable ignored) {}
+                        Logger.i("Hooked " + methodName + " on AMS");
+                        hooked = true;
+                        break;
+                    } catch (Throwable ignored) {}
+                }
+                if (hooked) break;
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook screen on", t);
+            Logger.w("Failed to hook screen on on AMS: " + t.getMessage());
+        }
+
+        // 2. 尝试在 PowerManagerService 上 hook（备选目标）
+        if (!hooked) {
+            try {
+                Class<?> pmsClass = XposedHelpers.findClass(
+                    "com.android.server.power.PowerManagerService", classLoader);
+
+                String[] methodNames = {"wakingUp", "screenOn"};
+                for (String methodName : methodNames) {
+                    Class<?>[][] paramVariants = {{int.class}, {}};
+                    for (Class<?>[] params : paramVariants) {
+                        try {
+                            Method method = XposedHelpers.findMethodExact(pmsClass, methodName, params);
+                            if (method == null) continue;
+
+                            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                                @Override
+                                protected void afterHookedMethod(MethodHookParam param) {
+                                    cancelBatchFreeze();
+                                    Logger.i("Screen on (PMS), cancelled pending batch freeze");
+                                }
+                            });
+                            Logger.i("Hooked " + methodName + " on PMS");
+                            hooked = true;
+                            break;
+                        } catch (Throwable ignored) {}
+                    }
+                    if (hooked) break;
+                }
+            } catch (Throwable t) {
+                Logger.w("Failed to hook screen on on PMS: " + t.getMessage());
+            }
+        }
+
+        if (!hooked) {
+            Logger.w("Failed to hook screen on on any known class");
+        }
+    }
+
+    /**
+     * 安排批量冻结任务（使用 ScheduledExecutorService 替代裸 Thread）
+     */
+    private static void scheduleBatchFreeze() {
+        // 先取消之前的待执行任务
+        cancelBatchFreeze();
+
+        int delaySec = ConfigManager.getInstance().getScreenOffDelay();
+        Logger.i("Screen off, batch freezing in " + delaySec + "s");
+
+        pendingBatchFreeze = scheduler.schedule(() -> {
+            try {
+                batchFreezeAll();
+            } catch (Throwable t) {
+                Logger.e("Batch freeze error", t);
+            }
+        }, delaySec, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 取消待执行的批量冻结任务（亮屏时调用）
+     */
+    private static void cancelBatchFreeze() {
+        ScheduledFuture<?> future = pendingBatchFreeze;
+        if (future != null) {
+            future.cancel(false);
+            pendingBatchFreeze = null;
         }
     }
 
     /**
      * 批量冻结所有后台非白名单应用
+     * 增加保护性检查（前台服务、ContentProvider、音频播放）
      */
     private static void batchFreezeAll() {
         int frozen = 0;
@@ -97,10 +216,18 @@ public class ScreenStateHook {
         for (Map.Entry<Integer, AppInfo> entry :
                 ProcessTracker.getInstance().getAllProcesses().entrySet()) {
             AppInfo info = entry.getValue();
+
+            // 跳过 KILLED 和 FROZEN 状态
+            if (info.state == AppState.KILLED || info.state == AppState.FROZEN) {
+                skipped++;
+                continue;
+            }
+            // 跳过前台进程
             if (info.state == AppState.FOREGROUND) {
                 skipped++;
                 continue;
             }
+            // 跳过白名单
             if (info.isWhiteListed) {
                 skipped++;
                 continue;
@@ -110,9 +237,55 @@ public class ScreenStateHook {
                 skipped++;
                 continue;
             }
+
+            // 保护性检查：前台服务、ContentProvider、音频播放
+            // 尝试获取 ProcessRecord 对象进行检查
+            Object processRecord = getProcessRecordByPid(info.pid);
+            if (processRecord != null) {
+                if (ActivitySwitchHook.hasForegroundService(processRecord)) {
+                    Logger.d("Batch freeze: skip (foreground service) " + info.packageName);
+                    skipped++;
+                    continue;
+                }
+                if (ActivitySwitchHook.hasActiveContentProvider(processRecord)) {
+                    Logger.d("Batch freeze: skip (ContentProvider) " + info.packageName);
+                    skipped++;
+                    continue;
+                }
+            }
+            if (ActivitySwitchHook.isAudioPlaying(info.uid)) {
+                Logger.d("Batch freeze: skip (audio playing) " + info.packageName);
+                skipped++;
+                continue;
+            }
+
             boolean result = FreezeManager.getInstance().freezeProcess(info.pid, info.uid);
             if (result) frozen++;
+            else skipped++;
         }
         Logger.i("Batch freeze complete: frozen=" + frozen + " skipped=" + skipped);
+    }
+
+    /**
+     * 通过 pid 从 AMS 获取 ProcessRecord 对象
+     */
+    private static Object getProcessRecordByPid(int pid) {
+        if (amsInstance == null) return null;
+        try {
+            // 尝试 mPidsSelfLocked.get(pid)
+            Object pidsSelfLocked = XposedHelpers.getObjectField(amsInstance, "mPidsSelfLocked");
+            if (pidsSelfLocked != null) {
+                try {
+                    return XposedHelpers.callMethod(pidsSelfLocked, "get", pid);
+                } catch (Throwable ignored) {}
+            }
+            // 尝试 findProcessLocked(pid)
+            try {
+                return XposedHelpers.callMethod(amsInstance, "findProcessLocked", pid);
+            } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            Logger.d("Failed to get ProcessRecord for pid=" + pid + ": " + t.getMessage());
+        }
+        return null;
     }
 }

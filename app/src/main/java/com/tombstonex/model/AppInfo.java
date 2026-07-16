@@ -5,11 +5,11 @@ public class AppInfo {
     public String processName;
     public int pid;
     public int uid;
-    public AppState state;
+    public volatile AppState state;
     public boolean isWhiteListed;
     public boolean isSystemApp;
-    public int oomAdj;
-    public long freezeTimestamp;
+    public volatile int oomAdj;
+    public volatile long freezeTimestamp;
 
     public AppInfo(String packageName, String processName, int pid, int uid) {
         this.packageName = packageName;

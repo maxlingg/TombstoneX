@@ -8,9 +8,10 @@ import java.util.Set;
 
 public class WhitelistManager {
     private static WhitelistManager instance;
-    private Set<String> whiteApps = new HashSet<>();
-    private Set<String> whiteProcesses = new HashSet<>();
-    private Set<String> blackSystemApps = new HashSet<>();
+    private volatile Set<String> whiteApps = new HashSet<>();
+    private volatile Set<String> whiteProcesses = new HashSet<>();
+    private volatile Set<String> blackSystemApps = new HashSet<>();
+    private final Object lock = new Object();
 
     /**
      * 默认不可冻结的系统应用包名
@@ -58,9 +59,11 @@ public class WhitelistManager {
     }
 
     public void reload() {
-        whiteApps = FileUtils.readLines("whiteApp.conf");
-        whiteProcesses = FileUtils.readLines("whiteProcess.conf");
-        blackSystemApps = FileUtils.readLines("blackSystemApp.conf");
+        synchronized (lock) {
+            whiteApps = FileUtils.readLines("whiteApp.conf");
+            whiteProcesses = FileUtils.readLines("whiteProcess.conf");
+            blackSystemApps = FileUtils.readLines("blackSystemApp.conf");
+        }
         Logger.d("Whitelist reloaded: whiteApps=" + whiteApps.size()
             + " whiteProcesses=" + whiteProcesses.size()
             + " blackSystemApps=" + blackSystemApps.size());
@@ -75,13 +78,13 @@ public class WhitelistManager {
      * @return true 表示应该冻结
      */
     public boolean shouldFreeze(String packageName, String processName, boolean isSystemApp) {
-        // 系统应用：默认不冻结，除非在黑名单中
+        // 系统应用：默认不冻结
         if (isSystemApp) {
+            // 默认白名单的系统应用永不可冻结
             if (DEFAULT_SYSTEM_WHITE.contains(packageName)) {
-                // 默认白名单的系统应用，仅当显式加入黑名单时才冻结
-                return blackSystemApps.contains(packageName);
+                return false;
             }
-            // 非默认白名单的系统应用，也需要在黑名单中才冻结
+            // 非默认白名单的系统应用，需要在黑名单中才冻结
             return blackSystemApps.contains(packageName);
         }
 
@@ -105,49 +108,73 @@ public class WhitelistManager {
 
     // ---- 应用白名单 ----
 
-    public void addWhiteApp(String packageName) {
-        whiteApps.add(packageName);
-        FileUtils.writeLines("whiteApp.conf", whiteApps);
+    public synchronized void addWhiteApp(String packageName) {
+        synchronized (lock) {
+            Set<String> copy = new HashSet<>(whiteApps);
+            copy.add(packageName);
+            FileUtils.writeLines("whiteApp.conf", copy);
+            whiteApps = copy;
+        }
     }
 
-    public void removeWhiteApp(String packageName) {
-        whiteApps.remove(packageName);
-        FileUtils.writeLines("whiteApp.conf", whiteApps);
+    public synchronized void removeWhiteApp(String packageName) {
+        synchronized (lock) {
+            Set<String> copy = new HashSet<>(whiteApps);
+            copy.remove(packageName);
+            FileUtils.writeLines("whiteApp.conf", copy);
+            whiteApps = copy;
+        }
     }
 
     public Set<String> getWhiteApps() {
-        return Collections.unmodifiableSet(whiteApps);
+        return Collections.unmodifiableSet(new HashSet<>(whiteApps));
     }
 
     // ---- 进程白名单 ----
 
-    public void addWhiteProcess(String processName) {
-        whiteProcesses.add(processName);
-        FileUtils.writeLines("whiteProcess.conf", whiteProcesses);
+    public synchronized void addWhiteProcess(String processName) {
+        synchronized (lock) {
+            Set<String> copy = new HashSet<>(whiteProcesses);
+            copy.add(processName);
+            FileUtils.writeLines("whiteProcess.conf", copy);
+            whiteProcesses = copy;
+        }
     }
 
-    public void removeWhiteProcess(String processName) {
-        whiteProcesses.remove(processName);
-        FileUtils.writeLines("whiteProcess.conf", whiteProcesses);
+    public synchronized void removeWhiteProcess(String processName) {
+        synchronized (lock) {
+            Set<String> copy = new HashSet<>(whiteProcesses);
+            copy.remove(processName);
+            FileUtils.writeLines("whiteProcess.conf", copy);
+            whiteProcesses = copy;
+        }
     }
 
     public Set<String> getWhiteProcesses() {
-        return Collections.unmodifiableSet(whiteProcesses);
+        return Collections.unmodifiableSet(new HashSet<>(whiteProcesses));
     }
 
     // ---- 系统应用冻结名单（黑名单）----
 
-    public void addBlackSystemApp(String packageName) {
-        blackSystemApps.add(packageName);
-        FileUtils.writeLines("blackSystemApp.conf", blackSystemApps);
+    public synchronized void addBlackSystemApp(String packageName) {
+        synchronized (lock) {
+            Set<String> copy = new HashSet<>(blackSystemApps);
+            copy.add(packageName);
+            FileUtils.writeLines("blackSystemApp.conf", copy);
+            blackSystemApps = copy;
+        }
     }
 
-    public void removeBlackSystemApp(String packageName) {
-        blackSystemApps.remove(packageName);
-        FileUtils.writeLines("blackSystemApp.conf", blackSystemApps);
+    public synchronized void removeBlackSystemApp(String packageName) {
+        synchronized (lock) {
+            Set<String> copy = new HashSet<>(blackSystemApps);
+            copy.remove(packageName);
+            FileUtils.writeLines("blackSystemApp.conf", copy);
+            blackSystemApps = copy;
+        }
     }
 
     public Set<String> getBlackSystemApps() {
-        return Collections.unmodifiableSet(blackSystemApps);
+        return Collections.unmodifiableSet(new HashSet<>(blackSystemApps));
     }
 }

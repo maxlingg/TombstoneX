@@ -13,8 +13,21 @@ public class FileUtils {
         Set<String> lines = new HashSet<>();
         File file = new File(CONFIG_DIR, filename);
         if (!file.exists()) return lines;
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+        try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
+             BufferedReader reader = new BufferedReader(
+                new InputStreamReader(bis, StandardCharsets.UTF_8))) {
+
+            // BOM 检测：读取前 3 个字节判断是否有 UTF-8 BOM
+            bis.mark(3);
+            byte[] bom = new byte[3];
+            int read = bis.read(bom);
+            if (read >= 3 && (bom[0] & 0xFF) == 0xEF && (bom[1] & 0xFF) == 0xBB && (bom[2] & 0xFF) == 0xBF) {
+                // 检测到 UTF-8 BOM，已跳过，不需要 reset
+            } else {
+                // 没有 BOM，reset 回开头
+                bis.reset();
+            }
+
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
@@ -28,31 +41,65 @@ public class FileUtils {
         return lines;
     }
 
+    /**
+     * 原子写入：先写到临时文件 file.tmp，再 renameTo(file)
+     */
     public static void writeLines(String filename, Set<String> lines) {
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
         File file = new File(dir, filename);
+        File tmpFile = new File(dir, filename + ".tmp");
         try (BufferedWriter writer = new BufferedWriter(
-                new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
+                new OutputStreamWriter(new FileOutputStream(tmpFile), StandardCharsets.UTF_8))) {
             for (String line : lines) {
                 writer.write(line);
                 writer.newLine();
             }
         } catch (IOException e) {
             Logger.e("Failed to write file: " + filename, e);
+            return;
+        }
+        // 原子替换：先删除旧文件再重命名
+        if (file.exists()) file.delete();
+        if (!tmpFile.renameTo(file)) {
+            Logger.e("Failed to rename tmp file to: " + filename, null);
         }
     }
 
+    /**
+     * 原子追加写入：先写到临时文件 file.tmp（含原内容+新行），再 renameTo(file)
+     */
     public static void appendLine(String filename, String line) {
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
         File file = new File(dir, filename);
+        File tmpFile = new File(dir, filename + ".tmp");
+
+        // 先复制已有内容到临时文件
         try (BufferedWriter writer = new BufferedWriter(
-                new OutputStreamWriter(new FileOutputStream(file, true), StandardCharsets.UTF_8))) {
+                new OutputStreamWriter(new FileOutputStream(tmpFile), StandardCharsets.UTF_8))) {
+            // 如果原文件存在，先读取并写入原内容
+            if (file.exists()) {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+                    String existingLine;
+                    while ((existingLine = reader.readLine()) != null) {
+                        writer.write(existingLine);
+                        writer.newLine();
+                    }
+                }
+            }
+            // 写入新行
             writer.write(line);
             writer.newLine();
         } catch (IOException e) {
             Logger.e("Failed to append to file: " + filename, e);
+            return;
+        }
+        // 原子替换
+        if (file.exists()) file.delete();
+        if (!tmpFile.renameTo(file)) {
+            Logger.e("Failed to rename tmp file to: " + filename, null);
         }
     }
 

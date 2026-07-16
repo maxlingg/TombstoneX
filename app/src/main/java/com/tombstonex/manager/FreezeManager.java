@@ -6,11 +6,13 @@ import com.tombstonex.model.AppState;
 import com.tombstonex.model.FreezeMode;
 import com.tombstonex.util.Logger;
 import java.util.List;
+import java.util.ArrayList;
 
 public class FreezeManager {
     private static FreezeManager instance;
-    private IFreezer currentFreezer;
-    private boolean globalPaused = false;
+    private volatile IFreezer currentFreezer;
+    private volatile boolean globalPaused = false;
+    private final Object freezeLock = new Object();
 
     private FreezeManager() {
         selectFreezer();
@@ -40,11 +42,9 @@ public class FreezeManager {
                 currentFreezer = new CgroupFreezerV1();
                 if (currentFreezer.isAvailable()) break;
                 Logger.w("CgroupV1 not available, falling back to Signal");
-            case SIGNAL_20:
-                currentFreezer = new SignalFreezer(true);
-                break;
             case SIGNAL_19:
             default:
+                // SIGSTOP (19) 不可被捕获，作为最终 fallback 更可靠
                 currentFreezer = new SignalFreezer(false);
                 break;
         }
@@ -54,24 +54,36 @@ public class FreezeManager {
 
     public boolean freezeProcess(int pid, int uid) {
         if (pid <= 0) return false;
-        // 通过文件标记检查全局暂停状态（跨进程同步）
-        if (ConfigManager.getInstance().isGlobalPaused()) {
-            globalPaused = true;
-            Logger.d("Global paused, skip freeze: pid=" + pid);
-            return false;
+        synchronized (freezeLock) {
+            // 通过文件标记检查全局暂停状态（跨进程同步）
+            if (ConfigManager.getInstance().isGlobalPaused()) {
+                globalPaused = true;
+                Logger.d("Global paused, skip freeze: pid=" + pid);
+                return false;
+            }
+            globalPaused = false;
+
+            // 白名单检查作为防御层
+            AppInfo info = ProcessTracker.getInstance().getByPid(pid);
+            if (info != null) {
+                if (!WhitelistManager.getInstance().shouldFreeze(
+                        info.packageName, info.processName, info.isSystemApp)) {
+                    Logger.d("App in whitelist, skip freeze (defensive): " + info.packageName);
+                    return false;
+                }
+                // 冻结去重：检查是否已冻结
+                if (info.state == AppState.FROZEN) {
+                    Logger.d("Process already frozen, skip: pid=" + pid);
+                    return true;
+                }
+            }
+
+            boolean result = currentFreezer.freeze(pid, uid);
+            if (result) {
+                ProcessTracker.getInstance().updateState(pid, AppState.FROZEN);
+            }
+            return result;
         }
-        globalPaused = false;
-        // 冻结去重：检查是否已冻结
-        AppInfo info = ProcessTracker.getInstance().getByPid(pid);
-        if (info != null && info.state == AppState.FROZEN) {
-            Logger.d("Process already frozen, skip: pid=" + pid);
-            return true;
-        }
-        boolean result = currentFreezer.freeze(pid, uid);
-        if (result) {
-            ProcessTracker.getInstance().updateState(pid, AppState.FROZEN);
-        }
-        return result;
     }
 
     /**
@@ -90,16 +102,18 @@ public class FreezeManager {
 
     public boolean unfreezeProcess(int pid, int uid) {
         if (pid <= 0) return false;
-        // 检查是否已解冻
-        AppInfo info = ProcessTracker.getInstance().getByPid(pid);
-        if (info != null && info.state != AppState.FROZEN) {
-            return true;
+        synchronized (freezeLock) {
+            // 检查是否已解冻
+            AppInfo info = ProcessTracker.getInstance().getByPid(pid);
+            if (info != null && info.state != AppState.FROZEN) {
+                return true;
+            }
+            boolean result = currentFreezer.unfreeze(pid, uid);
+            if (result) {
+                ProcessTracker.getInstance().updateState(pid, AppState.BACKGROUND);
+            }
+            return result;
         }
-        boolean result = currentFreezer.unfreeze(pid, uid);
-        if (result) {
-            ProcessTracker.getInstance().updateState(pid, AppState.BACKGROUND);
-        }
-        return result;
     }
 
     /**
@@ -144,6 +158,23 @@ public class FreezeManager {
     }
 
     public void reselectFreezer() {
+        // 先解冻所有已冻结的进程，防止切换 freezer 后状态不一致
+        unfreezeAllFrozen();
         selectFreezer();
+    }
+
+    /**
+     * 解冻所有已冻结的进程
+     */
+    private void unfreezeAllFrozen() {
+        List<AppInfo> frozenList = new ArrayList<>(
+            ProcessTracker.getInstance().getFrozenProcesses());
+        for (AppInfo info : frozenList) {
+            if (currentFreezer != null) {
+                currentFreezer.unfreeze(info.pid, info.uid);
+                ProcessTracker.getInstance().updateState(info.pid, AppState.BACKGROUND);
+            }
+        }
+        Logger.i("Unfroze all frozen processes before reselect: " + frozenList.size());
     }
 }

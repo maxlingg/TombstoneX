@@ -3,6 +3,7 @@ package com.tombstonex.ui.screen
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,7 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +36,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,8 +49,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tombstonex.BuildConfig
-import com.tombstonex.manager.FreezeManager
+import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.LocalModuleState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,20 +60,29 @@ fun AboutScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val moduleState = LocalModuleState.current
 
-    val freezerName = runCatching {
-        FreezeManager.getInstance().getCurrentFreezerName()
-    }.getOrDefault("未知")
-    val freezerAvailable = freezerName.isNotBlank() && freezerName != "未知"
+    // 通过 ServiceClient 异步获取冻结器名称
+    var freezerName by remember { mutableStateOf("未知") }
+    LaunchedEffect(Unit) {
+        freezerName = withContext(Dispatchers.IO) {
+            runCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
+        }
+    }
+    val freezerAvailable = freezerName.isNotBlank() &&
+        freezerName != "未知" &&
+        freezerName != "None"
 
-    val androidVersion = Build.VERSION.RELEASE ?: "未知"
+    val androidVersion = Build.VERSION.RELEASE
     val sdkLevel = Build.VERSION.SDK_INT
     val deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}"
 
     fun openUrl(url: String) {
-        runCatching {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
             context.startActivity(intent)
+        } catch (e: Exception) {
+            // 无浏览器可用时用 Toast 提示
+            Toast.makeText(context, "未找到可打开链接的浏览器", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -234,16 +251,16 @@ fun AboutScreen(onBack: () -> Unit) {
                     Column {
                         ListItem(
                             headlineContent = { Text("GitHub 仓库") },
-                            supportingContent = { Text("github.com/TombstoneX/TombstoneX") },
+                            supportingContent = { Text("github.com/maxlingg/TombstoneX") },
                             leadingContent = {
                                 Icon(
-                                    Icons.Filled.ExitToApp,
+                                    Icons.Filled.OpenInNew,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             },
                             modifier = Modifier.clickable {
-                                openUrl("https://github.com/TombstoneX/TombstoneX")
+                                openUrl("https://github.com/maxlingg/TombstoneX")
                             },
                         )
                     }

@@ -31,9 +31,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -43,9 +45,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tombstonex.BuildConfig
-import com.tombstonex.manager.ConfigManager
-import com.tombstonex.manager.FreezeManager
 import com.tombstonex.model.FreezeMode
+import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.LocalModuleState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,90 +61,98 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val moduleState = LocalModuleState.current
 
-    var freezeMode by remember {
-        mutableStateOf(
-            runCatching { ConfigManager.getInstance().getFreezeMode() }
-                .getOrDefault(FreezeMode.SYSTEM_API)
-        )
+    // 首次组合时通过 produceState 异步加载配置
+    val initialConfig by produceState<Pair<ServiceClient.ConfigSnapshot?, String>>(
+        initialValue = null to "未知",
+    ) {
+        val cfg = withContext(Dispatchers.IO) {
+            runCatching { ServiceClient.getConfig() }.getOrNull()
+        }
+        val freezer = withContext(Dispatchers.IO) {
+            runCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
+        }
+        value = cfg to freezer
     }
-    var currentFreezerName by remember {
-        mutableStateOf(
-            runCatching { FreezeManager.getInstance().getCurrentFreezerName() }
-                .getOrDefault("未知")
-        )
-    }
-    var debugEnabled by remember {
-        mutableStateOf(
-            runCatching { ConfigManager.getInstance().isDebugEnabled() }.getOrDefault(false)
-        )
-    }
-    var freezeDelay by remember {
-        mutableFloatStateOf(
-            runCatching { ConfigManager.getInstance().getFreezeDelay() }.getOrDefault(3).toFloat()
-        )
-    }
+
+    // 本地可变状态，初始值由 initialConfig 同步
+    var freezeMode by remember { mutableStateOf(FreezeMode.SYSTEM_API) }
+    var currentFreezerName by remember { mutableStateOf("未知") }
+    var debugEnabled by remember { mutableStateOf(false) }
+    var freezeDelay by remember { mutableFloatStateOf(3f) }
     var showModeDialog by remember { mutableStateOf(false) }
 
-    // 子 Hook 开关 — 通过 ConfigManager 读写
-    var hookAnr by remember {
-        mutableStateOf(runCatching { ConfigManager.getInstance().isHookANREnabled() }.getOrDefault(true))
-    }
-    var hookBroadcast by remember {
-        mutableStateOf(runCatching { ConfigManager.getInstance().isHookBroadcastEnabled() }.getOrDefault(true))
-    }
-    var hookWakeLock by remember {
-        mutableStateOf(runCatching { ConfigManager.getInstance().isHookWakeLockEnabled() }.getOrDefault(true))
-    }
-    var hookActivitySwitch by remember {
-        mutableStateOf(runCatching { ConfigManager.getInstance().isHookActivitySwitchEnabled() }.getOrDefault(true))
-    }
-    var hookScreenState by remember {
-        mutableStateOf(runCatching { ConfigManager.getInstance().isHookScreenStateEnabled() }.getOrDefault(true))
+    // 子 Hook 开关
+    var hookAnr by remember { mutableStateOf(true) }
+    var hookBroadcast by remember { mutableStateOf(true) }
+    var hookWakeLock by remember { mutableStateOf(true) }
+    var hookActivitySwitch by remember { mutableStateOf(true) }
+    var hookScreenState by remember { mutableStateOf(true) }
+
+    // 当配置首次加载完成时同步到本地状态
+    LaunchedEffect(initialConfig) {
+        val (cfg, freezer) = initialConfig
+        if (cfg != null) {
+            freezeMode = FreezeMode.values().getOrElse(cfg.freezeMode) { FreezeMode.SYSTEM_API }
+            debugEnabled = cfg.debugEnabled
+            freezeDelay = cfg.freezeDelay.toFloat()
+            hookAnr = cfg.hookANR
+            hookBroadcast = cfg.hookBroadcast
+            hookWakeLock = cfg.hookWakeLock
+            hookActivitySwitch = cfg.hookActivitySwitch
+            hookScreenState = cfg.hookScreenState
+        }
+        currentFreezerName = freezer
     }
 
     val modeDisplayName = freezeMode.displayLabel()
 
-    val modes = listOf(
-        FreezeMode.SYSTEM_API to "SystemAPI（推荐）" to "Android 12+ 官方 API，兼容性最好",
-        FreezeMode.CGROUP_V2 to "CgroupV2" to "直接写 cgroup.freeze 文件",
-        FreezeMode.CGROUP_V1 to "CgroupV1" to "写 freezer.state 文件",
-        FreezeMode.SIGNAL_19 to "SIGSTOP（Kill -19）" to "发送 SIGSTOP 信号冻结",
-        FreezeMode.SIGNAL_20 to "SIGTSTP（Kill -20）" to "发送 SIGTSTP 信号冻结",
-    )
+    // 冻结方式列表用 remember 缓存，避免每次重组重建
+    val modes = remember {
+        listOf(
+            FreezeMode.SYSTEM_API to "SystemAPI（推荐）" to "Android 12+ 官方 API，兼容性最好",
+            FreezeMode.CGROUP_V2 to "CgroupV2" to "直接写 cgroup.freeze 文件",
+            FreezeMode.CGROUP_V1 to "CgroupV1" to "写 freezer.state 文件",
+            FreezeMode.SIGNAL_19 to "SIGSTOP（Kill -19）" to "发送 SIGSTOP 信号冻结",
+            FreezeMode.SIGNAL_20 to "SIGTSTP（Kill -20）" to "发送 SIGTSTP 信号冻结",
+        )
+    }
 
     fun applyFreezeMode(mode: FreezeMode) {
         freezeMode = mode
         scope.launch {
-            withContext(Dispatchers.IO) {
-                runCatching { ConfigManager.getInstance().setFreezeMode(mode) }
-                runCatching { FreezeManager.getInstance().reselectFreezer() }
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { ServiceClient.setFreezeMode(mode.ordinal) }.getOrDefault(false)
             }
-            currentFreezerName = runCatching {
-                FreezeManager.getInstance().getCurrentFreezerName()
-            }.getOrDefault("未知")
-            showSnackbar("冻结方式已切换为 ${mode.displayLabel()}，当前生效：$currentFreezerName")
+            if (ok) {
+                // 冻结方式切换后重新选择冻结器
+                withContext(Dispatchers.IO) {
+                    runCatching { ServiceClient.reselectFreezer() }
+                }
+                currentFreezerName = withContext(Dispatchers.IO) {
+                    runCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
+                }
+                showSnackbar("冻结方式已切换为 ${mode.displayLabel()}，当前生效：$currentFreezerName")
+            } else {
+                showSnackbar("设置失败（模块未激活或无权限）")
+            }
         }
     }
 
-    fun toggleHook(
-        getter: () -> Boolean,
-        setter: (Boolean) -> Unit,
-        current: Boolean,
-        onUpdate: (Boolean) -> Unit,
-    ) {
+    /**
+     * 切换子 Hook 开关，通过 ServiceClient.setHookEnabled(hookId, enabled) 写入。
+     * hookId: 0=ANR, 1=Broadcast, 2=WakeLock, 3=ActivitySwitch, 4=ScreenState
+     */
+    fun toggleHook(hookId: Int, current: Boolean, onUpdate: (Boolean) -> Unit) {
         val newValue = !current
         onUpdate(newValue)
         scope.launch {
-            withContext(Dispatchers.IO) {
-                runCatching { setter(newValue) }
-                // 回读验证
-                val verified = runCatching { getter() }.getOrDefault(!newValue)
-                if (verified != newValue) {
-                    withContext(Dispatchers.Main) {
-                        onUpdate(verified)
-                        showSnackbar("设置未生效（配置目录可能无写权限）")
-                    }
-                }
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { ServiceClient.setHookEnabled(hookId, newValue) }.getOrDefault(false)
+            }
+            if (!ok) {
+                // 回滚
+                onUpdate(!newValue)
+                showSnackbar("设置未生效（模块未激活或无权限）")
             }
         }
     }
@@ -215,7 +224,7 @@ fun SettingsScreen(
                             val delay = freezeDelay.toInt()
                             scope.launch {
                                 withContext(Dispatchers.IO) {
-                                    runCatching { ConfigManager.getInstance().setFreezeDelay(delay) }
+                                    runCatching { ServiceClient.setFreezeDelay(delay) }
                                 }
                             }
                         },
@@ -243,8 +252,12 @@ fun SettingsScreen(
                             onCheckedChange = {
                                 debugEnabled = it
                                 scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        runCatching { ConfigManager.getInstance().setDebugEnabled(it) }
+                                    val ok = withContext(Dispatchers.IO) {
+                                        runCatching { ServiceClient.setDebugEnabled(it) }.getOrDefault(false)
+                                    }
+                                    if (!ok) {
+                                        debugEnabled = !it
+                                        showSnackbar("设置未生效（模块未激活或无权限）")
                                     }
                                 }
                             },
@@ -261,12 +274,8 @@ fun SettingsScreen(
                     title = "Activity 切换",
                     subtitle = "切换 Activity 时触发冻结（核心功能）",
                     checked = hookActivitySwitch,
-                ) { v ->
-                    toggleHook(
-                        { ConfigManager.getInstance().isHookActivitySwitchEnabled() },
-                        { ConfigManager.getInstance().setHookActivitySwitchEnabled(it) },
-                        hookActivitySwitch,
-                    ) { hookActivitySwitch = it }
+                ) {
+                    toggleHook(3, hookActivitySwitch) { hookActivitySwitch = it }
                 }
             }
             item {
@@ -274,12 +283,8 @@ fun SettingsScreen(
                     title = "锁屏批量冻结",
                     subtitle = "息屏后延迟批量冻结后台应用",
                     checked = hookScreenState,
-                ) { v ->
-                    toggleHook(
-                        { ConfigManager.getInstance().isHookScreenStateEnabled() },
-                        { ConfigManager.getInstance().setHookScreenStateEnabled(it) },
-                        hookScreenState,
-                    ) { hookScreenState = it }
+                ) {
+                    toggleHook(4, hookScreenState) { hookScreenState = it }
                 }
             }
             item {
@@ -287,12 +292,8 @@ fun SettingsScreen(
                     title = "广播拦截",
                     subtitle = "冻结后屏蔽广播投递",
                     checked = hookBroadcast,
-                ) { v ->
-                    toggleHook(
-                        { ConfigManager.getInstance().isHookBroadcastEnabled() },
-                        { ConfigManager.getInstance().setHookBroadcastEnabled(it) },
-                        hookBroadcast,
-                    ) { hookBroadcast = it }
+                ) {
+                    toggleHook(1, hookBroadcast) { hookBroadcast = it }
                 }
             }
             item {
@@ -300,12 +301,8 @@ fun SettingsScreen(
                     title = "WakeLock 拦截",
                     subtitle = "冻结后阻止申请唤醒锁",
                     checked = hookWakeLock,
-                ) { v ->
-                    toggleHook(
-                        { ConfigManager.getInstance().isHookWakeLockEnabled() },
-                        { ConfigManager.getInstance().setHookWakeLockEnabled(it) },
-                        hookWakeLock,
-                    ) { hookWakeLock = it }
+                ) {
+                    toggleHook(2, hookWakeLock) { hookWakeLock = it }
                 }
             }
             item {
@@ -313,12 +310,8 @@ fun SettingsScreen(
                     title = "ANR 拦截",
                     subtitle = "冻结后屏蔽应用无响应弹窗",
                     checked = hookAnr,
-                ) { v ->
-                    toggleHook(
-                        { ConfigManager.getInstance().isHookANREnabled() },
-                        { ConfigManager.getInstance().setHookANREnabled(it) },
-                        hookAnr,
-                    ) { hookAnr = it }
+                ) {
+                    toggleHook(0, hookAnr) { hookAnr = it }
                 }
             }
             item { HorizontalDivider() }

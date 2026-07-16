@@ -44,10 +44,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tombstonex.BuildConfig
+import com.tombstonex.service.ServiceClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,40 +58,39 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
     var lines by remember { mutableStateOf<List<String>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var moduleAvailable by remember { mutableStateOf(true) }
     var showClearDialog by remember { mutableStateOf(false) }
 
     fun loadLogs() {
         scope.launch {
             loading = true
             errorMessage = null
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val file = File(BuildConfig.LOG_PATH)
-                    if (!file.exists()) return@runCatching emptyList<String>()
-                    val all = file.readLines()
-                    // 限制最大行数，避免内存溢出
-                    if (all.size > 5000) all.takeLast(5000) else all
-                }
+            moduleAvailable = withContext(Dispatchers.IO) { ServiceClient.isAvailable }
+            if (!moduleAvailable) {
+                lines = emptyList()
+                errorMessage = "模块未激活，无法读取日志"
+                loading = false
+                return@launch
             }
-            result.fold(
-                onSuccess = {
-                    lines = it
-                    if (it.isEmpty()) errorMessage = "日志文件为空或不存在"
-                },
-                onFailure = { e ->
-                    lines = emptyList()
-                    errorMessage = "无法读取日志文件：${e.message ?: "权限不足"}"
-                },
-            )
+            val result = withContext(Dispatchers.IO) {
+                runCatching { ServiceClient.readLog(5000) }.getOrDefault("")
+            }
+            lines = if (result.isBlank()) emptyList() else result.lines()
+            if (lines.isEmpty()) errorMessage = "日志为空"
             loading = false
         }
     }
 
     LaunchedEffect(Unit) { loadLogs() }
 
-    // 自动滚动到底部
+    // 自动滚动：仅当用户已在底部附近时才滚动到底部
     LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) {
+        if (lines.isEmpty()) return@LaunchedEffect
+        val layoutInfo = listState.layoutInfo
+        val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        val total = layoutInfo.totalItemsCount
+        // 用户位于底部附近（最后 3 项以内）时才自动滚动
+        if (total == 0 || lastVisibleIndex >= total - 3) {
             listState.animateScrollToItem(lines.size - 1)
         }
     }
@@ -99,16 +98,14 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
     fun clearLogs() {
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching {
-                    File(BuildConfig.LOG_PATH).writeText("")
-                    true
-                }.getOrDefault(false)
+                runCatching { ServiceClient.clearLog() }.getOrDefault(false)
             }
             if (ok) {
                 lines = emptyList()
+                errorMessage = "日志为空"
                 showSnackbar("日志已清空")
             } else {
-                showSnackbar("清空失败：权限不足")
+                showSnackbar("清空失败（模块未激活或无权限）")
             }
         }
     }
@@ -179,7 +176,10 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = errorMessage ?: "",
-                                color = MaterialTheme.colorScheme.error,
+                                color = if (!moduleAvailable)
+                                    MaterialTheme.colorScheme.error
+                                else
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             FilledTonalButton(onClick = { loadLogs() }) {
@@ -197,7 +197,7 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        items(lines) { line ->
+                        items(lines, key = { it }) { line ->
                             LogLineView(line)
                         }
                     }

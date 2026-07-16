@@ -1,11 +1,13 @@
 package com.tombstonex.hook;
 
-import com.tombstonex.manager.FreezeManager;
 import com.tombstonex.manager.ProcessTracker;
-import com.tombstonex.model.AppState;
 import com.tombstonex.util.Logger;
+import com.tombstonex.util.ReflectionUtils;
 import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 /**
  * Hook 进程死亡事件，清理 ProcessTracker 中的残留记录
@@ -18,9 +20,10 @@ public class ProcessDeathHook {
     }
 
     /**
-     * Hook ProcessRecord.handleAppDied()
+     * Hook ProcessRecord.onCleanupApplicationRecord / handleAppDied
      */
     private static void hookHandleAppDied(ClassLoader classLoader) {
+        // 尝试 onCleanupApplicationRecord
         try {
             Class<?> processRecordClass = XposedHelpers.findClass(
                 "com.android.server.am.ProcessRecord", classLoader);
@@ -31,16 +34,18 @@ public class ProcessDeathHook {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
                         try {
-                            int pid = XposedHelpers.getIntField(param.thisObject, "pid");
+                            int pid = getPidFromProcessRecord(param.thisObject);
+                            ActivitySwitchHook.cancelPendingFreeze(pid);
                             ProcessTracker.getInstance().removeProcess(pid);
                             Logger.i("Process died, cleaned up: pid=" + pid);
                         } catch (Throwable t) {
-                            Logger.e("onCleanupApplicationRecord hook error", t);
+                            Logger.w("onCleanupApplicationRecord hook error: " + t.getMessage());
                         }
                     }
                 });
             Logger.i("Hooked onCleanupApplicationRecord");
         } catch (Throwable t) {
+            Logger.w("onCleanupApplicationRecord not found, trying handleAppDied: " + t.getMessage());
             // 尝试备用方法名
             try {
                 Class<?> processRecordClass = XposedHelpers.findClass(
@@ -51,45 +56,129 @@ public class ProcessDeathHook {
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
-                                int pid = XposedHelpers.getIntField(param.thisObject, "pid");
+                                int pid = getPidFromProcessRecord(param.thisObject);
+                                ActivitySwitchHook.cancelPendingFreeze(pid);
                                 ProcessTracker.getInstance().removeProcess(pid);
                                 Logger.i("Process died (handleAppDied), cleaned up: pid=" + pid);
-                            } catch (Throwable ignored) {}
+                            } catch (Throwable t2) {
+                                Logger.w("handleAppDied hook error: " + t2.getMessage());
+                            }
                         }
                     });
                 Logger.i("Hooked handleAppDied (fallback)");
             } catch (Throwable t2) {
-                Logger.e("Failed to hook process death", t2);
+                Logger.w("Failed to hook process death: " + t2.getMessage());
             }
         }
     }
 
     /**
-     * Hook AMS.cleanUpApplicationRecord — 进程被系统杀死时也清理
+     * Hook AMS.cleanUpApplicationRecord 和 handleAppCrashLocked
+     * 进程被系统杀死或崩溃时也清理
      */
     private static void hookCleanUpApplicationRecord(ClassLoader classLoader) {
         try {
             Class<?> amsClass = XposedHelpers.findClass(
                 "com.android.server.am.ActivityManagerService", classLoader);
+            Class<?> processRecordClass = XposedHelpers.findClass(
+                "com.android.server.am.ProcessRecord", classLoader);
 
-            XposedHelpers.findAndHookMethod(amsClass,
-                "handleAppCrashLocked",
-                "com.android.server.am.ProcessRecord",
-                new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        try {
-                            Object processRecord = param.args[0];
-                            if (processRecord == null) return;
-                            int pid = XposedHelpers.getIntField(processRecord, "pid");
-                            ProcessTracker.getInstance().removeProcess(pid);
-                            Logger.w("App crashed, cleaned up: pid=" + pid);
-                        } catch (Throwable ignored) {}
-                    }
-                });
-            Logger.i("Hooked handleAppCrashLocked");
+            // Hook cleanUpApplicationRecord（不仅仅是 onCleanupApplicationRecord）
+            try {
+                // 尝试多种签名
+                Class<?>[][] cleanUpVariants = {
+                    {processRecordClass, boolean.class, boolean.class, boolean.class},
+                    {processRecordClass, boolean.class},
+                    {processRecordClass},
+                };
+
+                for (Class<?>[] paramTypes : cleanUpVariants) {
+                    try {
+                        Method method = XposedHelpers.findMethodExact(
+                            amsClass, "cleanUpApplicationRecord", paramTypes);
+                        if (method == null) continue;
+
+                        XposedBridge.hookMethod(method, new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) {
+                                try {
+                                    Object processRecord = param.args[0];
+                                    if (processRecord == null) return;
+                                    int pid = getPidFromProcessRecord(processRecord);
+                                    ActivitySwitchHook.cancelPendingFreeze(pid);
+                                    ProcessTracker.getInstance().removeProcess(pid);
+                                    Logger.i("cleanUpApplicationRecord: cleaned up pid=" + pid);
+                                } catch (Throwable t) {
+                                    Logger.w("cleanUpApplicationRecord hook error: " + t.getMessage());
+                                }
+                            }
+                        });
+                        Logger.i("Hooked cleanUpApplicationRecord");
+                        break;
+                    } catch (Throwable ignored) {}
+                }
+            } catch (Throwable t) {
+                Logger.w("Failed to hook cleanUpApplicationRecord: " + t.getMessage());
+            }
+
+            // Hook handleAppCrashLocked — 支持带 String 参数的签名
+            Class<?>[][] crashVariants = {
+                {processRecordClass, String.class},
+                {processRecordClass},
+            };
+
+            boolean crashHooked = false;
+            for (Class<?>[] paramTypes : crashVariants) {
+                try {
+                    Method method = XposedHelpers.findMethodExact(
+                        amsClass, "handleAppCrashLocked", paramTypes);
+                    if (method == null) continue;
+
+                    XposedBridge.hookMethod(method, new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object processRecord = param.args[0];
+                                if (processRecord == null) return;
+                                int pid = getPidFromProcessRecord(processRecord);
+                                ActivitySwitchHook.cancelPendingFreeze(pid);
+                                ProcessTracker.getInstance().removeProcess(pid);
+                                Logger.w("App crashed, cleaned up: pid=" + pid);
+                            } catch (Throwable t) {
+                                Logger.w("handleAppCrashLocked hook error: " + t.getMessage());
+                            }
+                        }
+                    });
+                    Logger.i("Hooked handleAppCrashLocked (" + paramTypes.length + " params)");
+                    crashHooked = true;
+                    break;
+                } catch (Throwable ignored) {}
+            }
+
+            if (!crashHooked) {
+                Logger.w("Could not find handleAppCrashLocked with known signatures");
+            }
         } catch (Throwable t) {
             Logger.e("Failed to hook crash cleanup", t);
         }
+    }
+
+    /**
+     * 使用 ReflectionUtils 安全获取 ProcessRecord 的 pid
+     */
+    private static int getPidFromProcessRecord(Object processRecord) {
+        try {
+            Field pidField = ReflectionUtils.findFieldRecursive(
+                processRecord.getClass(), "pid");
+            if (pidField != null) {
+                Object val = ReflectionUtils.getFieldValue(processRecord, pidField);
+                if (val instanceof Number) {
+                    return ((Number) val).intValue();
+                }
+            }
+        } catch (Throwable t) {
+            Logger.w("Failed to get pid from ProcessRecord: " + t.getMessage());
+        }
+        return -1;
     }
 }

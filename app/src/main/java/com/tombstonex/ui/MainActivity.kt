@@ -5,18 +5,23 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.lifecycle.lifecycleScope
 import com.tombstonex.BuildConfig
+import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.theme.TombstoneXTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * LSPosed 模块状态信息
  *
  * @param installed 模块入口（xposed_init 资源）是否存在于本 APK
  * @param entryClass Hook 入口类全限定名
- * @param activated 在 LSPosed 管理器中是否已激活（仅作 UI 提示，
- *   由于 Hook 运行在 system_server 进程，UI 进程无法直接感知运行时激活，
- *   这里以「入口类可加载」作为「已配置」的判定依据）
+ * @param activated 模块是否真正激活（通过 ServiceClient 与 system_server 服务通信判定，
+ *   比 Class.forName 更准确——后者只能判断类是否可加载，无法确认 Hook 是否已注入）
  */
 data class ModuleState(
     val installed: Boolean,
@@ -37,11 +42,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val moduleState = detectModuleState()
+        // 初始状态：读取 xposed_init 判断模块入口是否存在
+        val moduleState = mutableStateOf(detectModuleState())
+
+        // 异步通过 ServiceClient.isAvailable 判断模块是否真正激活
+        // （比 Class.forName 更准确，能反映 system_server 中的 Hook 是否已注入）
+        lifecycleScope.launch {
+            val activated = withContext(Dispatchers.IO) {
+                runCatching { ServiceClient.isAvailable }.getOrDefault(false)
+            }
+            moduleState.value = moduleState.value.copy(activated = activated)
+        }
 
         setContent {
             TombstoneXTheme {
-                CompositionLocalProvider(LocalModuleState provides moduleState) {
+                CompositionLocalProvider(LocalModuleState provides moduleState.value) {
                     NavigationHost()
                 }
             }
@@ -49,24 +64,26 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 检测 LSPosed 模块激活状态
+     * 检测 LSPosed 模块安装/配置状态
      *
      * 通过读取 assets/xposed_init 资源获取 Hook 入口类名，
-     * 若入口类可加载则判定为「模块已安装/已配置」。
+     * 判定模块入口是否存在于本 APK。
+     *
+     * 注意：此处仅判断「已安装/已配置」，真正的「已激活」状态
+     * 由 [ServiceClient.isAvailable] 异步检测。
      */
     private fun detectModuleState(): ModuleState {
         return try {
-            val entry = assets.open("xposed_init").bufferedReader().use {
+            val entry = assets.open("xposed_init").bufferedReader(Charsets.UTF_8).use {
                 it.readText().trim()
             }
             if (entry.isEmpty() || entry.startsWith("#")) {
                 return ModuleState(installed = false, entryClass = "", activated = false)
             }
-            val classLoaded = runCatching { Class.forName(entry) }.isSuccess
             ModuleState(
-                installed = classLoaded,
+                installed = true,
                 entryClass = entry,
-                activated = classLoaded,
+                activated = false, // 由 ServiceClient.isAvailable 异步更新
             )
         } catch (e: Exception) {
             ModuleState(installed = false, entryClass = "", activated = false)

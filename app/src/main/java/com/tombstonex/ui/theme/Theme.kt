@@ -268,13 +268,13 @@ val TombstoneXShapes = Shapes(
  * TombstoneX 主题
  *
  * @param darkTheme 是否使用深色模式，默认跟随系统
- * @param dynamicColor 是否启用 Material You 动态取色（Android 12+），默认开启
+ * @param dynamicColor 是否启用 Material You 动态取色（Android 12+），默认关闭以使用品牌冰蓝色主题
  * @param content Compose 内容
  */
 @Composable
 fun TombstoneXTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {

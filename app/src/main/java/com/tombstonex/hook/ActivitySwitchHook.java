@@ -12,6 +12,7 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedHelpers;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -20,13 +21,19 @@ import java.util.concurrent.TimeUnit;
 
 public class ActivitySwitchHook {
 
-    private static final int SCHED_GROUP_TOP = 2; // SCHED_GROUP_TOP
-    private static final int SCHED_GROUP_FOREGROUND = 1;
-    private static final int PROCESS_STATE_TOP = 2;
-    private static final int PROCESS_STATE_FOREGROUND_SERVICE = 3;
-    private static final int PROCESS_STATE_TOP_SLEEPING = 5;
+    // AOSP 实际调度组常量 (ActivityManager.java / ProcessList.java)
+    private static final int SCHED_GROUP_BACKGROUND = 0;
+    private static final int SCHED_GROUP_RESTRICTED = 1;
+    private static final int SCHED_GROUP_DEFAULT = 2;
+    private static final int SCHED_GROUP_TOP_APP = 3;
 
-    private static final ScheduledThreadPoolExecutor freezeExecutor = new ScheduledThreadPoolExecutor(1);
+    // AOSP 进程状态常量
+    private static final int PROCESS_STATE_TOP = 2;
+    private static final int PROCESS_STATE_FOREGROUND_SERVICE = 4;
+    private static final int PROCESS_STATE_TOP_SLEEPING = 12;
+
+    // P2: 2 个核心线程
+    private static final ScheduledThreadPoolExecutor freezeExecutor = new ScheduledThreadPoolExecutor(2);
     private static final Map<Integer, ScheduledFuture<?>> pendingFreezes = new ConcurrentHashMap<>();
 
     public static void init(ClassLoader classLoader) {
@@ -72,8 +79,8 @@ public class ActivitySwitchHook {
             if (processRecord == null) return;
 
             String processName = (String) getFieldValue(processRecord, "processName");
-            int pid = (int) getFieldValue(processRecord, "pid");
-            int uid = (int) getFieldValue(processRecord, "uid");
+            int pid = getIntFieldValue(processRecord, "pid");
+            int uid = getIntFieldValue(processRecord, "uid");
             String packageName = extractPackageName(processName);
 
             if (pid <= 0 || packageName == null) return;
@@ -144,9 +151,9 @@ public class ActivitySwitchHook {
     }
 
     /**
-     * 取消待冻结任务
+     * 取消待冻结任务（public，供 ProcessDeathHook 调用）
      */
-    private static void cancelPendingFreeze(int pid) {
+    public static void cancelPendingFreeze(int pid) {
         ScheduledFuture<?> future = pendingFreezes.remove(pid);
         if (future != null) {
             future.cancel(false);
@@ -163,17 +170,116 @@ public class ActivitySwitchHook {
                 "com.android.server.am.ProcessRecord", classLoader);
 
             // Hook setCurrentSchedulingGroup — 当变为 TOP 时解冻
-            XposedHelpers.findAndHookMethod(processRecordClass,
-                "setCurrentSchedulingGroup", int.class,
+            // Android 14+ 此方法可能在 ProcessStateRecord 上而非 ProcessRecord
+            Method setSchedGroupMethod = ReflectionUtils.findMethodRecursive(
+                processRecordClass, "setCurrentSchedulingGroup", int.class);
+            if (setSchedGroupMethod != null) {
+                XposedHelpers.findAndHookMethod(setSchedGroupMethod,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                int schedulingGroup = (int) param.args[0];
+                                // P0: 解冻条件改为 >= SCHED_GROUP_DEFAULT (即 >=2)
+                                if (schedulingGroup >= SCHED_GROUP_DEFAULT) {
+                                    Object processRecord = param.thisObject;
+                                    int pid = getIntFieldValue(processRecord, "pid");
+                                    int uid = getIntFieldValue(processRecord, "uid");
+                                    if (pid > 0) {
+                                        cancelPendingFreeze(pid);
+                                        FreezeManager.getInstance().unfreezeProcess(pid, uid);
+                                        ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
+                                    }
+                                }
+                            } catch (Throwable t) {
+                                Logger.e("setCurrentSchedulingGroup hook error", t);
+                            }
+                        }
+                    });
+                Logger.i("Hooked setCurrentSchedulingGroup");
+            } else {
+                // Android 14+：尝试在 ProcessStateRecord 上查找
+                hookSetSchedulingGroupOnStateRecord(processRecordClass, classLoader);
+            }
+
+            // Hook setProcessState — 更精确的进程状态追踪
+            // Android 14+ 此方法也可能在 ProcessStateRecord 上
+            Method setProcessStateMethod = ReflectionUtils.findMethodRecursive(
+                processRecordClass, "setProcessState", int.class, int.class, int.class);
+            if (setProcessStateMethod != null) {
+                try {
+                    XposedHelpers.findAndHookMethod(setProcessStateMethod,
+                        new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) {
+                                try {
+                                    int procState = (int) param.args[0];
+                                    Object processRecord = param.thisObject;
+                                    int pid = getIntFieldValue(processRecord, "pid");
+                                    if (pid <= 0) return;
+
+                                    if (procState <= PROCESS_STATE_TOP) {
+                                        int uid = getIntFieldValue(processRecord, "uid");
+                                        cancelPendingFreeze(pid);
+                                        FreezeManager.getInstance().unfreezeProcess(pid, uid);
+                                        ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
+                                    } else if (procState <= PROCESS_STATE_FOREGROUND_SERVICE) {
+                                        // 前台服务不冻结
+                                        cancelPendingFreeze(pid);
+                                        ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
+                                    }
+                                } catch (Throwable t) {
+                                    Logger.e("setProcessState hook error", t);
+                                }
+                            }
+                        });
+                    Logger.i("Hooked setProcessState");
+                } catch (Throwable ignored) {
+                    // 某些版本可能没有此方法
+                }
+            } else {
+                // Android 14+：尝试在 ProcessStateRecord 上查找
+                hookSetProcessStateOnStateRecord(processRecordClass, classLoader);
+            }
+        } catch (Throwable t) {
+            Logger.e("Failed to hook process state", t);
+        }
+    }
+
+    /**
+     * Android 14+：setCurrentSchedulingGroup 可能在 ProcessStateRecord 上
+     */
+    private static void hookSetSchedulingGroupOnStateRecord(
+            Class<?> processRecordClass, ClassLoader classLoader) {
+        try {
+            // 查找 ProcessRecord 上的 processStateRecord / state 字段
+            Object stateRecord = null;
+            Field stateField = ReflectionUtils.findFieldRecursive(processRecordClass, "processStateRecord");
+            if (stateField == null) {
+                stateField = ReflectionUtils.findFieldRecursive(processRecordClass, "mState");
+            }
+            if (stateField == null) return;
+
+            Class<?> stateRecordClass = stateField.getType();
+            Method method = ReflectionUtils.findMethodRecursive(
+                stateRecordClass, "setCurrentSchedulingGroup", int.class);
+            if (method == null) return;
+
+            XposedHelpers.findAndHookMethod(method,
                 new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
                         try {
                             int schedulingGroup = (int) param.args[0];
-                            if (schedulingGroup <= SCHED_GROUP_FOREGROUND) {
-                                Object processRecord = param.thisObject;
-                                int pid = (int) getFieldValue(processRecord, "pid");
-                                int uid = (int) getFieldValue(processRecord, "uid");
+                            if (schedulingGroup >= SCHED_GROUP_DEFAULT) {
+                                // 需要从 ProcessStateRecord 回溯到 ProcessRecord 获取 pid
+                                // ProcessStateRecord 通常持有对 ProcessRecord 的引用
+                                Object stateRec = param.thisObject;
+                                Object processRecord = getFieldValue(stateRec, "mApp");
+                                if (processRecord == null) processRecord = getFieldValue(stateRec, "app");
+                                if (processRecord == null) return;
+                                int pid = getIntFieldValue(processRecord, "pid");
+                                int uid = getIntFieldValue(processRecord, "uid");
                                 if (pid > 0) {
                                     cancelPendingFreeze(pid);
                                     FreezeManager.getInstance().unfreezeProcess(pid, uid);
@@ -181,46 +287,63 @@ public class ActivitySwitchHook {
                                 }
                             }
                         } catch (Throwable t) {
-                            Logger.e("setCurrentSchedulingGroup hook error", t);
+                            Logger.e("setCurrentSchedulingGroup (StateRecord) hook error", t);
                         }
                     }
                 });
-            Logger.i("Hooked setCurrentSchedulingGroup");
-
-            // Hook setProcessState — 更精确的进程状态追踪
-            try {
-                XposedHelpers.findAndHookMethod(processRecordClass,
-                    "setProcessState", int.class, int.class, int.class,
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                int procState = (int) param.args[0];
-                                Object processRecord = param.thisObject;
-                                int pid = (int) getFieldValue(processRecord, "pid");
-                                if (pid <= 0) return;
-
-                                if (procState <= PROCESS_STATE_TOP) {
-                                    int uid = (int) getFieldValue(processRecord, "uid");
-                                    cancelPendingFreeze(pid);
-                                    FreezeManager.getInstance().unfreezeProcess(pid, uid);
-                                    ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
-                                } else if (procState == PROCESS_STATE_FOREGROUND_SERVICE) {
-                                    // 前台服务不冻结
-                                    cancelPendingFreeze(pid);
-                                    ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
-                                }
-                            } catch (Throwable t) {
-                                Logger.e("setProcessState hook error", t);
-                            }
-                        }
-                    });
-                Logger.i("Hooked setProcessState");
-            } catch (Throwable ignored) {
-                // 某些版本可能没有此方法
-            }
+            Logger.i("Hooked setCurrentSchedulingGroup on ProcessStateRecord");
         } catch (Throwable t) {
-            Logger.e("Failed to hook process state", t);
+            Logger.w("Failed to hook setCurrentSchedulingGroup on StateRecord: " + t.getMessage());
+        }
+    }
+
+    /**
+     * Android 14+：setProcessState 可能在 ProcessStateRecord 上
+     */
+    private static void hookSetProcessStateOnStateRecord(
+            Class<?> processRecordClass, ClassLoader classLoader) {
+        try {
+            Field stateField = ReflectionUtils.findFieldRecursive(processRecordClass, "processStateRecord");
+            if (stateField == null) {
+                stateField = ReflectionUtils.findFieldRecursive(processRecordClass, "mState");
+            }
+            if (stateField == null) return;
+
+            Class<?> stateRecordClass = stateField.getType();
+            Method method = ReflectionUtils.findMethodRecursive(
+                stateRecordClass, "setProcessState", int.class, int.class, int.class);
+            if (method == null) return;
+
+            XposedHelpers.findAndHookMethod(method,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        try {
+                            int procState = (int) param.args[0];
+                            Object stateRec = param.thisObject;
+                            Object processRecord = getFieldValue(stateRec, "mApp");
+                            if (processRecord == null) processRecord = getFieldValue(stateRec, "app");
+                            if (processRecord == null) return;
+                            int pid = getIntFieldValue(processRecord, "pid");
+                            if (pid <= 0) return;
+
+                            if (procState <= PROCESS_STATE_TOP) {
+                                int uid = getIntFieldValue(processRecord, "uid");
+                                cancelPendingFreeze(pid);
+                                FreezeManager.getInstance().unfreezeProcess(pid, uid);
+                                ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
+                            } else if (procState <= PROCESS_STATE_FOREGROUND_SERVICE) {
+                                cancelPendingFreeze(pid);
+                                ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
+                            }
+                        } catch (Throwable t) {
+                            Logger.e("setProcessState (StateRecord) hook error", t);
+                        }
+                    }
+                });
+            Logger.i("Hooked setProcessState on ProcessStateRecord");
+        } catch (Throwable t) {
+            Logger.w("Failed to hook setProcessState on StateRecord: " + t.getMessage());
         }
     }
 
@@ -243,7 +366,9 @@ public class ActivitySwitchHook {
                             int oomAdj = (int) param.args[2];
                             // oomAdj >= 900 通常是缓存进程
                             ProcessTracker.getInstance().updateOomAdj(pid, oomAdj);
-                        } catch (Throwable ignored) {}
+                        } catch (Throwable t) {
+                            Logger.w("setOomAdj hook error: " + t.getMessage());
+                        }
                     }
                 });
             Logger.i("Hooked setOomAdj");
@@ -274,11 +399,10 @@ public class ActivitySwitchHook {
                                     int importance = (int) param.args[1];
                                     // IMPORTANCE_FOREGROUND = 100
                                     if (importance <= 125) {
-                                        // UID 回到前台，解冻所有该 UID 的进程
-                                        for (Map.Entry<Integer, AppInfo> entry :
-                                                ProcessTracker.getInstance().getAllProcesses().entrySet()) {
-                                            AppInfo info = entry.getValue();
-                                            if (info.uid == uid && info.state == AppState.FROZEN) {
+                                        // P2: 使用 getByUid 而非遍历全部进程
+                                        List<AppInfo> uidProcesses = ProcessTracker.getInstance().getByUid(uid);
+                                        for (AppInfo info : uidProcesses) {
+                                            if (info.state == AppState.FROZEN) {
                                                 cancelPendingFreeze(info.pid);
                                                 FreezeManager.getInstance().unfreezeProcess(info.pid, info.uid);
                                                 ProcessTracker.getInstance().updateState(info.pid, AppState.FOREGROUND);
@@ -301,47 +425,101 @@ public class ActivitySwitchHook {
 
     // --- 保护性检查 ---
 
-    private static boolean hasForegroundService(Object processRecord) {
+    /**
+     * 检查是否有前台服务
+     * 尝试 hasForeground 和 hasForegroundServices 两种方法名
+     * public 供 ScreenStateHook 复用
+     */
+    public static boolean hasForegroundService(Object processRecord) {
         try {
-            // 检查 mServices 字段中的前台服务
             Field servicesField = ReflectionUtils.findFieldRecursive(
                 processRecord.getClass(), "mServices");
             if (servicesField == null) return false;
             Object services = ReflectionUtils.getFieldValue(processRecord, servicesField);
             if (services == null) return false;
-            // 检查是否有前台服务
-            Method hasForeground = ReflectionUtils.findMethodRecursive(
-                services.getClass(), "hasForeground");
-            if (hasForeground != null) {
-                return (boolean) hasForeground.invoke(services);
+
+            // 尝试 hasForeground 和 hasForegroundServices 两种方法名
+            String[] methodNames = {"hasForeground", "hasForegroundServices"};
+            for (String name : methodNames) {
+                Method hasForeground = ReflectionUtils.findMethodRecursive(
+                    services.getClass(), name);
+                if (hasForeground != null) {
+                    return (boolean) hasForeground.invoke(services);
+                }
             }
         } catch (Throwable ignored) {}
         return false;
     }
 
-    private static boolean hasActiveContentProvider(Object processRecord) {
+    /**
+     * 检查是否有活跃的 ContentProvider
+     * 遍历 pubProviders 检查 size > 0，而非依赖 toString().contains("->")
+     * public 供 ScreenStateHook 复用
+     */
+    public static boolean hasActiveContentProvider(Object processRecord) {
         try {
             Field pubProvidersField = ReflectionUtils.findFieldRecursive(
                 processRecord.getClass(), "pubProviders");
             if (pubProvidersField == null) return false;
             Object pubProviders = ReflectionUtils.getFieldValue(processRecord, pubProvidersField);
             if (pubProviders == null) return false;
-            // 如果有发布的 ContentProvider 且被其他进程引用，不冻结
-            return pubProviders.toString().contains("->");
+
+            // pubProviders 通常是 ArrayMap<String, ContentProviderRecord>
+            // 遍历检查是否有发布的 ContentProvider（size > 0）
+            if (pubProviders instanceof Map) {
+                return !((Map<?, ?>) pubProviders).isEmpty();
+            }
+            // 尝试通过反射获取 size()
+            Method sizeMethod = ReflectionUtils.findMethodRecursive(pubProviders.getClass(), "size");
+            if (sizeMethod != null) {
+                int size = (int) sizeMethod.invoke(pubProviders);
+                return size > 0;
+            }
         } catch (Throwable ignored) {}
         return false;
     }
 
-    private static boolean isAudioPlaying(int uid) {
+    /**
+     * 通过反射调用 AudioManager.isMusicActive() 检查是否有活跃音频播放
+     * public 供 ScreenStateHook 复用
+     */
+    public static boolean isAudioPlaying(int uid) {
         try {
-            // 通过 AudioService 检查是否有活跃的音频播放
-            // 在系统进程中可以获取
-            return false; // 简化实现，后续可扩展
-        } catch (Throwable ignored) {}
+            // 在 system_server 中可以通过 ServiceManager 获取 AudioService
+            Class<?> serviceManagerClass = Class.forName("android.os.ServiceManager");
+            Method getServiceMethod = serviceManagerClass.getMethod("getService", String.class);
+            Object binder = getServiceMethod.invoke(null, "audio");
+            if (binder == null) return false;
+
+            Class<?> stubClass = Class.forName("android.media.IAudioService$Stub");
+            Method asInterfaceMethod = stubClass.getMethod("asInterface", android.os.IBinder.class);
+            Object audioService = asInterfaceMethod.invoke(null, binder);
+            if (audioService == null) return false;
+
+            // 调用 isMusicActive()
+            Method isMusicActiveMethod = ReflectionUtils.findMethodRecursive(
+                audioService.getClass(), "isMusicActive");
+            if (isMusicActiveMethod != null) {
+                return (boolean) isMusicActiveMethod.invoke(audioService);
+            }
+        } catch (Throwable t) {
+            Logger.d("isAudioPlaying check failed: " + t.getMessage());
+        }
         return false;
     }
 
     // --- 辅助方法 ---
+
+    /**
+     * 安全获取 int 类型字段值，先获取 Object 再 null 检查再拆箱
+     */
+    private static int getIntFieldValue(Object obj, String fieldName) {
+        Object val = getFieldValue(obj, fieldName);
+        if (val instanceof Number) {
+            return ((Number) val).intValue();
+        }
+        return -1;
+    }
 
     private static Object getProcessRecordFromActivity(Object ams, Object token) {
         try {

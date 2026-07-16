@@ -26,6 +26,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -49,7 +50,14 @@ android {
 
     lint {
         abortOnError = false
-        checkReleaseBuilds = false
+        checkReleaseBuilds = true
+        // 只 disable 具体的 lint 规则，而非整体关闭检查
+        disable += setOf(
+            "MissingTranslation",
+            "ExtraTranslation",
+            "GoogleAppIndexingWarning",
+            "GradleDependency",
+        )
     }
 }
 
@@ -59,7 +67,11 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
-    implementation(libs.compose.ui.tooling)
+    implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.runtime)
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.core:core-ktx:1.15.0")
+
+    debugImplementation(libs.compose.ui.tooling)
 }

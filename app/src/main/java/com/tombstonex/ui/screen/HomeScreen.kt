@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
@@ -53,11 +54,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tombstonex.manager.FreezeManager
-import com.tombstonex.manager.ProcessTracker
-import com.tombstonex.manager.WhitelistManager
 import com.tombstonex.model.AppState
 import com.tombstonex.provider.AppProvider
+import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.util.toImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -65,18 +64,27 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 主页列表项：合并 [AppProvider.AppData] 与 [com.tombstonex.model.AppInfo] 信息
+ * 主页列表项：合并 [AppProvider.AppData] 与 [ServiceClient.ProcessInfo] 信息。
+ * 图标不再随数据预加载，改由列表项内 [LaunchedEffect] 异步懒加载。
  */
 data class HomeAppItem(
     val label: String,
     val packageName: String,
     val isSystem: Boolean,
-    val icon: ImageBitmap?,
     val pid: Int,
     val uid: Int,
     val state: AppState?,
     val isWhiteListed: Boolean,
 )
+
+/** 将 ServiceClient 返回的 state 整数映射为 AppState */
+private fun Int.toAppState(): AppState? = when (this) {
+    0 -> AppState.FOREGROUND
+    1 -> AppState.BACKGROUND
+    2 -> AppState.FROZEN
+    3 -> AppState.KILLED
+    else -> null
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,6 +98,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     var includeSystem by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
+    var moduleAvailable by remember { mutableStateOf(true) }
 
     // 搜索防抖
     LaunchedEffect(searchQuery) {
@@ -97,26 +106,44 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         debouncedQuery = searchQuery
     }
 
-    // 重新读取 ProcessTracker 中的实时状态，刷新本地列表
+    // 图标懒加载器：按包名从 PackageManager 异步获取图标
+    val pm = context.packageManager
+    val loadIcon: suspend (String) -> ImageBitmap? = remember(pm) {
+        { pkg ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    pm.getApplicationIcon(pkg).toImageBitmap(96)
+                }.getOrNull()
+            }
+        }
+    }
+
+    // 异步刷新进程状态（从 ServiceClient 获取）
     fun refreshStates() {
-        val procMap = runCatching {
-            ProcessTracker.getInstance().getAllProcesses()
-        }.getOrDefault(emptyMap())
-        val procByPkg = procMap.values.associateBy { it.packageName }
-        items = items.map { it.copy(state = procByPkg[it.packageName]?.state) }
+        scope.launch {
+            val procList = withContext(Dispatchers.IO) {
+                runCatching { ServiceClient.getAllProcesses() }.getOrDefault(emptyList())
+            }
+            val procByPkg = procList.associateBy { it.packageName }
+            items = items.map { item ->
+                val info = procByPkg[item.packageName]
+                item.copy(state = info?.state?.toAppState())
+            }
+        }
     }
 
     fun loadApps() {
         scope.launch {
             try {
+                moduleAvailable = withContext(Dispatchers.IO) { ServiceClient.isAvailable }
                 val appProvider = AppProvider.getInstance(context)
-                val whiteApps = runCatching {
-                    WhitelistManager.getInstance().getWhiteApps()
-                }.getOrDefault(emptySet())
-                val procMap = runCatching {
-                    ProcessTracker.getInstance().getAllProcesses()
-                }.getOrDefault(emptyMap())
-                val procByPkg = procMap.values.associateBy { it.packageName }
+                val whiteApps = withContext(Dispatchers.IO) {
+                    runCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
+                }
+                val procList = withContext(Dispatchers.IO) {
+                    runCatching { ServiceClient.getAllProcesses() }.getOrDefault(emptyList())
+                }
+                val procByPkg = procList.associateBy { it.packageName }
 
                 val loaded = withContext(Dispatchers.IO) {
                     appProvider.getAllApps(includeSystem).map { app ->
@@ -125,10 +152,9 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                             label = app.label,
                             packageName = app.packageName,
                             isSystem = app.isSystem,
-                            icon = runCatching { app.icon.toImageBitmap(96) }.getOrNull(),
                             pid = info?.pid ?: -1,
                             uid = info?.uid ?: -1,
-                            state = info?.state,
+                            state = info?.state?.toAppState(),
                             isWhiteListed = whiteApps.contains(app.packageName),
                         )
                     }
@@ -158,9 +184,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
-                    val mgr = FreezeManager.getInstance()
-                    if (willFreeze) mgr.freezeProcess(item.pid, item.uid)
-                    else mgr.unfreezeProcess(item.pid, item.uid)
+                    if (willFreeze) ServiceClient.freezeProcess(item.pid, item.uid)
+                    else ServiceClient.unfreezeProcess(item.pid, item.uid)
                 }.getOrDefault(false)
             }
             if (ok) {
@@ -234,65 +259,53 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item { StatsCard(runningCount, frozenCount, whiteCount) }
-
-                item {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("搜索应用名称或包名") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Filled.Close, contentDescription = "清除")
-                                }
-                            }
-                        },
-                        singleLine = true,
-                    )
+                // 模块未激活提示
+                if (!moduleAvailable) {
+                    item { ModuleNotActiveCard() }
                 }
 
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "显示系统应用",
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Switch(
-                            checked = includeSystem,
-                            onCheckedChange = { includeSystem = it },
+                if (!loading) {
+                    item { StatsCard(runningCount, frozenCount, whiteCount) }
+
+                    item {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("搜索应用名称或包名") },
+                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(Icons.Filled.Close, contentDescription = "清除")
+                                    }
+                                }
+                            },
+                            singleLine = true,
                         )
                     }
-                }
 
-                when {
-                    loading -> {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    CircularProgressIndicator()
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text(
-                                        text = "正在加载应用列表...",
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                    )
-                                }
-                            }
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "显示系统应用",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Switch(
+                                checked = includeSystem,
+                                onCheckedChange = { includeSystem = it },
+                            )
                         }
                     }
-                    filtered.isEmpty() -> {
+
+                    if (filtered.isEmpty()) {
                         item {
                             Box(
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.fillParentMaxSize(),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
@@ -301,13 +314,65 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                                 )
                             }
                         }
-                    }
-                    else -> {
+                    } else {
                         items(filtered, key = { it.packageName }) { app ->
-                            AppCard(app) { onFreezeClick(it) }
+                            AppCard(app, loadIcon) { onFreezeClick(it) }
                         }
                     }
                 }
+            }
+
+            // loading 状态作为 Box 同级覆盖层（避免在 LazyColumn item 内使用 fillMaxSize）
+            if (loading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "正在加载应用列表...",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModuleNotActiveCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = "模块未激活",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Text(
+                    text = "请在 LSPosed 中启用 TombstoneX 模块并重启系统",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                )
             }
         }
     }
@@ -327,7 +392,7 @@ private fun StatsCard(running: Int, frozen: Int, white: Int) {
                 .padding(18.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            StatItem("总进程", running.toString())
+            StatItem("运行中", running.toString())
             VerticalDivider()
             StatItem("已冻结", frozen.toString())
             VerticalDivider()
@@ -365,7 +430,17 @@ private fun VerticalDivider() {
 }
 
 @Composable
-private fun AppCard(item: HomeAppItem, onFreezeClick: (HomeAppItem) -> Unit) {
+private fun AppCard(
+    item: HomeAppItem,
+    loadIcon: suspend (String) -> ImageBitmap?,
+    onFreezeClick: (HomeAppItem) -> Unit,
+) {
+    // 图标在列表项内异步懒加载
+    var icon by remember(item.packageName) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(item.packageName) {
+        icon = loadIcon(item.packageName)
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -379,9 +454,9 @@ private fun AppCard(item: HomeAppItem, onFreezeClick: (HomeAppItem) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 应用图标
-            if (item.icon != null) {
+            if (icon != null) {
                 androidx.compose.foundation.Image(
-                    bitmap = item.icon,
+                    bitmap = icon!!,
                     contentDescription = item.label,
                     modifier = Modifier.size(40.dp),
                 )

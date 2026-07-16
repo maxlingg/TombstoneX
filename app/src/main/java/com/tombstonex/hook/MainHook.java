@@ -2,6 +2,7 @@ package com.tombstonex.hook;
 
 import android.os.Build;
 import com.tombstonex.manager.ConfigManager;
+import com.tombstonex.service.TombstoneXService;
 import com.tombstonex.util.Logger;
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.IXposedHookZygoteInit;
@@ -10,7 +11,6 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
 
     private static final String PACKAGE_ANDROID = "android";
-    private static final String PACKAGE_SYSTEMUI = "com.android.systemui";
 
     @Override
     public void initZygote(StartupParam startupParam) {
@@ -32,8 +32,6 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (PACKAGE_ANDROID.equals(pkg)) {
             Logger.i("Hooking System Framework (android)");
             hookSystemFramework(lpparam);
-        } else if (PACKAGE_SYSTEMUI.equals(pkg)) {
-            Logger.i("Hooking SystemUI");
         }
     }
 
@@ -42,43 +40,70 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
         ConfigManager config = ConfigManager.getInstance();
 
         // 进程死亡清理 — 始终启用，防止内存泄漏和 PID 复用问题
-        ProcessDeathHook.init(classLoader);
+        try {
+            ProcessDeathHook.init(classLoader);
+        } catch (Throwable t) {
+            Logger.e("Failed to init ProcessDeathHook", t);
+        }
 
         // Activity 切换冻结 — 核心功能
         if (config.isHookActivitySwitchEnabled()) {
-            ActivitySwitchHook.init(classLoader);
+            try {
+                ActivitySwitchHook.init(classLoader);
+            } catch (Throwable t) {
+                Logger.e("Failed to init ActivitySwitchHook", t);
+            }
         } else {
             Logger.i("ActivitySwitchHook disabled by config");
         }
 
         // 广播拦截
         if (config.isHookBroadcastEnabled()) {
-            BroadcastHook.init(classLoader);
+            try {
+                BroadcastHook.init(classLoader);
+            } catch (Throwable t) {
+                Logger.e("Failed to init BroadcastHook", t);
+            }
         } else {
             Logger.i("BroadcastHook disabled by config");
         }
 
         // ANR 拦截
         if (config.isHookANREnabled()) {
-            ANRHook.init(classLoader);
+            try {
+                ANRHook.init(classLoader);
+            } catch (Throwable t) {
+                Logger.e("Failed to init ANRHook", t);
+            }
         } else {
             Logger.i("ANRHook disabled by config");
         }
 
         // WakeLock 拦截
         if (config.isHookWakeLockEnabled()) {
-            WakeLockHook.init(classLoader);
+            try {
+                WakeLockHook.init(classLoader);
+            } catch (Throwable t) {
+                Logger.e("Failed to init WakeLockHook", t);
+            }
         } else {
             Logger.i("WakeLockHook disabled by config");
         }
 
         // 锁屏批量冻结
         if (config.isHookScreenStateEnabled()) {
-            ScreenStateHook.init(classLoader);
+            try {
+                ScreenStateHook.init(classLoader);
+            } catch (Throwable t) {
+                Logger.e("Failed to init ScreenStateHook", t);
+            }
         } else {
             Logger.i("ScreenStateHook disabled by config");
         }
 
         Logger.i("All system framework hooks initialized");
+
+        // 注册 IPC 服务到 ServiceManager，供 UI 进程调用
+        TombstoneXService.register();
     }
 }

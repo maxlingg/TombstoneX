@@ -17,16 +17,24 @@ import java.util.List;
  */
 public class AppProvider {
 
-    private static AppProvider instance;
+    private static volatile AppProvider instance;
+    private static final Object lock = new Object();
     private final PackageManager pm;
+
+    /** 模块自身包名，需从列表中过滤 */
+    private static final String SELF_PACKAGE = "com.tombstonex";
 
     private AppProvider(Context context) {
         this.pm = context.getApplicationContext().getPackageManager();
     }
 
-    public static synchronized AppProvider getInstance(Context context) {
+    public static AppProvider getInstance(Context context) {
         if (instance == null) {
-            instance = new AppProvider(context.getApplicationContext());
+            synchronized (lock) {
+                if (instance == null) {
+                    instance = new AppProvider(context.getApplicationContext());
+                }
+            }
         }
         return instance;
     }
@@ -38,26 +46,36 @@ public class AppProvider {
     public List<AppData> getAllApps(boolean includeSystem) {
         List<AppData> result = new ArrayList<>();
         try {
-            List<PackageInfo> packages = pm.getInstalledPackages(
-                PackageManager.GET_META_DATA);
+            // 不使用 GET_META_DATA 标志，减少不必要的开销
+            List<PackageInfo> packages = pm.getInstalledPackages(0);
 
             for (PackageInfo pkg : packages) {
-                ApplicationInfo appInfo = pkg.applicationInfo;
-                boolean isSystem = (appInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+                try {
+                    // 过滤模块自身包名
+                    if (SELF_PACKAGE.equals(pkg.packageName)) continue;
 
-                if (!includeSystem && isSystem) continue;
+                    ApplicationInfo appInfo = pkg.applicationInfo;
+                    if (appInfo == null) continue;
 
-                String label = pm.getApplicationLabel(appInfo).toString();
-                Drawable icon = pm.getApplicationIcon(appInfo);
-                String packageName = pkg.packageName;
+                    boolean isSystem = (appInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
 
-                result.add(new AppData(
-                    label,
-                    packageName,
-                    isSystem,
-                    (appInfo.flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0,
-                    icon
-                ));
+                    if (!includeSystem && isSystem) continue;
+
+                    String label = pm.getApplicationLabel(appInfo).toString();
+                    Drawable icon = pm.getApplicationIcon(appInfo);
+                    String packageName = pkg.packageName;
+
+                    result.add(new AppData(
+                        label,
+                        packageName,
+                        isSystem,
+                        (appInfo.flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0,
+                        icon
+                    ));
+                } catch (Exception e) {
+                    // 逐应用捕获异常，不影响其他应用的加载
+                    Logger.w("Failed to load app info: " + pkg.packageName + " - " + e.getMessage());
+                }
             }
 
             // 按名称排序

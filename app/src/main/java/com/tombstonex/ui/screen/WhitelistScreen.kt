@@ -40,16 +40,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tombstonex.manager.WhitelistManager
 import com.tombstonex.provider.AppProvider
-import com.tombstonex.ui.util.toImageBitmap
-import com.tombstonex.util.FileUtils
+import com.tombstonex.service.ServiceClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,15 +56,14 @@ private data class WhitelistAppItem(
     val label: String,
     val packageName: String,
     val isSystem: Boolean,
-    val icon: ImageBitmap?,
 )
 
-/** 三个白名单配置文件 */
-private object WhitelistFiles {
-    const val APPS = "whiteApp.conf"
-    const val PROCESSES = "whiteProcess.conf"
-    const val SYSTEM_BLACK = "blackSystemApp.conf"
-}
+/** 进程白名单 Tab 展示的运行进程条目 */
+private data class ProcessDisplayItem(
+    val processName: String,
+    val packageName: String,
+    val pid: Int,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +72,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
     val scope = rememberCoroutineScope()
 
     var apps by remember { mutableStateOf<List<WhitelistAppItem>>(emptyList()) }
+    var processes by remember { mutableStateOf<List<ProcessDisplayItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(0) }
@@ -85,59 +82,97 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
     var whiteProcesses by remember { mutableStateOf<Set<String>>(emptySet()) }
     var blackSystem by remember { mutableStateOf<Set<String>>(emptySet()) }
 
+    // 异步从 ServiceClient 重新读取三类名单
     fun reloadSets() {
-        whiteApps = runCatching { WhitelistManager.getInstance().getWhiteApps() }.getOrDefault(emptySet())
-        whiteProcesses = runCatching { FileUtils.readLines(WhitelistFiles.PROCESSES) }.getOrDefault(emptySet())
-        blackSystem = runCatching { WhitelistManager.getInstance().getBlackSystemApps() }.getOrDefault(emptySet())
+        scope.launch {
+            val (wa, wp, bs) = withContext(Dispatchers.IO) {
+                Triple(
+                    runCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet()),
+                    runCatching { ServiceClient.getWhiteProcesses() }.getOrDefault(emptySet()),
+                    runCatching { ServiceClient.getBlackSystemApps() }.getOrDefault(emptySet()),
+                )
+            }
+            whiteApps = wa
+            whiteProcesses = wp
+            blackSystem = bs
+        }
     }
 
     LaunchedEffect(Unit) {
         try {
             val provider = AppProvider.getInstance(context)
-            val loaded = withContext(Dispatchers.IO) {
-                provider.getAllApps(true).map { app ->
+            val (loadedApps, loadedProcs) = withContext(Dispatchers.IO) {
+                val a = provider.getAllApps(true).map { app ->
                     WhitelistAppItem(
                         label = app.label,
                         packageName = app.packageName,
                         isSystem = app.isSystem,
-                        icon = runCatching { app.icon.toImageBitmap(96) }.getOrNull(),
                     )
                 }
+                // 进程白名单 Tab 展示运行中的进程名（如 com.foo:pushservice）
+                val p = runCatching { ServiceClient.getAllProcesses() }
+                    .getOrDefault(emptyList())
+                    .filter { it.processName.isNotBlank() }
+                    .map { proc ->
+                        ProcessDisplayItem(
+                            processName = proc.processName,
+                            packageName = proc.packageName,
+                            pid = proc.pid,
+                        )
+                    }
+                    .distinctBy { it.processName }
+                Pair(a, p)
             }
-            apps = loaded
+            apps = loadedApps
+            processes = loadedProcs
             reloadSets()
         } catch (e: Exception) {
-            showSnackbar("加载应用列表失败：${e.message ?: "未知错误"}")
+            showSnackbar("加载列表失败：${e.message ?: "未知错误"}")
         } finally {
             loading = false
         }
     }
 
     /**
-     * 切换某条目在指定配置文件中的状态，写后回读校验是否真正生效。
-     * 失败（例如配置目录无写权限）时通过 Snackbar 提示。
+     * 切换某条目在指定名单中的状态，通过 ServiceClient 写入。
+     * 失败（模块未激活或无权限）时通过 Snackbar 提示。
      */
-    fun toggleEntry(file: String, key: String, currentlyOn: Boolean, onDone: (Boolean) -> Unit) {
+    fun toggleWhiteApp(pkg: String, currentlyOn: Boolean) {
         scope.launch {
-            val changed = withContext(Dispatchers.IO) {
+            val ok = withContext(Dispatchers.IO) {
                 runCatching {
-                    val current = FileUtils.readLines(file)
-                    val updated = if (currentlyOn) current - key else current + key
-                    FileUtils.writeLines(file, updated)
-                    // 同步 WhitelistManager 内存缓存
-                    runCatching { WhitelistManager.getInstance().reload() }
-                    // 回读校验
-                    val verify = FileUtils.readLines(file)
-                    verify.contains(key) != currentlyOn
+                    if (currentlyOn) ServiceClient.removeWhiteApp(pkg)
+                    else ServiceClient.addWhiteApp(pkg)
                 }.getOrDefault(false)
             }
-            if (changed) {
-                reloadSets()
-                onDone(true)
-            } else {
-                showSnackbar("操作失败：无法写入配置（目录可能无写权限）")
-                onDone(false)
+            if (ok) reloadSets()
+            else showSnackbar("操作失败（模块未激活或无权限）")
+        }
+    }
+
+    fun toggleWhiteProcess(proc: String, currentlyOn: Boolean) {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (currentlyOn) ServiceClient.removeWhiteProcess(proc)
+                    else ServiceClient.addWhiteProcess(proc)
+                }.getOrDefault(false)
             }
+            if (ok) reloadSets()
+            else showSnackbar("操作失败（模块未激活或无权限）")
+        }
+    }
+
+    fun toggleBlackSystem(pkg: String, currentlyOn: Boolean) {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (currentlyOn) ServiceClient.removeBlackSystemApp(pkg)
+                    else ServiceClient.addBlackSystemApp(pkg)
+                }.getOrDefault(false)
+            }
+            if (ok) reloadSets()
+            else showSnackbar("操作失败（模块未激活或无权限）")
         }
     }
 
@@ -180,39 +215,6 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                 singleLine = true,
             )
 
-            // 各 Tab 对应的数据
-            val (visibleApps, onSet, countLabel) = when (selectedTab) {
-                0 -> Triple(
-                    apps.filter { !it.isSystem || it.packageName in whiteApps },
-                    whiteApps,
-                    "已加入应用白名单：${whiteApps.size} 个",
-                )
-                1 -> Triple(
-                    apps,
-                    whiteProcesses,
-                    "已加入进程白名单：${whiteProcesses.size} 个",
-                )
-                else -> Triple(
-                    apps.filter { it.isSystem },
-                    blackSystem,
-                    "系统应用冻结名单：${blackSystem.size} 个",
-                )
-            }
-
-            val filtered = if (searchQuery.isBlank()) visibleApps else {
-                visibleApps.filter {
-                    it.label.contains(searchQuery, ignoreCase = true) ||
-                        it.packageName.contains(searchQuery, ignoreCase = true)
-                }
-            }
-
-            Text(
-                text = countLabel,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-
             if (loading) {
                 Box(
                     modifier = Modifier
@@ -224,31 +226,110 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("正在加载应用列表...")
+                        Text("正在加载列表...")
                     }
                 }
             } else {
-                val file = when (selectedTab) {
-                    0 -> WhitelistFiles.APPS
-                    1 -> WhitelistFiles.PROCESSES
-                    else -> WhitelistFiles.SYSTEM_BLACK
-                }
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(filtered, key = { it.packageName }) { app ->
-                        val isOn = onSet.contains(app.packageName)
-                        WhitelistAppCard(
-                            app = app,
-                            isOn = isOn,
-                            onToggle = {
-                                toggleEntry(file, app.packageName, isOn) {}
-                            },
+                // 各 Tab 对应的数据与名单集合
+                // Tab 0：仅非系统应用（系统应用在 Tab 2 管理）
+                // Tab 1：运行进程名（来自 ServiceClient.getAllProcesses()）
+                // Tab 2：系统应用
+                when (selectedTab) {
+                    0 -> {
+                        val visibleApps = apps.filter { !it.isSystem }
+                        val filtered = if (searchQuery.isBlank()) visibleApps else {
+                            visibleApps.filter {
+                                it.label.contains(searchQuery, ignoreCase = true) ||
+                                    it.packageName.contains(searchQuery, ignoreCase = true)
+                            }
+                        }
+                        Text(
+                            text = "已加入应用白名单：${whiteApps.size} 个",
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(filtered, key = { it.packageName }) { app ->
+                                val isOn = whiteApps.contains(app.packageName)
+                                WhitelistAppCard(
+                                    label = app.label,
+                                    subtitle = app.packageName,
+                                    isOn = isOn,
+                                    onToggle = { toggleWhiteApp(app.packageName, isOn) },
+                                )
+                            }
+                        }
+                    }
+                    1 -> {
+                        val filtered = if (searchQuery.isBlank()) processes else {
+                            processes.filter {
+                                it.processName.contains(searchQuery, ignoreCase = true) ||
+                                    it.packageName.contains(searchQuery, ignoreCase = true)
+                            }
+                        }
+                        Text(
+                            text = "已加入进程白名单：${whiteProcesses.size} 个",
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(filtered, key = { it.processName }) { proc ->
+                                val isOn = whiteProcesses.contains(proc.processName)
+                                WhitelistProcessCard(
+                                    processName = proc.processName,
+                                    packageName = proc.packageName,
+                                    pid = proc.pid,
+                                    isOn = isOn,
+                                    onToggle = { toggleWhiteProcess(proc.processName, isOn) },
+                                )
+                            }
+                        }
+                    }
+                    else -> {
+                        val visibleApps = apps.filter { it.isSystem }
+                        val filtered = if (searchQuery.isBlank()) visibleApps else {
+                            visibleApps.filter {
+                                it.label.contains(searchQuery, ignoreCase = true) ||
+                                    it.packageName.contains(searchQuery, ignoreCase = true)
+                            }
+                        }
+                        Text(
+                            text = "系统应用冻结名单：${blackSystem.size} 个",
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(filtered, key = { it.packageName }) { app ->
+                                val isOn = blackSystem.contains(app.packageName)
+                                WhitelistAppCard(
+                                    label = app.label,
+                                    subtitle = app.packageName,
+                                    isOn = isOn,
+                                    onToggle = { toggleBlackSystem(app.packageName, isOn) },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -258,7 +339,8 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
 
 @Composable
 private fun WhitelistAppCard(
-    app: WhitelistAppItem,
+    label: String,
+    subtitle: String,
     isOn: Boolean,
     onToggle: () -> Unit,
 ) {
@@ -277,43 +359,35 @@ private fun WhitelistAppCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (app.icon != null) {
-                androidx.compose.foundation.Image(
-                    bitmap = app.icon,
-                    contentDescription = app.label,
-                    modifier = Modifier.size(36.dp),
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label.firstOrNull()?.toString() ?: "?",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
                 )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = app.label.firstOrNull()?.toString() ?: "?",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                    )
-                }
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = app.label,
+                    text = label,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
-                    text = app.packageName,
+                    text = subtitle,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     maxLines = 1,
@@ -321,12 +395,67 @@ private fun WhitelistAppCard(
                 )
             }
 
-            if (app.isSystem) {
+            Switch(checked = isOn, onCheckedChange = { onToggle() })
+        }
+    }
+}
+
+@Composable
+private fun WhitelistProcessCard(
+    processName: String,
+    packageName: String,
+    pid: Int,
+    isOn: Boolean,
+    onToggle: () -> Unit,
+) {
+    androidx.compose.material3.Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = if (isOn)
+                MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
+            else
+                MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f),
+                        CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
-                    text = "系统",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                    modifier = Modifier.padding(end = 8.dp),
+                    text = ":",
+                    color = MaterialTheme.colorScheme.tertiary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = processName,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = "$packageName (pid=$pid)",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
