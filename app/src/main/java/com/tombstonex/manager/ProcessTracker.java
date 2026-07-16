@@ -82,7 +82,7 @@ public class ProcessTracker {
         }
     }
 
-    public void removeProcess(int pid) {
+    public synchronized void removeProcess(int pid) {
         AppInfo info = processMap.remove(pid);
         if (info != null) {
             removeProcessFromMaps(pid, info);

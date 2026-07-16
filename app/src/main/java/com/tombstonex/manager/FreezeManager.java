@@ -86,6 +86,10 @@ public class FreezeManager {
                 }
             }
 
+            if (currentFreezer == null) {
+                Logger.w("No freezer available, cannot freeze: pid=" + pid);
+                return false;
+            }
             boolean result = currentFreezer.freeze(pid, uid);
             if (result) {
                 ProcessTracker.getInstance().updateState(pid, AppState.FROZEN);
@@ -115,6 +119,10 @@ public class FreezeManager {
             AppInfo info = ProcessTracker.getInstance().getByPid(pid);
             if (info != null && info.state != AppState.FROZEN) {
                 return true;
+            }
+            if (currentFreezer == null) {
+                Logger.w("No freezer available, cannot unfreeze: pid=" + pid);
+                return false;
             }
             boolean result = currentFreezer.unfreeze(pid, uid);
             if (result) {
@@ -178,9 +186,10 @@ public class FreezeManager {
         List<AppInfo> frozenList = new ArrayList<>(
             ProcessTracker.getInstance().getFrozenProcesses());
         for (AppInfo info : frozenList) {
-            if (currentFreezer != null) {
-                currentFreezer.unfreeze(info.pid, info.uid);
+            if (currentFreezer != null && currentFreezer.unfreeze(info.pid, info.uid)) {
                 ProcessTracker.getInstance().updateState(info.pid, AppState.BACKGROUND);
+            } else {
+                Logger.w("Failed to unfreeze pid=" + info.pid + " during reselect");
             }
         }
         Logger.i("Unfroze all frozen processes before reselect: " + frozenList.size());
