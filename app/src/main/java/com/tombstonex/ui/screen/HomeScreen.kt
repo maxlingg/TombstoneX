@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillParentMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -33,7 +33,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Switch
@@ -206,16 +205,26 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                         )
                     }
                 },
+                actions = {
+                    if (refreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        IconButton(onClick = {
+                            refreshing = true
+                            loadApps()
+                        }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                        }
+                    }
+                },
             )
         },
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = {
-                refreshing = true
-                loadApps()
-            },
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
@@ -266,7 +275,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     loading -> {
                         item {
                             Box(
-                                modifier = Modifier.fillParentMaxSize(),
+                                modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -283,7 +292,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     filtered.isEmpty() -> {
                         item {
                             Box(
-                                modifier = Modifier.fillParentMaxSize(),
+                                modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
@@ -295,7 +304,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     }
                     else -> {
                         items(filtered, key = { it.packageName }) { app ->
-                            AppCard(app, onFreezeClick)
+                            AppCard(app) { onFreezeClick(it) }
                         }
                     }
                 }
