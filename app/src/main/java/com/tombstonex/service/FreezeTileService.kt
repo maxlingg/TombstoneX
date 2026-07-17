@@ -37,13 +37,12 @@ class FreezeTileService : TileService() {
             }
             // 读取当前暂停状态，切换
             val paused = ServiceClient.isGlobalPaused()
+            // P3-R3: pauseAll/resumeAll 内部已调用 setGlobalPaused，无需冗余调用
             if (paused) {
                 // 恢复：清除暂停标记并恢复冻结
-                ServiceClient.setGlobalPaused(false)
                 ServiceClient.resumeAll()
             } else {
-                // 暂停：写入标记并暂停冻结
-                ServiceClient.setGlobalPaused(true)
+                // 暂停：写入标记并暂停冻结（pauseAll 内部会 setGlobalPaused(true) + unfreezeAll）
                 ServiceClient.pauseAll()
             }
             refreshTile()

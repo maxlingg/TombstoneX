@@ -157,7 +157,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 val procByPkg = procList.associateBy { it.packageName }
 
                 val loaded = withContext(Dispatchers.IO) {
-                    appProvider.getAllApps(includeSystem).map { app ->
+                    // P3-R5: 传 loadIcon=false 跳过预加载图标，HomeScreen 自行懒加载
+                    appProvider.getAllApps(includeSystem, false).map { app ->
                         val info = procByPkg[app.packageName]
                         HomeAppItem(
                             label = app.label,

@@ -22,6 +22,9 @@ public class Logger {
     private static volatile boolean debugEnabled = false;
     private static OutputStreamWriter logWriter;
     private static final Object writerLock = new Object();
+    // P3-R2: 内存近似写入字节计数器，避免每条日志都做文件系统 stat 调用。
+    // 仅当计数器超过阈值时才检查实际文件大小并轮转。
+    private static long approxLogBytes = 0;
 
     /** ThreadLocal 缓存 SimpleDateFormat，避免频繁创建 */
     private static final ThreadLocal<SimpleDateFormat> dateFormatHolder =
@@ -55,6 +58,8 @@ public class Logger {
                     }
                 }
                 logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
+                // P3-R2: 初始化时重置计数器
+                approxLogBytes = logFile.exists() ? logFile.length() : 0;
             } catch (IOException e) {
                 Log.e(TAG, "Failed to init log file", e);
             }
@@ -104,33 +109,40 @@ public class Logger {
         synchronized (writerLock) {
             try {
                 if (logWriter != null) {
-                    logWriter.write(format(level, msg));
+                    String formatted = format(level, msg);
+                    logWriter.write(formatted);
                     logWriter.flush();
-                    // 日志轮转检查
-                    File logFile = new File(LOG_DIR, "current.log");
-                    if (logFile.exists() && logFile.length() >= MAX_LOG_SIZE) {
-                        try {
-                            logWriter.close();
-                        } catch (IOException e) {
-                            Log.d(TAG, "Failed to close log writer during rotation: " + e.getMessage());
-                        }
-                        File oldFile = new File(LOG_DIR, "current.log.old");
-                        if (oldFile.exists() && !oldFile.delete()) {
-                            Log.w(TAG, "Failed to delete old log file during rotation");
-                        }
-                        if (!logFile.renameTo(oldFile)) {
-                            Log.e(TAG, "Failed to rename log file during rotation");
-                            // 轮转失败，保持 writer 为 null，避免重新打开同一超限文件
-                            logWriter = null;
-                        } else {
-                            // 轮转后重建 writer
+                    // P3-R2: 使用内存计数器而非每次 stat 文件
+                    approxLogBytes += formatted.getBytes(StandardCharsets.UTF_8).length;
+                    // 仅当计数器超过阈值时才检查实际文件大小并轮转
+                    if (approxLogBytes >= MAX_LOG_SIZE) {
+                        File logFile = new File(LOG_DIR, "current.log");
+                        if (logFile.exists() && logFile.length() >= MAX_LOG_SIZE) {
                             try {
-                                logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
-                            } catch (IOException e2) {
-                                Log.e(TAG, "Failed to recreate log writer after rotation", e2);
-                                // 尝试下一次写入时重新初始化
-                                logWriter = null;
+                                logWriter.close();
+                            } catch (IOException e) {
+                                Log.d(TAG, "Failed to close log writer during rotation: " + e.getMessage());
                             }
+                            File oldFile = new File(LOG_DIR, "current.log.old");
+                            if (oldFile.exists() && !oldFile.delete()) {
+                                Log.w(TAG, "Failed to delete old log file during rotation");
+                            }
+                            if (!logFile.renameTo(oldFile)) {
+                                Log.e(TAG, "Failed to rename log file during rotation");
+                                logWriter = null;
+                            } else {
+                                // 轮转后重建 writer 并重置计数器
+                                approxLogBytes = 0;
+                                try {
+                                    logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
+                                } catch (IOException e2) {
+                                    Log.e(TAG, "Failed to recreate log writer after rotation", e2);
+                                    logWriter = null;
+                                }
+                            }
+                        } else {
+                            // 文件实际未超限（可能被 clearLog 截断），重置计数器
+                            approxLogBytes = 0;
                         }
                     }
                 } else {
@@ -140,17 +152,17 @@ public class Logger {
                         if (!dir.exists()) dir.mkdirs();
                         File logFile = new File(dir, "current.log");
                         logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
-                        logWriter.write(format(level, msg));
+                        String formatted = format(level, msg);
+                        logWriter.write(formatted);
                         logWriter.flush();
+                        approxLogBytes = formatted.getBytes(StandardCharsets.UTF_8).length;
                     } catch (IOException e) {
                         Log.e(TAG, "Failed to recreate log writer: " + e.getMessage());
-                        // P3-1: 重置 logWriter 为 null，确保下次写入时走重建路径
                         logWriter = null;
                     }
                 }
             } catch (IOException e) {
                 Log.e(TAG, "Failed to write log file: " + e.getMessage());
-                // P3-1: 写入失败后重置 logWriter，避免持续复用损坏的 writer
                 logWriter = null;
             }
         }
@@ -177,18 +189,27 @@ public class Logger {
         if (maxLines <= 0) return "";
         File logFile = new File(LOG_DIR, "current.log");
         List<String> lines = new ArrayList<>();
-        // P3-4: 将 exists() 检查和文件读取都放在 synchronized 块内，避免 TOCTOU 竞态
+        // P3-R1: 仅在锁内做 flush 确保 writer 缓冲区写入磁盘，文件读取移到锁外，
+        // 避免持有 writerLock 期间全量读取日志文件阻塞所有线程的日志写入。
         synchronized (writerLock) {
-            if (!logFile.exists()) return "";
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(new FileInputStream(logFile), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    lines.add(line);
+            if (logWriter != null) {
+                try {
+                    logWriter.flush();
+                } catch (IOException e) {
+                    Log.d(TAG, "Failed to flush before read: " + e.getMessage());
                 }
-            } catch (IOException e) {
-                return "Failed to read log: " + e.getMessage();
             }
+            if (!logFile.exists()) return "";
+        }
+        // 锁外读取文件
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new FileInputStream(logFile), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.add(line);
+            }
+        } catch (IOException e) {
+            return "Failed to read log: " + e.getMessage();
         }
         int start = Math.max(0, lines.size() - maxLines);
         List<String> subList = lines.subList(start, lines.size());
@@ -221,6 +242,8 @@ public class Logger {
             }
             try {
                 logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
+                // P3-R2: 清空后重置计数器
+                approxLogBytes = 0;
             } catch (IOException e) {
                 Log.e(TAG, "Failed to recreate log file after clear", e);
             }

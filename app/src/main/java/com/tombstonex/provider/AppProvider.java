@@ -43,6 +43,16 @@ public class AppProvider {
      * @param includeSystem 是否包含系统应用
      */
     public List<AppData> getAllApps(boolean includeSystem) {
+        return getAllApps(includeSystem, true);
+    }
+
+    /**
+     * 获取所有已安装的应用信息
+     * P3-R5: 新增 loadIcon 参数，UI 可传 false 跳过图标预加载（UI 自行懒加载图标）
+     * @param includeSystem 是否包含系统应用
+     * @param loadIcon 是否预加载应用图标
+     */
+    public List<AppData> getAllApps(boolean includeSystem, boolean loadIcon) {
         List<AppData> result = new ArrayList<>();
         try {
             // 不使用 GET_META_DATA 标志，减少不必要的开销
@@ -63,7 +73,8 @@ public class AppProvider {
                     String packageName = pkg.packageName;
                     CharSequence labelSeq = pm.getApplicationLabel(appInfo);
                     String label = labelSeq != null ? labelSeq.toString() : packageName;
-                    Drawable icon = pm.getApplicationIcon(appInfo);
+                    // P3-R5: 仅在 loadIcon=true 时预加载图标，UI 调用方可传 false 避免无用 I/O
+                    Drawable icon = loadIcon ? pm.getApplicationIcon(appInfo) : null;
 
                     result.add(new AppData(
                         label,
@@ -82,7 +93,8 @@ public class AppProvider {
             result.sort(Comparator.comparing(a -> a.label.toLowerCase(java.util.Locale.ROOT)));
 
             Logger.i("AppProvider: loaded " + result.size() + " apps"
-                + (includeSystem ? " (including system)" : " (user only)"));
+                + (includeSystem ? " (including system)" : " (user only)")
+                + (loadIcon ? "" : " (no icons)"));
         } catch (Exception e) {
             Logger.e("AppProvider: failed to load apps", e);
         }

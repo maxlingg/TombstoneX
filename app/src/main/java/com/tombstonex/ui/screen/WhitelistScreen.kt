@@ -109,7 +109,8 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
         try {
             val provider = AppProvider.getInstance(context)
             val (loadedApps, loadedProcs) = withContext(Dispatchers.IO) {
-                val a = provider.getAllApps(true).map { app ->
+                // P3-R5: 传 loadIcon=false 跳过预加载图标，WhitelistScreen 不使用图标
+                val a = provider.getAllApps(true, false).map { app ->
                     WhitelistAppItem(
                         label = app.label,
                         packageName = app.packageName,

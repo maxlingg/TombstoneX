@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -64,8 +65,9 @@ fun SettingsScreen(
     val moduleState = LocalModuleState.current
 
     // 首次组合时通过 produceState 异步加载配置
-    val initialConfig by produceState<Pair<ServiceClient.ConfigSnapshot?, String>>(
-        initialValue = null to "未知",
+    // P3-R4: 使用 @Immutable data class 替代 Pair，提升 Compose 稳定性
+    val initialConfig by produceState<ConfigLoadResult>(
+        initialValue = ConfigLoadResult(null, "未知"),
     ) {
         val cfg = withContext(Dispatchers.IO) {
             safeRunCatching { ServiceClient.getConfig() }.getOrNull()
@@ -73,7 +75,7 @@ fun SettingsScreen(
         val freezer = withContext(Dispatchers.IO) {
             safeRunCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
         }
-        value = cfg to freezer
+        value = ConfigLoadResult(cfg, freezer)
     }
 
     // 本地可变状态，初始值由 initialConfig 同步
@@ -405,6 +407,12 @@ fun SettingsScreen(
         )
     }
 }
+
+@Immutable
+data class ConfigLoadResult(
+    val config: ServiceClient.ConfigSnapshot?,
+    val freezerName: String,
+)
 
 @Composable
 private fun SectionHeader(text: String) {
