@@ -1,10 +1,10 @@
 package com.tombstonex.service;
 
 import android.os.Binder;
+import android.os.IBinder;
 import android.os.Parcel;
 import android.os.Process;
 import android.os.RemoteException;
-import android.os.ServiceManager;
 
 import com.tombstonex.manager.ConfigManager;
 import com.tombstonex.manager.FreezeManager;
@@ -389,16 +389,20 @@ public class TombstoneXService extends Binder {
 
     /**
      * 注册服务到 ServiceManager（在 system_server 中调用）
+     * 使用反射调用隐藏 API android.os.ServiceManager，避免编译期依赖。
      */
     public static void register() {
         try {
-            // P3-04: 防止重复注册。若服务已注册则跳过，
-            // 避免重复 addService 抛异常或覆盖已有服务实例
-            if (ServiceManager.getService(SERVICE_NAME) != null) {
+            Class<?> smClass = Class.forName("android.os.ServiceManager");
+            java.lang.reflect.Method getService = smClass.getMethod("getService", String.class);
+            java.lang.reflect.Method addService = smClass.getMethod("addService", String.class, IBinder.class);
+
+            // P3-04: 防止重复注册。若服务已注册则跳过
+            if (getService.invoke(null, SERVICE_NAME) != null) {
                 Logger.i("TombstoneXService already registered, skip");
                 return;
             }
-            ServiceManager.addService(SERVICE_NAME, new TombstoneXService());
+            addService.invoke(null, SERVICE_NAME, new TombstoneXService());
             Logger.i("TombstoneXService registered as '" + SERVICE_NAME + "'");
         } catch (Throwable t) {
             Logger.e("Failed to register TombstoneXService", t);
