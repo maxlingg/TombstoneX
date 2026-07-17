@@ -52,6 +52,8 @@ import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.LocalModuleState
 import com.tombstonex.ui.safeRunCatching
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -69,13 +71,16 @@ fun SettingsScreen(
     val initialConfig by produceState<ConfigLoadResult>(
         initialValue = ConfigLoadResult(null, "未知"),
     ) {
-        val cfg = withContext(Dispatchers.IO) {
-            safeRunCatching { ServiceClient.getConfig() }.getOrNull()
+        // P3-R1: 并行执行两个无依赖的 IPC 调用，减半延迟
+        coroutineScope {
+            val cfgDef = async(Dispatchers.IO) {
+                safeRunCatching { ServiceClient.getConfig() }.getOrNull()
+            }
+            val freezerDef = async(Dispatchers.IO) {
+                safeRunCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
+            }
+            value = ConfigLoadResult(cfgDef.await(), freezerDef.await())
         }
-        val freezer = withContext(Dispatchers.IO) {
-            safeRunCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
-        }
-        value = ConfigLoadResult(cfg, freezer)
     }
 
     // 本地可变状态，初始值由 initialConfig 同步
@@ -85,6 +90,8 @@ fun SettingsScreen(
     var freezeDelay by remember { mutableFloatStateOf(3f) }
     var committedFreezeDelay by remember { mutableFloatStateOf(3f) }
     var showModeDialog by remember { mutableStateOf(false) }
+    // P2-R3: 配置加载门控，防止 LaunchedEffect 覆盖用户在加载期间的操作
+    var configLoaded by remember { mutableStateOf(false) }
 
     // 子 Hook 开关
     var hookAnr by remember { mutableStateOf(true) }
@@ -96,7 +103,8 @@ fun SettingsScreen(
     // 当配置首次加载完成时同步到本地状态
     LaunchedEffect(initialConfig) {
         val (cfg, freezer) = initialConfig
-        if (cfg != null) {
+        // P2-R3: 仅在首次加载时同步配置，避免覆盖用户在加载期间的操作
+        if (cfg != null && !configLoaded) {
             freezeMode = FreezeMode.entries.getOrElse(cfg.freezeMode) { FreezeMode.SYSTEM_API }
             debugEnabled = cfg.debugEnabled
             freezeDelay = cfg.freezeDelay.toFloat()
@@ -106,6 +114,7 @@ fun SettingsScreen(
             hookWakeLock = cfg.hookWakeLock
             hookActivitySwitch = cfg.hookActivitySwitch
             hookScreenState = cfg.hookScreenState
+            configLoaded = true
         }
         currentFreezerName = freezer
     }

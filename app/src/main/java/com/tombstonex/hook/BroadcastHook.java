@@ -9,6 +9,7 @@ import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -153,7 +154,8 @@ public class BroadcastHook {
 
             // P1-03: 创建快照副本，避免遍历 AMS 内部 List 时发生
             // ConcurrentModificationException（AMS 可能在遍历过程中修改该 List）
-            List<?> broadcastList = new ArrayList<>(rawBroadcastList);
+            // P3-R8: 使用 toArray() 再包装，避免 new ArrayList<>(src) 构造函数本身迭代 src 时 CME
+            List<?> broadcastList = Arrays.asList(rawBroadcastList.toArray());
 
             for (Object record : broadcastList) {
                 Object receivers = XposedHelpers.getObjectField(record, "receivers");

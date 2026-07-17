@@ -53,11 +53,19 @@ public class WhitelistManager {
         reload();
     }
 
-    public static synchronized WhitelistManager getInstance() {
-        if (instance == null) {
-            instance = new WhitelistManager();
+    // P3-R6: 使用双重检查锁定
+    public static WhitelistManager getInstance() {
+        WhitelistManager local = instance;
+        if (local == null) {
+            synchronized (WhitelistManager.class) {
+                local = instance;
+                if (local == null) {
+                    local = new WhitelistManager();
+                    instance = local;
+                }
+            }
         }
-        return instance;
+        return local;
     }
 
     public void reload() {

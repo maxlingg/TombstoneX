@@ -32,9 +32,9 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (PACKAGE_ANDROID.equals(pkg)) {
             Logger.i("Hooking System Framework (android)");
             // P2-04: 在 system_server 中初始化 ConfigManager（此时 /data/system 已挂载就绪）。
-            // ConfigManager.loadConfig() 内部会调用 Logger.init(debugEnabled) 修正日志级别。
+            // ConfigManager.loadConfig() 内部已调用 Logger.init(debugEnabled) 修正日志级别。
+            // P3-R4: 移除冗余的 Logger.init 调用，避免重复关闭/重新打开日志文件
             ConfigManager config = ConfigManager.getInstance();
-            Logger.init(config.isDebugEnabled());
             Logger.i("TombstoneX config loaded, SDK=" + Build.VERSION.SDK_INT
                 + " freezeMode=" + config.getFreezeMode()
                 + " delay=" + config.getFreezeDelay() + "s");

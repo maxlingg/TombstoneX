@@ -17,11 +17,19 @@ public class FreezeManager {
         selectFreezer();
     }
 
-    public static synchronized FreezeManager getInstance() {
-        if (instance == null) {
-            instance = new FreezeManager();
+    // P3-R6: 使用双重检查锁定
+    public static FreezeManager getInstance() {
+        FreezeManager local = instance;
+        if (local == null) {
+            synchronized (FreezeManager.class) {
+                local = instance;
+                if (local == null) {
+                    local = new FreezeManager();
+                    instance = local;
+                }
+            }
         }
-        return instance;
+        return local;
     }
 
     private void selectFreezer() {

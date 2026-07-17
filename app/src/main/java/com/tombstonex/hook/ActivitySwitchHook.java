@@ -30,7 +30,6 @@ public class ActivitySwitchHook {
     private static final int SCHED_GROUP_TOP_APP = 3;
 
     // AOSP 进程状态常量
-    private static final int PROCESS_STATE_TOP = 2;
     // Android 14+ (SDK 34) PROCESS_STATE_FOREGROUND_SERVICE = 4
     // Android 12-13 PROCESS_STATE_FOREGROUND_SERVICE = 5
     private static final int PROCESS_STATE_FOREGROUND_SERVICE =
@@ -249,12 +248,9 @@ public class ActivitySwitchHook {
                                     if (pid <= 0) return;
 
                                     int uid = getIntFieldValue(processRecord, "uid");
-                                    if (procState <= PROCESS_STATE_TOP) {
-                                        cancelPendingFreeze(pid);
-                                        FreezeManager.getInstance().unfreezeProcess(pid, uid);
-                                        ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
-                                    } else if (procState <= PROCESS_STATE_FOREGROUND_SERVICE) {
-                                        // 前台服务不冻结，需解冻已冻结进程
+                                    // P3-R2: 合并冗余分支，PROCESS_STATE_TOP <= PROCESS_STATE_FOREGROUND_SERVICE
+                                    if (procState <= PROCESS_STATE_FOREGROUND_SERVICE) {
+                                        // 前台应用（TOP）和前台服务均需解冻
                                         cancelPendingFreeze(pid);
                                         FreezeManager.getInstance().unfreezeProcess(pid, uid);
                                         ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
@@ -359,12 +355,8 @@ public class ActivitySwitchHook {
                             if (pid <= 0) return;
 
                             int uid = getIntFieldValue(processRecord, "uid");
-                            if (procState <= PROCESS_STATE_TOP) {
-                                cancelPendingFreeze(pid);
-                                FreezeManager.getInstance().unfreezeProcess(pid, uid);
-                                ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
-                            } else if (procState <= PROCESS_STATE_FOREGROUND_SERVICE) {
-                                // 前台服务不冻结，需解冻已冻结进程
+                            // P3-R2: 合并冗余分支
+                            if (procState <= PROCESS_STATE_FOREGROUND_SERVICE) {
                                 cancelPendingFreeze(pid);
                                 FreezeManager.getInstance().unfreezeProcess(pid, uid);
                                 ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);

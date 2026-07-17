@@ -4,6 +4,7 @@ import android.util.Log;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -96,10 +97,12 @@ public class Logger {
     }
 
     public static void e(String msg, Throwable t) {
-        String detail = msg;
+        // P3-R3: 与 format() 的 null msg 处理保持一致
+        String safeMsg = msg != null ? msg : "";
+        String detail = safeMsg;
         if (t != null) {
             String tMsg = t.getMessage();
-            detail = msg + " | " + (tMsg != null ? tMsg : t.toString());
+            detail = safeMsg + " | " + (tMsg != null ? tMsg : t.toString());
         }
         Log.e(TAG, detail);
         writeFile("E", detail);
@@ -128,8 +131,16 @@ public class Logger {
                                 Log.w(TAG, "Failed to delete old log file during rotation");
                             }
                             if (!logFile.renameTo(oldFile)) {
-                                Log.e(TAG, "Failed to rename log file during rotation");
-                                logWriter = null;
+                                Log.e(TAG, "Failed to rename log file during rotation, truncating instead");
+                                // P3-R2: rename 失败时降级为截断，避免文件持续增长
+                                try {
+                                    logWriter = new OutputStreamWriter(
+                                        new FileOutputStream(logFile, false), StandardCharsets.UTF_8);
+                                    approxLogBytes = 0;
+                                } catch (IOException e2) {
+                                    Log.e(TAG, "Failed to truncate log after rename failure", e2);
+                                    logWriter = null;
+                                }
                             } else {
                                 // 轮转后重建 writer 并重置计数器
                                 approxLogBytes = 0;
@@ -208,6 +219,9 @@ public class Logger {
             while ((line = reader.readLine()) != null) {
                 lines.add(line);
             }
+        } catch (FileNotFoundException e) {
+            // P3-R5: 文件在锁释放后被 clearLog 删除，返回空字符串而非错误信息
+            return "";
         } catch (IOException e) {
             return "Failed to read log: " + e.getMessage();
         }
@@ -236,16 +250,13 @@ public class Logger {
             if (oldFile.exists() && !oldFile.delete()) {
                 Log.w(TAG, "Failed to delete old log file during clear");
             }
-            if (logFile.exists() && !logFile.delete()) {
-                Log.e(TAG, "Failed to delete log file during clear");
-                return;
-            }
+            // P2-R2: 用截断模式打开替代 delete + recreate，避免删除失败导致清空无效
+            // FileOutputStream(file, false) 会截断文件为 0 字节，在拥有写权限时不会失败
             try {
-                logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
-                // P3-R2: 清空后重置计数器
+                logWriter = new OutputStreamWriter(new FileOutputStream(logFile, false), StandardCharsets.UTF_8);
                 approxLogBytes = 0;
             } catch (IOException e) {
-                Log.e(TAG, "Failed to recreate log file after clear", e);
+                Log.e(TAG, "Failed to truncate log file during clear", e);
             }
         }
     }

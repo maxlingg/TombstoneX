@@ -100,7 +100,8 @@ object ServiceClient {
             // P3-R1: 使用 java.util.concurrent.CancellationException 而非
             // kotlinx.coroutines.CancellationException，消除对传递依赖的脆弱引用
             if (e is java.util.concurrent.CancellationException) throw e
-            android.util.Log.e("TombstoneX", "ServiceClient.transact failed: ${e.message}")
+            // P3-R7: 传递 Throwable 对象以保留堆栈信息
+            android.util.Log.e("TombstoneX", "ServiceClient.transact failed: ${e.message}", e)
             // DeadObjectException 表示服务端进程已死，清空缓存的 binder 引用，
             // 下次调用时会重新通过 ServiceManager.getService 查找
             if (e is android.os.DeadObjectException) {

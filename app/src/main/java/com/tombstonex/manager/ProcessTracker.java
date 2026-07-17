@@ -17,11 +17,19 @@ public class ProcessTracker {
 
     private ProcessTracker() {}
 
-    public static synchronized ProcessTracker getInstance() {
-        if (instance == null) {
-            instance = new ProcessTracker();
+    // P3-R6: 使用双重检查锁定
+    public static ProcessTracker getInstance() {
+        ProcessTracker local = instance;
+        if (local == null) {
+            synchronized (ProcessTracker.class) {
+                local = instance;
+                if (local == null) {
+                    local = new ProcessTracker();
+                    instance = local;
+                }
+            }
         }
-        return instance;
+        return local;
     }
 
     public synchronized void registerProcess(String packageName, String processName, int pid, int uid, boolean isSystemApp) {
@@ -88,17 +96,10 @@ public class ProcessTracker {
             removeProcessFromMaps(pid, info);
             Logger.d("Process removed: " + info.processName + " pid=" + pid);
         } else {
-            // 无条件扫描清理三个映射表，防止残留
-            for (Map.Entry<String, List<Integer>> entry : packageToPids.entrySet()) {
-                if (entry.getValue().remove(Integer.valueOf(pid)) && entry.getValue().isEmpty()) {
-                    packageToPids.remove(entry.getKey());
-                }
-            }
-            for (Map.Entry<Integer, List<Integer>> entry : uidToPids.entrySet()) {
-                if (entry.getValue().remove(Integer.valueOf(pid)) && entry.getValue().isEmpty()) {
-                    uidToPids.remove(entry.getKey());
-                }
-            }
+            // P3-R3: processMap 中已无此 pid（可能双重清理），直接返回避免 O(n) 全表扫描。
+            // registerProcess 和 removeProcess 都在 synchronized 块内维护映射一致性，
+            // 正常情况下不会出现残留条目。
+            Logger.d("Process not found in processMap, skip cleanup: pid=" + pid);
         }
     }
 

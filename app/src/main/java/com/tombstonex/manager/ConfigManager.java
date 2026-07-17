@@ -25,11 +25,19 @@ public class ConfigManager {
         loadConfig();
     }
 
-    public static synchronized ConfigManager getInstance() {
-        if (instance == null) {
-            instance = new ConfigManager();
+    // P3-R6: 使用双重检查锁定，避免每次调用都获取类锁
+    public static ConfigManager getInstance() {
+        ConfigManager local = instance;
+        if (local == null) {
+            synchronized (ConfigManager.class) {
+                local = instance;
+                if (local == null) {
+                    local = new ConfigManager();
+                    instance = local;
+                }
+            }
         }
-        return instance;
+        return local;
     }
 
     private void loadConfig() {

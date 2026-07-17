@@ -62,7 +62,10 @@ class FreezeTileService : TileService() {
 
     /** 刷新磁贴外观与状态（ServiceClient 调用在后台线程，UI 更新切回主线程） */
     private fun refreshTile() {
-        serviceExecutor.execute {
+        // P2-R1: executor 可能在 onDestroy 后已关闭，execute 会抛 RejectedExecutionException
+        if (serviceExecutor.isShutdown) return
+        try {
+            serviceExecutor.execute {
             val available = ServiceClient.isAvailable
             val paused = if (available) ServiceClient.isGlobalPaused() else false
             val frozenCount = if (available) ServiceClient.getFrozenCount() else 0
@@ -97,6 +100,9 @@ class FreezeTileService : TileService() {
                 }
                 tile.updateTile()
             }
+        }
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            // Executor 已关闭（Service 销毁），跳过刷新
         }
     }
 }
