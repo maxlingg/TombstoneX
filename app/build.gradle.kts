@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -34,7 +36,7 @@ android {
             // 优先使用 release 签名，不存在时回退到 debug（用于 CI 构建）
             val keystoreFile = rootProject.file("keystore.properties")
             if (keystoreFile.exists()) {
-                val keystoreProperties = java.util.Properties()
+                val keystoreProperties = Properties()
                 keystoreProperties.load(keystoreFile.inputStream())
                 signingConfig = signingConfigs.create("release") {
                     keyAlias = keystoreProperties["keyAlias"] as String
