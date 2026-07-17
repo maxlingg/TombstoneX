@@ -169,6 +169,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     }
                 }
                 items = loaded
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 showSnackbar("加载应用列表失败：${e.message ?: "未知错误"}")
             } finally {

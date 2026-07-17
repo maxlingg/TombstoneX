@@ -47,7 +47,9 @@ public class Logger {
                 // 日志轮转：如果超过 2MB，备份为 .old
                 if (logFile.exists() && logFile.length() >= MAX_LOG_SIZE) {
                     File oldFile = new File(dir, "current.log.old");
-                    if (oldFile.exists()) oldFile.delete();
+                    if (oldFile.exists() && !oldFile.delete()) {
+                        Log.w(TAG, "Failed to delete old log file during init");
+                    }
                     if (!logFile.renameTo(oldFile)) {
                         Log.e(TAG, "Failed to rename log file during init rotation");
                     }
@@ -111,7 +113,9 @@ public class Logger {
                             Log.d(TAG, "Failed to close log writer during rotation: " + e.getMessage());
                         }
                         File oldFile = new File(LOG_DIR, "current.log.old");
-                        if (oldFile.exists()) oldFile.delete();
+                        if (oldFile.exists() && !oldFile.delete()) {
+                            Log.w(TAG, "Failed to delete old log file during rotation");
+                        }
                         if (!logFile.renameTo(oldFile)) {
                             Log.e(TAG, "Failed to rename log file during rotation");
                             // 轮转失败，保持 writer 为 null，避免重新打开同一超限文件

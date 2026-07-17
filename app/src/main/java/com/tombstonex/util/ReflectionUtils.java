@@ -73,7 +73,7 @@ public class ReflectionUtils {
     }
 
     public static Method findMethod(Class<?> clazz, String methodName, Class<?>... paramTypes) {
-        if (clazz == null) return null;
+        if (clazz == null || methodName == null) return null;
         try {
             Method method = clazz.getDeclaredMethod(methodName, paramTypes);
             method.setAccessible(true);
@@ -103,7 +103,7 @@ public class ReflectionUtils {
     }
 
     public static Method findMethodRecursive(Class<?> clazz, String methodName, Class<?>... paramTypes) {
-        if (clazz == null) return null;
+        if (clazz == null || methodName == null) return null;
         String cacheKey = buildMethodCacheKey(methodName, paramTypes);
         // 先查缓存
         ConcurrentHashMap<String, Method> classMethods = methodCache.get(clazz);
@@ -159,7 +159,7 @@ public class ReflectionUtils {
     }
 
     public static Field findField(Class<?> clazz, String fieldName) {
-        if (clazz == null) return null;
+        if (clazz == null || fieldName == null) return null;
         try {
             Field field = clazz.getDeclaredField(fieldName);
             field.setAccessible(true);
@@ -171,7 +171,7 @@ public class ReflectionUtils {
     }
 
     public static Field findFieldRecursive(Class<?> clazz, String fieldName) {
-        if (clazz == null) return null;
+        if (clazz == null || fieldName == null) return null;
         // 先查缓存
         ConcurrentHashMap<String, Field> classCache = fieldCache.get(clazz);
         if (classCache != null) {

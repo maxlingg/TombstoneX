@@ -78,7 +78,7 @@ public class FileUtils {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            Logger.e("Failed to rename tmp file to: " + filename);
+            Logger.e("Failed to rename tmp file to: " + filename, e);
         }
     }
 
@@ -131,11 +131,12 @@ public class FileUtils {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            Logger.e("Failed to rename tmp file to: " + filename);
+            Logger.e("Failed to rename tmp file to: " + filename, e);
         }
     }
 
     public static boolean exists(String filename) {
+        if (filename == null) throw new IllegalArgumentException("filename cannot be null");
         return new File(CONFIG_DIR, filename).exists();
     }
 }

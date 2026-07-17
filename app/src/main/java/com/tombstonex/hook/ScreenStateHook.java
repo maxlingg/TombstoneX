@@ -270,17 +270,15 @@ public class ScreenStateHook {
                 skipped++;
                 continue;
             }
-            if (processRecord != null) {
-                if (ActivitySwitchHook.hasForegroundService(processRecord)) {
-                    Logger.d("Batch freeze: skip (foreground service) " + info.packageName);
-                    skipped++;
-                    continue;
-                }
-                if (ActivitySwitchHook.hasActiveContentProvider(processRecord)) {
-                    Logger.d("Batch freeze: skip (ContentProvider) " + info.packageName);
-                    skipped++;
-                    continue;
-                }
+            if (ActivitySwitchHook.hasForegroundService(processRecord)) {
+                Logger.d("Batch freeze: skip (foreground service) " + info.packageName);
+                skipped++;
+                continue;
+            }
+            if (ActivitySwitchHook.hasActiveContentProvider(processRecord)) {
+                Logger.d("Batch freeze: skip (ContentProvider) " + info.packageName);
+                skipped++;
+                continue;
             }
             if (audioPlaying) {
                 Logger.d("Batch freeze: skip (audio playing) " + info.packageName);

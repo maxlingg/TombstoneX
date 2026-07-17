@@ -133,6 +133,8 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
             apps = loadedApps
             processes = loadedProcs
             reloadSets()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             showSnackbar("加载列表失败：${e.message ?: "未知错误"}")
         } finally {
