@@ -20,9 +20,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
@@ -38,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -110,6 +113,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     var moduleAvailable by remember { mutableStateOf(true) }
     var moduleLoaded by remember { mutableStateOf(false) }
     var moduleEnabled by remember { mutableStateOf(false) }
+    var showRebootDialog by remember { mutableStateOf(false) }
 
     // 搜索防抖
     LaunchedEffect(searchQuery) {
@@ -266,6 +270,11 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                             modifier = Modifier.size(24.dp),
                             strokeWidth = 2.dp,
                         )
+                    } else if (!moduleAvailable) {
+                        // 模块未激活时显示重启按钮
+                        IconButton(onClick = { showRebootDialog = true }) {
+                            Icon(Icons.Filled.PowerSettingsNew, contentDescription = "重启设备")
+                        }
                     } else {
                         IconButton(onClick = {
                             refreshing = true
@@ -369,6 +378,44 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 }
             }
         }
+
+        // 重启设备确认对话框
+        if (showRebootDialog) {
+            AlertDialog(
+                onDismissRequest = { showRebootDialog = false },
+                title = { Text("重启设备") },
+                text = {
+                    Text(
+                        "确定要重启设备吗？\n\n" +
+                            "模块未激活时，重启后 LSPosed 会重新加载模块到 system_server。\n" +
+                            "请确保已在 LSPosed 中启用模块并勾选「Android 系统」作用域。"
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showRebootDialog = false
+                        // 通过 root 权限执行 reboot
+                        try {
+                            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot"))
+                            process.waitFor()
+                        } catch (e: Exception) {
+                            // su 不可用时尝试普通 reboot（通常需要系统签名权限）
+                            try {
+                                Runtime.getRuntime().exec(arrayOf("reboot"))
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }) {
+                        Text("重启", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRebootDialog = false }) {
+                        Text("取消")
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -400,9 +447,9 @@ private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Bo
                 )
                 Text(
                     text = when {
-                        !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块并重启设备"
-                        !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」并重启设备"
-                        else -> "模块已加载，但 Binder 服务注册失败\n请检查 LSPosed 日志或尝试重新启用模块"
+                        !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块\n点击右上角电源按钮可快速重启设备"
+                        !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」\n点击右上角电源按钮可快速重启设备"
+                        else -> "模块已加载，但 Binder 服务注册失败\n请检查 LSPosed 日志或尝试重新启用模块\n点击右上角电源按钮可快速重启设备"
                     },
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
