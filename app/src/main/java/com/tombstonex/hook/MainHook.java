@@ -14,12 +14,12 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
 
     @Override
     public void initZygote(StartupParam startupParam) {
-        // 从配置文件初始化日志级别
-        ConfigManager config = ConfigManager.getInstance();
-        Logger.init(config.isDebugEnabled());
-        Logger.i("TombstoneX Zygote init, SDK=" + Build.VERSION.SDK_INT
-            + " freezeMode=" + config.getFreezeMode()
-            + " delay=" + config.getFreezeDelay() + "s");
+        // P2-04: 不在 initZygote 中初始化 ConfigManager。
+        // Zygote 启动阶段 /data/system 可能尚未挂载，此时读取配置文件会失败。
+        // ConfigManager 改在 handleLoadPackage（android 包，即 system_server）中初始化，
+        // 那时 /data/system 已就绪。这里仅用默认级别初始化 Logger，实际级别后续修正。
+        Logger.init(false);
+        Logger.i("TombstoneX Zygote init, SDK=" + Build.VERSION.SDK_INT);
     }
 
     @Override
@@ -31,6 +31,13 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         if (PACKAGE_ANDROID.equals(pkg)) {
             Logger.i("Hooking System Framework (android)");
+            // P2-04: 在 system_server 中初始化 ConfigManager（此时 /data/system 已挂载就绪）。
+            // ConfigManager.loadConfig() 内部会调用 Logger.init(debugEnabled) 修正日志级别。
+            ConfigManager config = ConfigManager.getInstance();
+            Logger.init(config.isDebugEnabled());
+            Logger.i("TombstoneX config loaded, SDK=" + Build.VERSION.SDK_INT
+                + " freezeMode=" + config.getFreezeMode()
+                + " delay=" + config.getFreezeDelay() + "s");
             hookSystemFramework(lpparam);
         }
     }

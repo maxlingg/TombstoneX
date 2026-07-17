@@ -40,6 +40,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import com.tombstonex.model.AppState
 import com.tombstonex.provider.AppProvider
 import com.tombstonex.service.ServiceClient
+import com.tombstonex.ui.safeRunCatching
 import com.tombstonex.ui.util.toImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,6 +72,7 @@ import kotlinx.coroutines.withContext
  * 主页列表项：合并 [AppProvider.AppData] 与 [ServiceClient.ProcessInfo] 信息。
  * 图标不再随数据预加载，改由列表项内 [LaunchedEffect] 异步懒加载。
  */
+@Immutable
 data class HomeAppItem(
     val label: String,
     val packageName: String,
@@ -116,7 +119,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     val loadIcon: suspend (String) -> ImageBitmap? = remember(pm) {
         { pkg ->
             withContext(Dispatchers.IO) {
-                runCatching {
+                safeRunCatching {
                     pm.getApplicationIcon(pkg).toImageBitmap(96)
                 }.getOrNull()
             }
@@ -127,7 +130,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     fun refreshStates() {
         scope.launch {
             val procList = withContext(Dispatchers.IO) {
-                runCatching { ServiceClient.getAllProcesses() }.getOrDefault(emptyList())
+                safeRunCatching { ServiceClient.getAllProcesses() }.getOrDefault(emptyList())
             }
             val procByPkg = procList.associateBy { it.packageName }
             items = items.map { item ->
@@ -144,10 +147,10 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 moduleAvailable = withContext(Dispatchers.IO) { ServiceClient.isAvailable }
                 val appProvider = AppProvider.getInstance(context)
                 val whiteApps = withContext(Dispatchers.IO) {
-                    runCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
+                    safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
                 }
                 val procList = withContext(Dispatchers.IO) {
-                    runCatching { ServiceClient.getAllProcesses() }.getOrDefault(emptyList())
+                    safeRunCatching { ServiceClient.getAllProcesses() }.getOrDefault(emptyList())
                 }
                 val procByPkg = procList.associateBy { it.packageName }
 
@@ -189,7 +192,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         val willFreeze = item.state != AppState.FROZEN
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching {
+                safeRunCatching {
                     if (willFreeze) ServiceClient.freezeProcess(item.pid, item.uid)
                     else ServiceClient.unfreezeProcess(item.pid, item.uid)
                 }.getOrDefault(false)
@@ -206,18 +209,20 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         }
     }
 
-    val filtered = if (debouncedQuery.isBlank()) {
-        items
-    } else {
-        items.filter {
-            it.label.contains(debouncedQuery, ignoreCase = true) ||
-                it.packageName.contains(debouncedQuery, ignoreCase = true)
+    val filtered = remember(items, debouncedQuery) {
+        if (debouncedQuery.isBlank()) {
+            items
+        } else {
+            items.filter {
+                it.label.contains(debouncedQuery, ignoreCase = true) ||
+                    it.packageName.contains(debouncedQuery, ignoreCase = true)
+            }
         }
     }
 
-    val runningCount = items.count { it.pid > 0 }
-    val frozenCount = items.count { it.state == AppState.FROZEN }
-    val whiteCount = items.count { it.isWhiteListed }
+    val runningCount = remember(items) { items.count { it.pid > 0 } }
+    val frozenCount = remember(items) { items.count { it.state == AppState.FROZEN } }
+    val whiteCount = remember(items) { items.count { it.isWhiteListed } }
 
     Scaffold(
         topBar = {

@@ -23,8 +23,8 @@ import java.util.concurrent.TimeUnit;
 public class ActivitySwitchHook {
 
     // AOSP 实际调度组常量 (ActivityManager.java / ProcessList.java)
+    // 注：SCHED_GROUP_RESTRICTED(1) 已删除，项目中未使用。
     private static final int SCHED_GROUP_BACKGROUND = 0;
-    private static final int SCHED_GROUP_RESTRICTED = 1;
     private static final int SCHED_GROUP_DEFAULT = 2;
     private static final int SCHED_GROUP_TOP_APP = 3;
 
@@ -38,6 +38,29 @@ public class ActivitySwitchHook {
     // P2: 2 个核心线程
     private static final ScheduledThreadPoolExecutor freezeExecutor = new ScheduledThreadPoolExecutor(2);
     private static final Map<Integer, ScheduledFuture<?>> pendingFreezes = new ConcurrentHashMap<>();
+    static {
+        // P1-04: 已取消的任务立即从工作队列移除，避免驻留队列造成内存泄漏与重复触发
+        freezeExecutor.setRemoveOnCancelPolicy(true);
+        // P2-05: 定期清理 pendingFreezes 中已不存在于 ProcessTracker 的残留条目。
+        // 正常情况下 ProcessDeathHook 会调用 cancelPendingFreeze 清理，但若进程未走
+        // 死亡回调（如被直接 kill 且未触发 hook），pendingFreezes 条目会永久残留，
+        // 因此每小时兜底清理一次。
+        freezeExecutor.scheduleAtFixedRate(() -> {
+            try {
+                for (Integer pid : pendingFreezes.keySet()) {
+                    if (ProcessTracker.getInstance().getByPid(pid) == null) {
+                        ScheduledFuture<?> f = pendingFreezes.remove(pid);
+                        if (f != null) {
+                            f.cancel(false);
+                            Logger.d("Cleaned stale pendingFreezes entry for pid=" + pid);
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                Logger.e("pendingFreezes periodic cleanup error", t);
+            }
+        }, 1, 1, TimeUnit.HOURS);
+    }
 
     public static void init(ClassLoader classLoader) {
         hookActivityPaused(classLoader);
@@ -110,6 +133,9 @@ public class ActivitySwitchHook {
             }
 
             // 检查音频播放
+            // 已知局限：isAnyAudioPlaying() 基于 AudioManager.isMusicActive()，
+            // 是全局检查，无法区分具体是哪个应用在播放音频。任何应用播放音乐时
+            // 所有应用都不会被冻结。这里保留该检查以避免误冻结正在播放音频的应用。
             if (isAnyAudioPlaying()) {
                 Logger.d("App is playing audio, skip freeze: " + packageName);
                 return;
@@ -516,6 +542,12 @@ public class ActivitySwitchHook {
     }
 
     // --- 辅助方法 ---
+    // P3-02 已知限制：getProcessRecordByPid / hasForegroundService / hasActiveContentProvider 等
+    // 保护性检查在每次冻结流程中都会高频调用 getFieldValue / getIntFieldValue，而
+    // ReflectionUtils.findFieldRecursive 每次都会沿继承链重新查找 Field 并 setAccessible，
+    // 未对 Field 做缓存。在批量冻结多个进程时存在反射开销。当前实现为保证兼容性与
+    // 稳定性暂不引入 Field 缓存（缓存需处理类加载/字节码差异），后续可考虑按
+    // (className, fieldName) 缓存 Field 以降低开销。
 
     /**
      * 安全获取 int 类型字段值，先获取 Object 再 null 检查再拆箱
@@ -554,7 +586,8 @@ public class ActivitySwitchHook {
     private static String extractPackageName(String processName) {
         if (processName == null) return null;
         int colonIdx = processName.indexOf(':');
-        return colonIdx > 0 ? processName.substring(0, colonIdx) : processName;
+        // P3-01: colonIdx >= 0 以正确处理冒号出现在首位的边界情况
+        return colonIdx >= 0 ? processName.substring(0, colonIdx) : processName;
     }
 
     private static Object getFieldValue(Object obj, String fieldName) {

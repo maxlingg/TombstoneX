@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.compositionLocalOf
 import androidx.lifecycle.lifecycleScope
@@ -23,6 +24,7 @@ import kotlinx.coroutines.withContext
  * @param activated 模块是否真正激活（通过 ServiceClient 与 system_server 服务通信判定，
  *   比 Class.forName 更准确——后者只能判断类是否可加载，无法确认 Hook 是否已注入）
  */
+@Immutable
 data class ModuleState(
     val installed: Boolean,
     val entryClass: String,
@@ -49,7 +51,7 @@ class MainActivity : ComponentActivity() {
         // （比 Class.forName 更准确，能反映 system_server 中的 Hook 是否已注入）
         lifecycleScope.launch {
             val activated = withContext(Dispatchers.IO) {
-                runCatching { ServiceClient.isAvailable }.getOrDefault(false)
+                safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
             }
             moduleState.value = moduleState.value.copy(activated = activated)
         }

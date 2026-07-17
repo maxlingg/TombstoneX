@@ -8,6 +8,7 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -147,14 +148,20 @@ public class BroadcastHook {
      */
     private static void checkAndSkipFrozenReceivers(Object queue, String fieldName) {
         try {
-            List<?> broadcastList = (List<?>) XposedHelpers.getObjectField(queue, fieldName);
-            if (broadcastList == null || broadcastList.isEmpty()) return;
+            List<?> rawBroadcastList = (List<?>) XposedHelpers.getObjectField(queue, fieldName);
+            if (rawBroadcastList == null || rawBroadcastList.isEmpty()) return;
+
+            // P1-03: 创建快照副本，避免遍历 AMS 内部 List 时发生
+            // ConcurrentModificationException（AMS 可能在遍历过程中修改该 List）
+            List<?> broadcastList = new ArrayList<>(rawBroadcastList);
 
             for (Object record : broadcastList) {
                 Object receivers = XposedHelpers.getObjectField(record, "receivers");
                 if (receivers == null) continue;
                 @SuppressWarnings("unchecked")
-                List<Object> receiverList = (List<Object>) receivers;
+                List<Object> rawReceiverList = (List<Object>) receivers;
+                // P1-03: receiverList 同样创建快照副本
+                List<Object> receiverList = new ArrayList<>(rawReceiverList);
 
                 for (Object receiver : receiverList) {
                     int pid = getReceiverPid(receiver, queue.getClass().getClassLoader());
@@ -177,22 +184,26 @@ public class BroadcastHook {
      * 支持 BroadcastFilter (有 owningPid) 和 ResolveInfo (需嵌套获取 uid)
      */
     private static int getReceiverPid(Object receiver, ClassLoader classLoader) {
-        // 尝试 BroadcastFilter.owningPid
+        // BroadcastFilter（动态注册接收器）：owningPid 即接收进程的真实 pid，
+        // 直接返回，由调用方判断该 pid 是否被冻结。
         try {
             return XposedHelpers.getIntField(receiver, "owningPid");
         } catch (Throwable e) {
             Logger.d("Hook variant failed: " + e.getMessage());
         }
 
-        // ResolveInfo: 需要分步获取 activityInfo -> applicationInfo -> uid
+        // ResolveInfo（静态接收器）：没有 pid，需通过 uid 查找运行中的进程
         try {
             Object activityInfo = XposedHelpers.getObjectField(receiver, "activityInfo");
             if (activityInfo != null) {
                 Object appInfo = XposedHelpers.getObjectField(activityInfo, "applicationInfo");
                 if (appInfo != null) {
                     int uid = XposedHelpers.getIntField(appInfo, "uid");
-                    // 通过 uid 查找冻结的进程
-                    for (AppInfo info : ProcessTracker.getInstance().getByUid(uid)) {
+                    // P2-01: 遍历所有匹配 uid 的进程，只要存在任一冻结进程就返回其 pid（用于拦截）。
+                    // 同一 uid 可能对应多个进程（如主进程 + 子进程），不能直接返回首个匹配进程的 pid
+                    // （它可能未被冻结），必须找到处于 FROZEN 状态的进程才返回，否则返回 -1。
+                    List<AppInfo> uidProcesses = ProcessTracker.getInstance().getByUid(uid);
+                    for (AppInfo info : uidProcesses) {
                         if (info.state == AppState.FROZEN) {
                             return info.pid;
                         }

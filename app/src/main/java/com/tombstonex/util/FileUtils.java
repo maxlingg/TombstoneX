@@ -20,6 +20,7 @@ public class FileUtils {
     private static final String CONFIG_DIR = "/data/system/TombstoneX";
 
     public static Set<String> readLines(String filename) {
+        if (filename == null) throw new IllegalArgumentException("filename cannot be null");
         Set<String> lines = new HashSet<>();
         File file = new File(CONFIG_DIR, filename);
         if (!file.exists()) return lines;
@@ -55,6 +56,8 @@ public class FileUtils {
      * 原子写入：先写到临时文件 file.tmp，再 renameTo(file)
      */
     public static synchronized void writeLines(String filename, Set<String> lines) {
+        if (filename == null) throw new IllegalArgumentException("filename cannot be null");
+        if (lines == null) throw new IllegalArgumentException("lines cannot be null");
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
         File file = new File(dir, filename);
@@ -83,6 +86,8 @@ public class FileUtils {
      * 原子追加写入：先写到临时文件 file.tmp（含原内容+新行），再 renameTo(file)
      */
     public static synchronized void appendLine(String filename, String line) {
+        if (filename == null) throw new IllegalArgumentException("filename cannot be null");
+        if (line == null) throw new IllegalArgumentException("line cannot be null");
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
         File file = new File(dir, filename);

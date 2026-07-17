@@ -56,7 +56,12 @@ object ServiceClient {
     /** 通过反射 ServiceManager.getService 获取 Binder 代理 */
     private fun getBinder(): android.os.IBinder? {
         val cached = binder
-        if (cached != null && cached.isBinderAlive) return cached
+        if (cached != null) {
+            if (cached.isBinderAlive) return cached
+            // P3-03: binder 已死亡，清除缓存的死引用，避免持有无用对象，
+            // 下面的逻辑会重新通过 ServiceManager.getService 查找
+            binder = null
+        }
         return try {
             val clazz = Class.forName("android.os.ServiceManager")
             val method = clazz.getMethod("getService", String::class.java)
@@ -89,6 +94,15 @@ object ServiceClient {
             reply.readException()
             parse(reply)
         } catch (e: Throwable) {
+            // P1-05: 不再静默吞掉 Binder 异常
+            // 协程取消异常必须重新抛出，避免破坏协程结构化并发
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            android.util.Log.e("TombstoneX", "ServiceClient.transact failed: ${e.message}")
+            // DeadObjectException 表示服务端进程已死，清空缓存的 binder 引用，
+            // 下次调用时会重新通过 ServiceManager.getService 查找
+            if (e is android.os.DeadObjectException) {
+                binder = null
+            }
             null
         } finally {
             data.recycle()

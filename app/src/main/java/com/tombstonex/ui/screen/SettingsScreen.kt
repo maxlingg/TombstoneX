@@ -49,6 +49,7 @@ import com.tombstonex.BuildConfig
 import com.tombstonex.model.FreezeMode
 import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.LocalModuleState
+import com.tombstonex.ui.safeRunCatching
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,10 +68,10 @@ fun SettingsScreen(
         initialValue = null to "未知",
     ) {
         val cfg = withContext(Dispatchers.IO) {
-            runCatching { ServiceClient.getConfig() }.getOrNull()
+            safeRunCatching { ServiceClient.getConfig() }.getOrNull()
         }
         val freezer = withContext(Dispatchers.IO) {
-            runCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
+            safeRunCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
         }
         value = cfg to freezer
     }
@@ -94,7 +95,7 @@ fun SettingsScreen(
     LaunchedEffect(initialConfig) {
         val (cfg, freezer) = initialConfig
         if (cfg != null) {
-            freezeMode = FreezeMode.values().getOrElse(cfg.freezeMode) { FreezeMode.SYSTEM_API }
+            freezeMode = FreezeMode.entries.getOrElse(cfg.freezeMode) { FreezeMode.SYSTEM_API }
             debugEnabled = cfg.debugEnabled
             freezeDelay = cfg.freezeDelay.toFloat()
             committedFreezeDelay = cfg.freezeDelay.toFloat()
@@ -124,15 +125,15 @@ fun SettingsScreen(
         freezeMode = mode
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching { ServiceClient.setFreezeMode(mode.ordinal) }.getOrDefault(false)
+                safeRunCatching { ServiceClient.setFreezeMode(mode.ordinal) }.getOrDefault(false)
             }
             if (ok) {
                 // 冻结方式切换后重新选择冻结器
                 withContext(Dispatchers.IO) {
-                    runCatching { ServiceClient.reselectFreezer() }
+                    safeRunCatching { ServiceClient.reselectFreezer() }
                 }
                 currentFreezerName = withContext(Dispatchers.IO) {
-                    runCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
+                    safeRunCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
                 }
                 showSnackbar("冻结方式已切换为 ${mode.displayLabel()}，当前生效：$currentFreezerName")
             } else {
@@ -150,7 +151,7 @@ fun SettingsScreen(
         onUpdate(newValue)
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching { ServiceClient.setHookEnabled(hookId, newValue) }.getOrDefault(false)
+                safeRunCatching { ServiceClient.setHookEnabled(hookId, newValue) }.getOrDefault(false)
             }
             if (!ok) {
                 // 回滚
@@ -227,7 +228,7 @@ fun SettingsScreen(
                             val newDelay = freezeDelay.toInt()
                             scope.launch {
                                 val ok = withContext(Dispatchers.IO) {
-                                    runCatching { ServiceClient.setFreezeDelay(newDelay) }.getOrDefault(false)
+                                    safeRunCatching { ServiceClient.setFreezeDelay(newDelay) }.getOrDefault(false)
                                 }
                                 if (ok) {
                                     committedFreezeDelay = newDelay.toFloat()
@@ -262,7 +263,7 @@ fun SettingsScreen(
                                 debugEnabled = it
                                 scope.launch {
                                     val ok = withContext(Dispatchers.IO) {
-                                        runCatching { ServiceClient.setDebugEnabled(it) }.getOrDefault(false)
+                                        safeRunCatching { ServiceClient.setDebugEnabled(it) }.getOrDefault(false)
                                     }
                                     if (!ok) {
                                         debugEnabled = !it

@@ -11,7 +11,6 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -49,7 +48,9 @@ public class Logger {
                 if (logFile.exists() && logFile.length() >= MAX_LOG_SIZE) {
                     File oldFile = new File(dir, "current.log.old");
                     if (oldFile.exists()) oldFile.delete();
-                    logFile.renameTo(oldFile);
+                    if (!logFile.renameTo(oldFile)) {
+                        Log.e(TAG, "Failed to rename log file during init rotation");
+                    }
                 }
                 logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
             } catch (IOException e) {
@@ -111,14 +112,19 @@ public class Logger {
                         }
                         File oldFile = new File(LOG_DIR, "current.log.old");
                         if (oldFile.exists()) oldFile.delete();
-                        logFile.renameTo(oldFile);
-                        // 轮转后重建 writer 失败时的恢复
-                        try {
-                            logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
-                        } catch (IOException e2) {
-                            Log.e(TAG, "Failed to recreate log writer after rotation", e2);
-                            // 尝试下一次写入时重新初始化
+                        if (!logFile.renameTo(oldFile)) {
+                            Log.e(TAG, "Failed to rename log file during rotation");
+                            // 轮转失败，保持 writer 为 null，避免重新打开同一超限文件
                             logWriter = null;
+                        } else {
+                            // 轮转后重建 writer
+                            try {
+                                logWriter = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8);
+                            } catch (IOException e2) {
+                                Log.e(TAG, "Failed to recreate log writer after rotation", e2);
+                                // 尝试下一次写入时重新初始化
+                                logWriter = null;
+                            }
                         }
                     }
                 } else {
@@ -158,6 +164,7 @@ public class Logger {
      * @return 日志内容字符串
      */
     public static String readLog(int maxLines) {
+        if (maxLines <= 0) return "";
         File logFile = new File(LOG_DIR, "current.log");
         if (!logFile.exists()) return "";
         List<String> lines = new ArrayList<>();
@@ -194,7 +201,9 @@ public class Logger {
             logWriter = null;
             File logFile = new File(LOG_DIR, "current.log");
             File oldFile = new File(LOG_DIR, "current.log.old");
-            if (oldFile.exists()) oldFile.delete();
+            if (oldFile.exists() && !oldFile.delete()) {
+                Log.w(TAG, "Failed to delete old log file during clear");
+            }
             if (logFile.exists() && !logFile.delete()) {
                 Log.e(TAG, "Failed to delete log file during clear");
                 return;

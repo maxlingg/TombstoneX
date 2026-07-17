@@ -7,7 +7,6 @@ import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
 import com.tombstonex.util.Logger;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -61,9 +60,10 @@ public class AppProvider {
 
                     if (!includeSystem && isSystem) continue;
 
-                    String label = pm.getApplicationLabel(appInfo).toString();
-                    Drawable icon = pm.getApplicationIcon(appInfo);
                     String packageName = pkg.packageName;
+                    CharSequence labelSeq = pm.getApplicationLabel(appInfo);
+                    String label = labelSeq != null ? labelSeq.toString() : packageName;
+                    Drawable icon = pm.getApplicationIcon(appInfo);
 
                     result.add(new AppData(
                         label,
@@ -79,7 +79,7 @@ public class AppProvider {
             }
 
             // 按名称排序
-            Collections.sort(result, Comparator.comparing(a -> a.label.toLowerCase(java.util.Locale.ROOT)));
+            result.sort(Comparator.comparing(a -> a.label.toLowerCase(java.util.Locale.ROOT)));
 
             Logger.i("AppProvider: loaded " + result.size() + " apps"
                 + (includeSystem ? " (including system)" : " (user only)"));

@@ -16,3 +16,15 @@
 
 # Xposed API
 -keep class de.robv.android.xposed.** { *; }
+
+# Provider（IPC ContentProvider，不可混淆）
+-keep class com.tombstonex.provider.** { *; }
+
+# 工具类（反射调用）
+-keep class com.tombstonex.util.** { *; }
+
+# BuildConfig（运行时反射读取）
+-keep class com.tombstonex.BuildConfig { *; }
+
+# ServiceClient 内部类（IPC 回调/Stub）
+-keep class com.tombstonex.service.ServiceClient$* { *; }

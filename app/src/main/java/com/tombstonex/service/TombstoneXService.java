@@ -83,6 +83,10 @@ public class TombstoneXService extends Binder {
                 return true;
             }
         }
+        // P2-02: 跟踪 reply 是否已被写入（writeNoException 已调用）。
+        // 异常发生时仅在 reply 未被写入时才 writeException，避免在 writeNoException
+        // 之后再次写入异常标记导致 reply 数据错位。声明在 try 之外以便 catch 块可访问。
+        boolean replied = false;
         try {
             // 验证接口描述符
             data.enforceInterface(DESCRIPTOR);
@@ -100,6 +104,7 @@ public class TombstoneXService extends Binder {
                     config.put("hookActivitySwitch", cm.isHookActivitySwitchEnabled());
                     config.put("hookScreenState", cm.isHookScreenStateEnabled());
                     reply.writeNoException();
+                    replied = true;
                     reply.writeString(config.toString());
                     return true;
                 }
@@ -108,11 +113,13 @@ public class TombstoneXService extends Binder {
                     FreezeMode[] modes = FreezeMode.values();
                     if (mode < 0 || mode >= modes.length) {
                         reply.writeNoException();
+                        replied = true;
                         reply.writeBoolean(false);
                         return true;
                     }
                     ConfigManager.getInstance().setFreezeMode(modes[mode]);
                     reply.writeNoException();
+                    replied = true;
                     reply.writeBoolean(true);
                     return true;
                 }
@@ -120,12 +127,14 @@ public class TombstoneXService extends Binder {
                     int delay = data.readInt();
                     ConfigManager.getInstance().setFreezeDelay(delay);
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_SET_DEBUG_ENABLED: {
                     boolean enabled = data.readBoolean();
                     ConfigManager.getInstance().setDebugEnabled(enabled);
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_SET_HOOK_ENABLED: {
@@ -140,10 +149,12 @@ public class TombstoneXService extends Binder {
                         case 4: cm.setHookScreenStateEnabled(enabled); break;
                         default:
                             reply.writeNoException();
+                            replied = true;
                             reply.writeBoolean(false);
                             return true;
                     }
                     reply.writeNoException();
+                    replied = true;
                     reply.writeBoolean(true);
                     return true;
                 }
@@ -151,10 +162,12 @@ public class TombstoneXService extends Binder {
                     boolean paused = data.readBoolean();
                     ConfigManager.getInstance().setGlobalPaused(paused);
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_IS_GLOBAL_PAUSED: {
                     reply.writeNoException();
+                    replied = true;
                     reply.writeBoolean(ConfigManager.getInstance().isGlobalPaused());
                     return true;
                 }
@@ -164,6 +177,7 @@ public class TombstoneXService extends Binder {
                         arr.put(pkg);
                     }
                     reply.writeNoException();
+                    replied = true;
                     reply.writeString(arr.toString());
                     return true;
                 }
@@ -171,22 +185,26 @@ public class TombstoneXService extends Binder {
                     String pkg = data.readString();
                     if (pkg == null || pkg.isEmpty()) {
                         reply.writeNoException();
+                        replied = true;
                         reply.writeBoolean(false);
                         return true;
                     }
                     WhitelistManager.getInstance().addWhiteApp(pkg);
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_REMOVE_WHITE_APP: {
                     String pkg = data.readString();
                     if (pkg == null || pkg.isEmpty()) {
                         reply.writeNoException();
+                        replied = true;
                         reply.writeBoolean(false);
                         return true;
                     }
                     WhitelistManager.getInstance().removeWhiteApp(pkg);
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_GET_WHITE_PROCESSES: {
@@ -195,6 +213,7 @@ public class TombstoneXService extends Binder {
                         arr.put(proc);
                     }
                     reply.writeNoException();
+                    replied = true;
                     reply.writeString(arr.toString());
                     return true;
                 }
@@ -202,22 +221,26 @@ public class TombstoneXService extends Binder {
                     String proc = data.readString();
                     if (proc == null || proc.isEmpty()) {
                         reply.writeNoException();
+                        replied = true;
                         reply.writeBoolean(false);
                         return true;
                     }
                     WhitelistManager.getInstance().addWhiteProcess(proc);
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_REMOVE_WHITE_PROCESS: {
                     String proc = data.readString();
                     if (proc == null || proc.isEmpty()) {
                         reply.writeNoException();
+                        replied = true;
                         reply.writeBoolean(false);
                         return true;
                     }
                     WhitelistManager.getInstance().removeWhiteProcess(proc);
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_GET_BLACK_SYSTEM_APPS: {
@@ -226,6 +249,7 @@ public class TombstoneXService extends Binder {
                         arr.put(pkg);
                     }
                     reply.writeNoException();
+                    replied = true;
                     reply.writeString(arr.toString());
                     return true;
                 }
@@ -233,22 +257,26 @@ public class TombstoneXService extends Binder {
                     String pkg = data.readString();
                     if (pkg == null || pkg.isEmpty()) {
                         reply.writeNoException();
+                        replied = true;
                         reply.writeBoolean(false);
                         return true;
                     }
                     WhitelistManager.getInstance().addBlackSystemApp(pkg);
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_REMOVE_BLACK_SYSTEM_APP: {
                     String pkg = data.readString();
                     if (pkg == null || pkg.isEmpty()) {
                         reply.writeNoException();
+                        replied = true;
                         reply.writeBoolean(false);
                         return true;
                     }
                     WhitelistManager.getInstance().removeBlackSystemApp(pkg);
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_FREEZE_PROCESS: {
@@ -256,6 +284,7 @@ public class TombstoneXService extends Binder {
                     int uid = data.readInt();
                     boolean result = FreezeManager.getInstance().freezeProcess(pid, uid);
                     reply.writeNoException();
+                    replied = true;
                     reply.writeBoolean(result);
                     return true;
                 }
@@ -264,6 +293,7 @@ public class TombstoneXService extends Binder {
                     int uid = data.readInt();
                     boolean result = FreezeManager.getInstance().unfreezeProcess(pid, uid);
                     reply.writeNoException();
+                    replied = true;
                     reply.writeBoolean(result);
                     return true;
                 }
@@ -284,6 +314,7 @@ public class TombstoneXService extends Binder {
                         arr.put(obj);
                     }
                     reply.writeNoException();
+                    replied = true;
                     reply.writeString(arr.toString());
                     return true;
                 }
@@ -293,11 +324,13 @@ public class TombstoneXService extends Binder {
                         if (info.state == AppState.FROZEN) count++;
                     }
                     reply.writeNoException();
+                    replied = true;
                     reply.writeInt(count);
                     return true;
                 }
                 case TX_GET_CURRENT_FREEZER_NAME: {
                     reply.writeNoException();
+                    replied = true;
                     reply.writeString(FreezeManager.getInstance().getCurrentFreezerName());
                     return true;
                 }
@@ -306,27 +339,32 @@ public class TombstoneXService extends Binder {
                     if (maxLines < 0) maxLines = 0;
                     String log = Logger.readLog(maxLines);
                     reply.writeNoException();
+                    replied = true;
                     reply.writeString(log != null ? log : "");
                     return true;
                 }
                 case TX_CLEAR_LOG: {
                     Logger.clearLog();
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_PAUSE_ALL: {
                     FreezeManager.getInstance().pauseAll();
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_RESUME_ALL: {
                     FreezeManager.getInstance().resumeAll();
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 case TX_RESELECT_FREEZER: {
                     FreezeManager.getInstance().reselectFreezer();
                     reply.writeNoException();
+                    replied = true;
                     return true;
                 }
                 default:
@@ -334,7 +372,11 @@ public class TombstoneXService extends Binder {
             }
         } catch (Exception e) {
             Logger.e("TombstoneXService transaction error: " + code, e);
-            reply.writeException(e);
+            // P2-02: 仅在 reply 尚未被写入（writeNoException 未调用）时才写入异常，
+            // 避免在 writeNoException 之后再 writeException 导致 reply 数据错位
+            if (!replied) {
+                reply.writeException(e);
+            }
             return true;
         }
     }
@@ -344,6 +386,12 @@ public class TombstoneXService extends Binder {
      */
     public static void register() {
         try {
+            // P3-04: 防止重复注册。若服务已注册则跳过，
+            // 避免重复 addService 抛异常或覆盖已有服务实例
+            if (ServiceManager.getService(SERVICE_NAME) != null) {
+                Logger.i("TombstoneXService already registered, skip");
+                return;
+            }
             ServiceManager.addService(SERVICE_NAME, new TombstoneXService());
             Logger.i("TombstoneXService registered as '" + SERVICE_NAME + "'");
         } catch (Throwable t) {

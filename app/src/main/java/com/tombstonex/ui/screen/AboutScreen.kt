@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import com.tombstonex.BuildConfig
 import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.LocalModuleState
+import com.tombstonex.ui.safeRunCatching
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -67,7 +68,7 @@ fun AboutScreen(onBack: () -> Unit) {
     var freezerName by remember { mutableStateOf("未知") }
     LaunchedEffect(Unit) {
         freezerName = withContext(Dispatchers.IO) {
-            runCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
+            safeRunCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
         }
     }
     val freezerAvailable = freezerName.isNotBlank() &&

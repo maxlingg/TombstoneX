@@ -229,6 +229,10 @@ public class ScreenStateHook {
     private static void batchFreezeAll() {
         int frozen = 0;
         int skipped = 0;
+        // 已知限制：isAnyAudioPlaying() 是全局检查（AudioManager.isMusicActive()），
+        // 无法区分具体是哪个应用在播放音频。因此只要有任意应用播放音乐，
+        // 所有后台应用都会被跳过冻结。这里放在循环外只调用一次以减少反射开销，
+        // 不移除该检查以避免误冻结正在播放音频的应用。
         boolean audioPlaying = ActivitySwitchHook.isAnyAudioPlaying();
         for (Map.Entry<Integer, AppInfo> entry :
                 ProcessTracker.getInstance().getAllProcesses().entrySet()) {
@@ -259,7 +263,9 @@ public class ScreenStateHook {
             // 尝试获取 ProcessRecord 对象进行检查
             Object processRecord = getProcessRecordByPid(info.pid);
             // 如果无法获取 ProcessRecord，跳过该进程的冻结（安全优先）
-            if (processRecord == null && hasAmsHook) {
+            // 注意：无论 hasAmsHook 是否为 true，只要拿不到 ProcessRecord 就跳过，
+            // 避免在缺少 AMS 引用或反射失败时误冻结前台进程。
+            if (processRecord == null) {
                 Logger.d("Skip freezing " + info.packageName + ": cannot verify foreground status");
                 skipped++;
                 continue;

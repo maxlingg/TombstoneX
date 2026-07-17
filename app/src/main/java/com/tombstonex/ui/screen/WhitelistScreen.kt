@@ -35,6 +35,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,11 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tombstonex.provider.AppProvider
 import com.tombstonex.service.ServiceClient
+import com.tombstonex.ui.safeRunCatching
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 白名单页面渲染所用的应用条目 */
+@Immutable
 private data class WhitelistAppItem(
     val label: String,
     val packageName: String,
@@ -62,6 +65,7 @@ private data class WhitelistAppItem(
 )
 
 /** 进程白名单 Tab 展示的运行进程条目 */
+@Immutable
 private data class ProcessDisplayItem(
     val processName: String,
     val packageName: String,
@@ -90,9 +94,9 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
         scope.launch {
             val (wa, wp, bs) = withContext(Dispatchers.IO) {
                 Triple(
-                    runCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet()),
-                    runCatching { ServiceClient.getWhiteProcesses() }.getOrDefault(emptySet()),
-                    runCatching { ServiceClient.getBlackSystemApps() }.getOrDefault(emptySet()),
+                    safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet()),
+                    safeRunCatching { ServiceClient.getWhiteProcesses() }.getOrDefault(emptySet()),
+                    safeRunCatching { ServiceClient.getBlackSystemApps() }.getOrDefault(emptySet()),
                 )
             }
             whiteApps = wa
@@ -113,7 +117,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                     )
                 }
                 // 进程白名单 Tab 展示运行中的进程名（如 com.foo:pushservice）
-                val p = runCatching { ServiceClient.getAllProcesses() }
+                val p = safeRunCatching { ServiceClient.getAllProcesses() }
                     .getOrDefault(emptyList())
                     .filter { it.processName.isNotBlank() }
                     .map { proc ->
@@ -143,7 +147,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
     fun toggleWhiteApp(pkg: String, currentlyOn: Boolean) {
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching {
+                safeRunCatching {
                     if (currentlyOn) ServiceClient.removeWhiteApp(pkg)
                     else ServiceClient.addWhiteApp(pkg)
                 }.getOrDefault(false)
@@ -156,7 +160,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
     fun toggleWhiteProcess(proc: String, currentlyOn: Boolean) {
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching {
+                safeRunCatching {
                     if (currentlyOn) ServiceClient.removeWhiteProcess(proc)
                     else ServiceClient.addWhiteProcess(proc)
                 }.getOrDefault(false)
@@ -169,7 +173,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
     fun toggleBlackSystem(pkg: String, currentlyOn: Boolean) {
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching {
+                safeRunCatching {
                     if (currentlyOn) ServiceClient.removeBlackSystemApp(pkg)
                     else ServiceClient.addBlackSystemApp(pkg)
                 }.getOrDefault(false)
@@ -239,11 +243,13 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                 // Tab 2：系统应用
                 when (selectedTab) {
                     0 -> {
-                        val visibleApps = apps.filter { !it.isSystem }
-                        val filtered = if (searchQuery.isBlank()) visibleApps else {
-                            visibleApps.filter {
-                                it.label.contains(searchQuery, ignoreCase = true) ||
-                                    it.packageName.contains(searchQuery, ignoreCase = true)
+                        val visibleApps = remember(apps) { apps.filter { !it.isSystem } }
+                        val filtered = remember(visibleApps, searchQuery) {
+                            if (searchQuery.isBlank()) visibleApps else {
+                                visibleApps.filter {
+                                    it.label.contains(searchQuery, ignoreCase = true) ||
+                                        it.packageName.contains(searchQuery, ignoreCase = true)
+                                }
                             }
                         }
                         Text(
@@ -271,10 +277,12 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                         }
                     }
                     1 -> {
-                        val filtered = if (searchQuery.isBlank()) processes else {
-                            processes.filter {
-                                it.processName.contains(searchQuery, ignoreCase = true) ||
-                                    it.packageName.contains(searchQuery, ignoreCase = true)
+                        val filtered = remember(processes, searchQuery) {
+                            if (searchQuery.isBlank()) processes else {
+                                processes.filter {
+                                    it.processName.contains(searchQuery, ignoreCase = true) ||
+                                        it.packageName.contains(searchQuery, ignoreCase = true)
+                                }
                             }
                         }
                         Text(
@@ -303,11 +311,13 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                         }
                     }
                     else -> {
-                        val visibleApps = apps.filter { it.isSystem }
-                        val filtered = if (searchQuery.isBlank()) visibleApps else {
-                            visibleApps.filter {
-                                it.label.contains(searchQuery, ignoreCase = true) ||
-                                    it.packageName.contains(searchQuery, ignoreCase = true)
+                        val visibleApps = remember(apps) { apps.filter { it.isSystem } }
+                        val filtered = remember(visibleApps, searchQuery) {
+                            if (searchQuery.isBlank()) visibleApps else {
+                                visibleApps.filter {
+                                    it.label.contains(searchQuery, ignoreCase = true) ||
+                                        it.packageName.contains(searchQuery, ignoreCase = true)
+                                }
                             }
                         }
                         Text(

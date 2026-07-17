@@ -46,9 +46,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tombstonex.BuildConfig
 import com.tombstonex.service.ServiceClient
+import com.tombstonex.ui.safeRunCatching
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * 日志级别颜色常量。
+ *
+ * E（错误）/ W（警告）/ D（调试）使用固定色值，提取为常量避免每次重组重建 [Color] 对象；
+ * I（信息）复用主题 [androidx.compose.material3.MaterialTheme.colorScheme.primary]，
+ * 默认行复用 onSurface，二者随主题变化故不在此固化。
+ */
+private object LogLineColors {
+    val Error = Color(0xFFEF5350)   // 红
+    val Warn = Color(0xFFFFA726)    // 橙
+    val Debug = Color(0xFF9E9E9E)   // 灰
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,7 +80,7 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
         scope.launch {
             loading = true
             errorMessage = null
-            moduleAvailable = withContext(Dispatchers.IO) { ServiceClient.isAvailable }
+            moduleAvailable = withContext(Dispatchers.IO) { safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false) }
             if (!moduleAvailable) {
                 lines = emptyList()
                 errorMessage = "模块未激活，无法读取日志"
@@ -74,7 +88,7 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                 return@launch
             }
             val result = withContext(Dispatchers.IO) {
-                runCatching { ServiceClient.readLog(5000) }.getOrDefault("")
+                safeRunCatching { ServiceClient.readLog(5000) }.getOrDefault("")
             }
             lines = if (result.isBlank()) emptyList() else result.lines()
             if (lines.isEmpty()) errorMessage = "日志为空"
@@ -99,7 +113,7 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
     fun clearLogs() {
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                runCatching { ServiceClient.clearLog() }.getOrDefault(false)
+                safeRunCatching { ServiceClient.clearLog() }.getOrDefault(false)
             }
             if (ok) {
                 lines = emptyList()
@@ -198,7 +212,7 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        itemsIndexed(lines) { _, line ->
+                        itemsIndexed(lines, key = { index, _ -> index }) { _, line ->
                             LogLineView(line)
                         }
                     }
@@ -228,10 +242,10 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
 @Composable
 private fun LogLineView(line: String) {
     val color = when {
-        line.contains("][E]") -> Color(0xFFEF5350)       // 红
-        line.contains("][W]") -> Color(0xFFFFA726)       // 橙
+        line.contains("][E]") -> LogLineColors.Error            // 红
+        line.contains("][W]") -> LogLineColors.Warn             // 橙
         line.contains("][I]") -> MaterialTheme.colorScheme.primary // 蓝
-        line.contains("][D]") -> Color(0xFF9E9E9E)      // 灰
+        line.contains("][D]") -> LogLineColors.Debug            // 灰
         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
     }
     Box(

@@ -6,6 +6,7 @@ import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * 快捷设置磁贴：展示当前冻结状态并切换全局暂停/恢复。
@@ -52,6 +53,12 @@ class FreezeTileService : TileService() {
     override fun onDestroy() {
         super.onDestroy()
         serviceExecutor.shutdown()
+        // P2-07: 等待已提交任务完成，避免销毁时丢失正在执行的刷新/切换操作
+        try {
+            serviceExecutor.awaitTermination(1, TimeUnit.SECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
     }
 
     /** 刷新磁贴外观与状态（ServiceClient 调用在后台线程，UI 更新切回主线程） */

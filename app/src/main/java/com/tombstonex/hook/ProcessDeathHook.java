@@ -35,9 +35,12 @@ public class ProcessDeathHook {
                     protected void afterHookedMethod(MethodHookParam param) {
                         try {
                             int pid = getPidFromProcessRecord(param.thisObject);
-                            ActivitySwitchHook.cancelPendingFreeze(pid);
-                            ProcessTracker.getInstance().removeProcess(pid);
-                            Logger.i("Process died, cleaned up: pid=" + pid);
+                            // P2-06: pid <= 0 时无法定位进程，跳过清理避免无意义的全量遍历
+                            if (pid > 0) {
+                                ActivitySwitchHook.cancelPendingFreeze(pid);
+                                ProcessTracker.getInstance().removeProcess(pid);
+                                Logger.i("Process died, cleaned up: pid=" + pid);
+                            }
                         } catch (Throwable t) {
                             Logger.w("onCleanupApplicationRecord hook error: " + t.getMessage());
                         }
@@ -57,9 +60,12 @@ public class ProcessDeathHook {
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
                                 int pid = getPidFromProcessRecord(param.thisObject);
-                                ActivitySwitchHook.cancelPendingFreeze(pid);
-                                ProcessTracker.getInstance().removeProcess(pid);
-                                Logger.i("Process died (handleAppDied), cleaned up: pid=" + pid);
+                                // P2-06: pid <= 0 时无法定位进程，跳过清理避免无意义的全量遍历
+                                if (pid > 0) {
+                                    ActivitySwitchHook.cancelPendingFreeze(pid);
+                                    ProcessTracker.getInstance().removeProcess(pid);
+                                    Logger.i("Process died (handleAppDied), cleaned up: pid=" + pid);
+                                }
                             } catch (Throwable t2) {
                                 Logger.w("handleAppDied hook error: " + t2.getMessage());
                             }
@@ -105,9 +111,12 @@ public class ProcessDeathHook {
                                     Object processRecord = param.args[0];
                                     if (processRecord == null) return;
                                     int pid = getPidFromProcessRecord(processRecord);
-                                    ActivitySwitchHook.cancelPendingFreeze(pid);
-                                    ProcessTracker.getInstance().removeProcess(pid);
-                                    Logger.i("cleanUpApplicationRecord: cleaned up pid=" + pid);
+                                    // P2-06: pid <= 0 时无法定位进程，跳过清理避免无意义的全量遍历
+                                    if (pid > 0) {
+                                        ActivitySwitchHook.cancelPendingFreeze(pid);
+                                        ProcessTracker.getInstance().removeProcess(pid);
+                                        Logger.i("cleanUpApplicationRecord: cleaned up pid=" + pid);
+                                    }
                                 } catch (Throwable t) {
                                     Logger.w("cleanUpApplicationRecord hook error: " + t.getMessage());
                                 }
@@ -143,9 +152,12 @@ public class ProcessDeathHook {
                                 Object processRecord = param.args[0];
                                 if (processRecord == null) return;
                                 int pid = getPidFromProcessRecord(processRecord);
-                                ActivitySwitchHook.cancelPendingFreeze(pid);
-                                ProcessTracker.getInstance().removeProcess(pid);
-                                Logger.w("App crashed, cleaned up: pid=" + pid);
+                                // P2-06: pid <= 0 时无法定位进程，跳过清理避免无意义的全量遍历
+                                if (pid > 0) {
+                                    ActivitySwitchHook.cancelPendingFreeze(pid);
+                                    ProcessTracker.getInstance().removeProcess(pid);
+                                    Logger.w("App crashed, cleaned up: pid=" + pid);
+                                }
                             } catch (Throwable t) {
                                 Logger.w("handleAppCrashLocked hook error: " + t.getMessage());
                             }

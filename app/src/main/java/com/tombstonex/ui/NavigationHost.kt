@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
@@ -38,7 +39,7 @@ sealed class TxDestination(val route: String, val label: String, val icon: Image
     object Whitelist : TxDestination("whitelist", "白名单", Icons.Filled.Star)
     object Settings : TxDestination("settings", "设置", Icons.Filled.Settings)
     object Logs : TxDestination("logs", "日志", Icons.Filled.List)
-    object About : TxDestination("about", "关于", Icons.Filled.Star)
+    object About : TxDestination("about", "关于", Icons.Filled.Info)
 }
 
 /** 底部导航栏展示的 Tab 列表 */
@@ -104,7 +105,7 @@ fun NavigationHost() {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val showSnackbar: (String) -> Unit = { message ->
+    val showSnackbar: (String) -> Unit = remember(scope, snackbarHostState) { message ->
         scope.launch { snackbarHostState.showSnackbar(message) }
     }
 

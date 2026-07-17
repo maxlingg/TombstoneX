@@ -133,7 +133,11 @@ public class ConfigManager {
         // 删除旧 markers（除了刚写入的 targetMarker）
         for (String marker : markers) {
             if (marker.equals(targetMarker)) continue;
-            new File(CONFIG_DIR + "/" + marker).delete();
+            File oldMarker = new File(CONFIG_DIR + "/" + marker);
+            // P3-05: 检查 delete() 返回值，删除失败时记录日志而非静默忽略
+            if (oldMarker.exists() && !oldMarker.delete()) {
+                Logger.w("Failed to delete old marker file: " + marker);
+            }
         }
 
         // 文件写入成功后更新内存

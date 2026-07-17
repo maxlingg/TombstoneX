@@ -43,6 +43,7 @@ android {
                     storePassword = keystoreProperties["storePassword"] as String
                 }
             } else {
+                logger.warn("keystore.properties not found, falling back to debug signing for release build")
                 signingConfig = signingConfigs.getByName("debug")
             }
         }

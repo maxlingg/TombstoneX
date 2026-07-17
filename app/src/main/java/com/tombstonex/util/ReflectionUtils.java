@@ -48,6 +48,7 @@ public class ReflectionUtils {
     }
 
     public static Class<?> findClass(String className, ClassLoader classLoader) {
+        if (className == null) return null;
         try {
             return Class.forName(className, false, classLoader);
         } catch (ClassNotFoundException e) {
@@ -72,6 +73,7 @@ public class ReflectionUtils {
     }
 
     public static Method findMethod(Class<?> clazz, String methodName, Class<?>... paramTypes) {
+        if (clazz == null) return null;
         try {
             Method method = clazz.getDeclaredMethod(methodName, paramTypes);
             method.setAccessible(true);
@@ -101,6 +103,7 @@ public class ReflectionUtils {
     }
 
     public static Method findMethodRecursive(Class<?> clazz, String methodName, Class<?>... paramTypes) {
+        if (clazz == null) return null;
         String cacheKey = buildMethodCacheKey(methodName, paramTypes);
         // 先查缓存
         ConcurrentHashMap<String, Method> classMethods = methodCache.get(clazz);
@@ -156,6 +159,7 @@ public class ReflectionUtils {
     }
 
     public static Field findField(Class<?> clazz, String fieldName) {
+        if (clazz == null) return null;
         try {
             Field field = clazz.getDeclaredField(fieldName);
             field.setAccessible(true);
@@ -167,6 +171,7 @@ public class ReflectionUtils {
     }
 
     public static Field findFieldRecursive(Class<?> clazz, String fieldName) {
+        if (clazz == null) return null;
         // 先查缓存
         ConcurrentHashMap<String, Field> classCache = fieldCache.get(clazz);
         if (classCache != null) {
@@ -194,7 +199,7 @@ public class ReflectionUtils {
     public static <T> T getFieldValue(Object obj, Field field) {
         try {
             return (T) field.get(obj);
-        } catch (IllegalAccessException e) {
+        } catch (IllegalAccessException | IllegalArgumentException | NullPointerException e) {
             Logger.e("Failed to get field value: " + field.getName(), e);
             return null;
         }
@@ -203,7 +208,7 @@ public class ReflectionUtils {
     public static void setFieldValue(Object obj, Field field, Object value) {
         try {
             field.set(obj, value);
-        } catch (IllegalAccessException e) {
+        } catch (IllegalAccessException | IllegalArgumentException | NullPointerException e) {
             Logger.e("Failed to set field value: " + field.getName(), e);
         }
     }
