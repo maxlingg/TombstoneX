@@ -399,6 +399,7 @@ public class TombstoneXService extends Binder {
     /**
      * 注册服务到 ServiceManager（在 system_server 中调用）
      * 使用反射调用隐藏 API android.os.ServiceManager，避免编译期依赖。
+     * 尝试多种方法签名以兼容不同 Android 版本。
      */
     public static void register() {
         Logger.i("TombstoneXService.register() starting...");
@@ -407,31 +408,100 @@ public class TombstoneXService extends Binder {
             Logger.i("ServiceManager class loaded: " + smClass.getName());
 
             java.lang.reflect.Method getService = smClass.getMethod("getService", String.class);
-            java.lang.reflect.Method addService = smClass.getMethod("addService", String.class, IBinder.class);
-            Logger.i("ServiceManager methods resolved: getService, addService");
+            Logger.i("ServiceManager.getService resolved");
 
             // P3-04: 防止重复注册。若服务已注册则跳过
             Object existing = getService.invoke(null, SERVICE_NAME);
             if (existing != null) {
                 Logger.i("TombstoneXService already registered, skip");
+                setRegStatus("already_registered");
                 return;
             }
 
             TombstoneXService serviceInstance = new TombstoneXService();
-            addService.invoke(null, SERVICE_NAME, serviceInstance);
-            Logger.i("TombstoneXService registered as '" + SERVICE_NAME + "'");
+
+            // 尝试多种 addService 方法签名，兼容不同 Android 版本
+            boolean registered = false;
+            String lastError = "";
+
+            // 尝试 1: addService(String, IBinder)
+            try {
+                java.lang.reflect.Method addService = smClass.getMethod("addService", String.class, IBinder.class);
+                addService.invoke(null, SERVICE_NAME, serviceInstance);
+                registered = true;
+                Logger.i("addService(String, IBinder) succeeded");
+            } catch (NoSuchMethodException e) {
+                Logger.i("addService(String, IBinder) not found, trying alternative signatures");
+                lastError = "NoSuchMethod: addService(String,IBinder)";
+            } catch (Throwable e) {
+                lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
+                Logger.e("addService(String, IBinder) failed: " + lastError, e);
+            }
+
+            // 尝试 2: addService(String, IBinder, boolean allowIsolated)
+            if (!registered) {
+                try {
+                    java.lang.reflect.Method addService = smClass.getMethod("addService", String.class, IBinder.class, boolean.class);
+                    addService.invoke(null, SERVICE_NAME, serviceInstance, false);
+                    registered = true;
+                    Logger.i("addService(String, IBinder, boolean) succeeded");
+                } catch (NoSuchMethodException e) {
+                    Logger.i("addService(String, IBinder, boolean) not found");
+                    if (lastError.isEmpty()) lastError = "NoSuchMethod: addService(String,IBinder,boolean)";
+                } catch (Throwable e) {
+                    lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
+                    Logger.e("addService(String, IBinder, boolean) failed: " + lastError, e);
+                }
+            }
+
+            // 尝试 3: 使用 getDeclaredMethod + setAccessible
+            if (!registered) {
+                try {
+                    java.lang.reflect.Method addService = smClass.getDeclaredMethod("addService", String.class, IBinder.class);
+                    addService.setAccessible(true);
+                    addService.invoke(null, SERVICE_NAME, serviceInstance);
+                    registered = true;
+                    Logger.i("getDeclaredMethod addService(String, IBinder) succeeded");
+                } catch (NoSuchMethodException e) {
+                    if (lastError.isEmpty()) lastError = "NoSuchMethod (declared): addService(String,IBinder)";
+                } catch (Throwable e) {
+                    lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
+                    Logger.e("getDeclaredMethod addService failed: " + lastError, e);
+                }
+            }
 
             // 验证注册是否成功
-            Object verify = getService.invoke(null, SERVICE_NAME);
-            if (verify != null) {
-                Logger.i("TombstoneXService registration verified OK");
+            if (registered) {
+                Object verify = getService.invoke(null, SERVICE_NAME);
+                if (verify != null) {
+                    Logger.i("TombstoneXService registration verified OK");
+                    setRegStatus("ok");
+                } else {
+                    Logger.e("TombstoneXService registration verification FAILED - getService returned null after addService");
+                    setRegStatus("verify_failed_null");
+                }
             } else {
-                Logger.e("TombstoneXService registration verification FAILED - getService returned null after addService");
+                Logger.e("All addService attempts failed. Last error: " + lastError);
+                setRegStatus("failed:" + lastError);
             }
-        } catch (NoSuchMethodException e) {
-            Logger.e("ServiceManager.addService method not found - API may have changed in this Android version", e);
         } catch (Throwable t) {
             Logger.e("Failed to register TombstoneXService", t);
+            setRegStatus("exception:" + t.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * 将注册状态写入系统属性，供 App 端读取诊断信息。
+     */
+    private static void setRegStatus(String status) {
+        try {
+            Class<?> spClass = Class.forName("android.os.SystemProperties");
+            java.lang.reflect.Method setMethod = spClass.getMethod("set", String.class, String.class);
+            // 截断到 91 字符（系统属性值限制 92 字节）
+            String truncated = status.length() > 91 ? status.substring(0, 91) : status;
+            setMethod.invoke(null, "persist.sys.tombstonex.regstatus", truncated);
+        } catch (Throwable t) {
+            Logger.e("Failed to set reg status property", t);
         }
     }
 }

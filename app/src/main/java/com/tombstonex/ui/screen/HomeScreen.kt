@@ -113,6 +113,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     var moduleAvailable by remember { mutableStateOf(true) }
     var moduleLoaded by remember { mutableStateOf(false) }
     var moduleEnabled by remember { mutableStateOf(false) }
+    var regStatus by remember { mutableStateOf("") }
     var showRebootDialog by remember { mutableStateOf(false) }
 
     // 搜索防抖
@@ -152,15 +153,18 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         loadJob = scope.launch {
             try {
                 // 同时检测模块启用状态、加载状态和 Binder 服务可用性
-                val (modEnabled, modLoaded, modAvailable) = withContext(Dispatchers.IO) {
+                withContext(Dispatchers.IO) {
                     val e = safeRunCatching { ServiceClient.isModuleEnabled }.getOrDefault(false)
                     val l = safeRunCatching { ServiceClient.isModuleLoaded }.getOrDefault(false)
                     val a = safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
-                    Triple(e, l, a)
+                    val rs = safeRunCatching { ServiceClient.regStatus }.getOrDefault("")
+                    Triple(e, l, a) to rs
+                }.let { (triple, rs) ->
+                    moduleEnabled = triple.first
+                    moduleLoaded = triple.second
+                    moduleAvailable = triple.third
+                    regStatus = rs
                 }
-                moduleEnabled = modEnabled
-                moduleLoaded = modLoaded
-                moduleAvailable = modAvailable
                 val appProvider = AppProvider.getInstance(context)
                 val whiteApps = withContext(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
@@ -300,7 +304,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
             ) {
                 // 模块未激活提示
                 if (!moduleAvailable) {
-                    item { ModuleNotActiveCard(moduleEnabled = moduleEnabled, moduleLoaded = moduleLoaded) }
+                    item { ModuleNotActiveCard(moduleEnabled = moduleEnabled, moduleLoaded = moduleLoaded, regStatus = regStatus) }
                 }
 
                 if (!loading) {
@@ -420,7 +424,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
 }
 
 @Composable
-private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Boolean = false) {
+private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Boolean = false, regStatus: String = "") {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -445,12 +449,20 @@ private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Bo
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
+                val statusText = when {
+                    !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块\n点击右上角电源按钮可快速重启设备"
+                    !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」\n点击右上角电源按钮可快速重启设备"
+                    else -> {
+                        val base = "模块已加载，但 Binder 服务注册失败\n请检查 LSPosed 日志或尝试重新启用模块\n点击右上角电源按钮可快速重启设备"
+                        if (regStatus.isNotEmpty()) {
+                            "$base\n\n注册诊断: $regStatus"
+                        } else {
+                            base
+                        }
+                    }
+                }
                 Text(
-                    text = when {
-                        !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块\n点击右上角电源按钮可快速重启设备"
-                        !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」\n点击右上角电源按钮可快速重启设备"
-                        else -> "模块已加载，但 Binder 服务注册失败\n请检查 LSPosed 日志或尝试重新启用模块\n点击右上角电源按钮可快速重启设备"
-                    },
+                    text = statusText,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
                 )

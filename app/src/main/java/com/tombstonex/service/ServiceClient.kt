@@ -58,6 +58,19 @@ object ServiceClient {
         get() = getBinder() != null
 
     /**
+     * 获取 Binder 服务注册失败的诊断信息。
+     * 由 TombstoneXService.register() 写入系统属性。
+     */
+    val regStatus: String
+        get() = try {
+            val spClass = Class.forName("android.os.SystemProperties")
+            val getMethod = spClass.getMethod("get", String::class.java)
+            getMethod.invoke(null, "persist.sys.tombstonex.regstatus") as? String ?: ""
+        } catch (e: Throwable) {
+            ""
+        }
+
+    /**
      * 模块是否已被 LSPosed 启用（通过系统属性检测）。
      * initZygote 在 Zygote 进程中运行，只要 LSPosed 启用了模块就会设置此属性。
      * 用于判断 LSPosed 是否已启用模块。
