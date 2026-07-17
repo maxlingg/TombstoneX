@@ -122,6 +122,7 @@ fun SettingsScreen(
     }
 
     fun applyFreezeMode(mode: FreezeMode) {
+        val oldMode = freezeMode
         freezeMode = mode
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
@@ -137,6 +138,8 @@ fun SettingsScreen(
                 }
                 showSnackbar("冻结方式已切换为 ${mode.displayLabel()}，当前生效：$currentFreezerName")
             } else {
+                // P2: 失败时回滚到旧模式，保持 UI 与服务端一致
+                freezeMode = oldMode
                 showSnackbar("设置失败（模块未激活或无权限）")
             }
         }

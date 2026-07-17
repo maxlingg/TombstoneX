@@ -84,6 +84,12 @@ public class FreezeManager {
                     Logger.d("Process already frozen, skip: pid=" + pid);
                     return true;
                 }
+                // P1-N1: 前台进程不冻结，防止竞态条件下冻结前台应用导致 ANR。
+                // 延迟冻结任务在调度时检查过 FOREGROUND，但进入 freezeLock 前进程可能已切回前台。
+                if (info.state == AppState.FOREGROUND) {
+                    Logger.d("Process is foreground, skip freeze: pid=" + pid);
+                    return false;
+                }
             }
 
             if (currentFreezer == null) {

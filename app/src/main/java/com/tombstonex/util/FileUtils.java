@@ -55,7 +55,7 @@ public class FileUtils {
     /**
      * 原子写入：先写到临时文件 file.tmp，再 renameTo(file)
      */
-    public static synchronized void writeLines(String filename, Set<String> lines) {
+    public static synchronized boolean writeLines(String filename, Set<String> lines) {
         if (filename == null) throw new IllegalArgumentException("filename cannot be null");
         if (lines == null) throw new IllegalArgumentException("lines cannot be null");
         File dir = new File(CONFIG_DIR);
@@ -70,7 +70,7 @@ public class FileUtils {
             }
         } catch (IOException e) {
             Logger.e("Failed to write file: " + filename, e);
-            return;
+            return false;
         }
         // 原子替换
         try {
@@ -79,7 +79,11 @@ public class FileUtils {
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             Logger.e("Failed to rename tmp file to: " + filename, e);
+            // P3-6: 清理残留的 tmp 文件
+            tmpFile.delete();
+            return false;
         }
+        return true;
     }
 
     /**
@@ -132,6 +136,8 @@ public class FileUtils {
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             Logger.e("Failed to rename tmp file to: " + filename, e);
+            // P3-6: 清理残留的 tmp 文件
+            tmpFile.delete();
             return false;
         }
         return true;

@@ -63,7 +63,9 @@ public class Logger {
 
     private static String format(String level, String msg) {
         SimpleDateFormat sdf = dateFormatHolder.get();
-        return String.format("[%s][%s] %s\n", sdf.format(new Date()), level, msg);
+        // P3-7: null msg 输出空字符串而非字面量 "null"
+        String safeMsg = msg != null ? msg : "";
+        return String.format("[%s][%s] %s\n", sdf.format(new Date()), level, safeMsg);
     }
 
     public static void d(String msg) {
@@ -142,10 +144,14 @@ public class Logger {
                         logWriter.flush();
                     } catch (IOException e) {
                         Log.e(TAG, "Failed to recreate log writer: " + e.getMessage());
+                        // P3-1: 重置 logWriter 为 null，确保下次写入时走重建路径
+                        logWriter = null;
                     }
                 }
             } catch (IOException e) {
                 Log.e(TAG, "Failed to write log file: " + e.getMessage());
+                // P3-1: 写入失败后重置 logWriter，避免持续复用损坏的 writer
+                logWriter = null;
             }
         }
     }
@@ -170,9 +176,10 @@ public class Logger {
     public static String readLog(int maxLines) {
         if (maxLines <= 0) return "";
         File logFile = new File(LOG_DIR, "current.log");
-        if (!logFile.exists()) return "";
         List<String> lines = new ArrayList<>();
+        // P3-4: 将 exists() 检查和文件读取都放在 synchronized 块内，避免 TOCTOU 竞态
         synchronized (writerLock) {
+            if (!logFile.exists()) return "";
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(new FileInputStream(logFile), StandardCharsets.UTF_8))) {
                 String line;

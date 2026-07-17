@@ -197,18 +197,20 @@ public class ReflectionUtils {
 
     @SuppressWarnings("unchecked")
     public static <T> T getFieldValue(Object obj, Field field) {
+        if (field == null) return null;
         try {
             return (T) field.get(obj);
-        } catch (IllegalAccessException | IllegalArgumentException | NullPointerException e) {
+        } catch (IllegalAccessException | IllegalArgumentException e) {
             Logger.e("Failed to get field value: " + field.getName(), e);
             return null;
         }
     }
 
     public static void setFieldValue(Object obj, Field field, Object value) {
+        if (field == null) return;
         try {
             field.set(obj, value);
-        } catch (IllegalAccessException | IllegalArgumentException | NullPointerException e) {
+        } catch (IllegalAccessException | IllegalArgumentException e) {
             Logger.e("Failed to set field value: " + field.getName(), e);
         }
     }

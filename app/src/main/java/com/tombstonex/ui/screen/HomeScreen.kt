@@ -142,9 +142,11 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
 
     fun loadApps() {
         loadJob?.cancel()
-        loadJob = scope.launch {
+        val job = scope.launch {
             try {
-                moduleAvailable = withContext(Dispatchers.IO) { ServiceClient.isAvailable }
+                moduleAvailable = withContext(Dispatchers.IO) {
+                    safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
+                }
                 val appProvider = AppProvider.getInstance(context)
                 val whiteApps = withContext(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
@@ -174,10 +176,15 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
             } catch (e: Exception) {
                 showSnackbar("加载应用列表失败：${e.message ?: "未知错误"}")
             } finally {
-                loading = false
-                refreshing = false
+                // P2: 仅当当前 Job 仍为活跃 Job 时才重置 loading 状态，
+                // 避免旧 Job 的 finally 覆盖新 Job 的 loading=true
+                if (loadJob == job) {
+                    loading = false
+                    refreshing = false
+                }
             }
         }
+        loadJob = job
     }
 
     // 首次加载 / 系统应用过滤变化时重新加载

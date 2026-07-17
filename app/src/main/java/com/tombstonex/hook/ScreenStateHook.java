@@ -27,6 +27,8 @@ public class ScreenStateHook {
     private static ScheduledFuture<?> pendingBatchFreeze;
     private static volatile Object amsInstance;
     private static volatile boolean hasAmsHook = false;
+    // P2-N4: 批量冻结取消标志，亮屏时置为 true 中断正在执行的 batchFreezeAll
+    private static volatile boolean batchFreezeCancelled = false;
 
     public static void init(ClassLoader classLoader) {
         hookScreenOff(classLoader);
@@ -196,6 +198,8 @@ public class ScreenStateHook {
         Logger.i("Screen off, batch freezing in " + delaySec + "s");
 
         synchronized (batchFreezeLock) {
+            // 重置取消标志
+            batchFreezeCancelled = false;
             // 先取消之前的待执行任务（防竞态）
             if (pendingBatchFreeze != null) {
                 pendingBatchFreeze.cancel(false);
@@ -219,6 +223,8 @@ public class ScreenStateHook {
                 pendingBatchFreeze.cancel(false);
                 pendingBatchFreeze = null;
             }
+            // P2-N4: 设置取消标志，中断正在执行的 batchFreezeAll
+            batchFreezeCancelled = true;
         }
     }
 
@@ -236,6 +242,11 @@ public class ScreenStateHook {
         boolean audioPlaying = ActivitySwitchHook.isAnyAudioPlaying();
         for (Map.Entry<Integer, AppInfo> entry :
                 ProcessTracker.getInstance().getAllProcesses().entrySet()) {
+            // P2-N4: 亮屏时取消批量冻结，避免亮屏后仍继续冻结应用
+            if (batchFreezeCancelled) {
+                Logger.i("Batch freeze cancelled by screen on, processed=" + frozen + "+" + skipped);
+                break;
+            }
             AppInfo info = entry.getValue();
 
             // 跳过 KILLED 和 FROZEN 状态

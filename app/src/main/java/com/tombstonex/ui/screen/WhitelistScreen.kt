@@ -147,6 +147,8 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
      * 失败（模块未激活或无权限）时通过 Snackbar 提示。
      */
     fun toggleWhiteApp(pkg: String, currentlyOn: Boolean) {
+        // P2: 乐观更新 UI，失败时回滚
+        whiteApps = if (currentlyOn) whiteApps - pkg else whiteApps + pkg
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
                 safeRunCatching {
@@ -155,11 +157,17 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                 }.getOrDefault(false)
             }
             if (ok) reloadSets()
-            else showSnackbar("操作失败（模块未激活或无权限）")
+            else {
+                // 回滚
+                whiteApps = if (currentlyOn) whiteApps + pkg else whiteApps - pkg
+                showSnackbar("操作失败（模块未激活或无权限）")
+            }
         }
     }
 
     fun toggleWhiteProcess(proc: String, currentlyOn: Boolean) {
+        // P2: 乐观更新 UI，失败时回滚
+        whiteProcesses = if (currentlyOn) whiteProcesses - proc else whiteProcesses + proc
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
                 safeRunCatching {
@@ -168,11 +176,17 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                 }.getOrDefault(false)
             }
             if (ok) reloadSets()
-            else showSnackbar("操作失败（模块未激活或无权限）")
+            else {
+                // 回滚
+                whiteProcesses = if (currentlyOn) whiteProcesses + proc else whiteProcesses - proc
+                showSnackbar("操作失败（模块未激活或无权限）")
+            }
         }
     }
 
     fun toggleBlackSystem(pkg: String, currentlyOn: Boolean) {
+        // P2: 乐观更新 UI，失败时回滚
+        blackSystem = if (currentlyOn) blackSystem - pkg else blackSystem + pkg
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
                 safeRunCatching {
@@ -181,7 +195,11 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                 }.getOrDefault(false)
             }
             if (ok) reloadSets()
-            else showSnackbar("操作失败（模块未激活或无权限）")
+            else {
+                // 回滚
+                blackSystem = if (currentlyOn) blackSystem + pkg else blackSystem - pkg
+                showSnackbar("操作失败（模块未激活或无权限）")
+            }
         }
     }
 

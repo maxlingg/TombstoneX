@@ -192,6 +192,7 @@ public class TombstoneXService extends Binder {
                     WhitelistManager.getInstance().addWhiteApp(pkg);
                     reply.writeNoException();
                     replied = true;
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_REMOVE_WHITE_APP: {
@@ -205,6 +206,7 @@ public class TombstoneXService extends Binder {
                     WhitelistManager.getInstance().removeWhiteApp(pkg);
                     reply.writeNoException();
                     replied = true;
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_GET_WHITE_PROCESSES: {
@@ -228,6 +230,7 @@ public class TombstoneXService extends Binder {
                     WhitelistManager.getInstance().addWhiteProcess(proc);
                     reply.writeNoException();
                     replied = true;
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_REMOVE_WHITE_PROCESS: {
@@ -241,6 +244,7 @@ public class TombstoneXService extends Binder {
                     WhitelistManager.getInstance().removeWhiteProcess(proc);
                     reply.writeNoException();
                     replied = true;
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_GET_BLACK_SYSTEM_APPS: {
@@ -264,6 +268,7 @@ public class TombstoneXService extends Binder {
                     WhitelistManager.getInstance().addBlackSystemApp(pkg);
                     reply.writeNoException();
                     replied = true;
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_REMOVE_BLACK_SYSTEM_APP: {
@@ -277,6 +282,7 @@ public class TombstoneXService extends Binder {
                     WhitelistManager.getInstance().removeBlackSystemApp(pkg);
                     reply.writeNoException();
                     replied = true;
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_FREEZE_PROCESS: {

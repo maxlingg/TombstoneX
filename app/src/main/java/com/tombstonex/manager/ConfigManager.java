@@ -78,6 +78,7 @@ public class ConfigManager {
         try {
             return new String(Files.readAllBytes(file.toPath())).trim();
         } catch (Exception e) {
+            Logger.w("Failed to read config file: " + filename + ": " + e.getMessage());
             return null;
         }
     }
@@ -102,7 +103,7 @@ public class ConfigManager {
 
     public FreezeMode getFreezeMode() { return freezeMode; }
 
-    public void setFreezeMode(FreezeMode mode) {
+    public synchronized void setFreezeMode(FreezeMode mode) {
         String[] markers = {"freezer.api", "freezer.v2", "freezer.v1", "kill.19", "kill.20"};
         String targetMarker;
         switch (mode) {
@@ -117,29 +118,38 @@ public class ConfigManager {
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
 
-        // P2-R1: 先删除旧 markers，再写新 marker。
-        // 若旧 marker 删除失败则中止操作，不写新 marker 也不更新内存，
-        // 避免新旧 marker 共存导致重启后加载错误的冻结模式。
+        // P2-N1: 先写新 marker 到临时文件，再删旧 marker，最后原子 rename。
+        // 这样即使 rename 失败，旧 marker 已被删除（磁盘回退到默认 SYSTEM_API），
+        // 而非新旧 marker 共存导致重启后加载错误模式。
+        File tmpFile = new File(dir, targetMarker + ".tmp");
+        File targetFile = new File(dir, targetMarker);
+        try {
+            Files.write(tmpFile.toPath(), new byte[0]);
+        } catch (IOException e) {
+            Logger.e("Failed to write marker temp file: " + targetMarker);
+            return;
+        }
+
+        // 删除旧 markers（除了 targetMarker）
         for (String marker : markers) {
             if (marker.equals(targetMarker)) continue;
             File oldMarker = new File(CONFIG_DIR + "/" + marker);
             if (oldMarker.exists() && !oldMarker.delete()) {
                 Logger.w("Failed to delete old marker file: " + marker
                     + ", aborting setFreezeMode to prevent marker conflict");
+                tmpFile.delete();
                 return;
             }
         }
 
-        // 旧 markers 已清除，写新 marker 到临时文件再原子替换
-        File tmpFile = new File(dir, targetMarker + ".tmp");
-        File targetFile = new File(dir, targetMarker);
+        // 原子 rename 临时文件为目标 marker
         try {
-            Files.write(tmpFile.toPath(), new byte[0]);
             Files.move(tmpFile.toPath(), targetFile.toPath(),
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            Logger.e("Failed to write marker file: " + targetMarker);
+            Logger.e("Failed to rename marker file: " + targetMarker);
+            tmpFile.delete();
             return;
         }
 
@@ -233,9 +243,9 @@ public class ConfigManager {
     private boolean toggleConfig(String filename, boolean create) {
         File file = new File(CONFIG_DIR, filename);
         if (create) {
-            // P3-R4: 使用 appendLine 返回值判断成功，而非 file.exists()
-            // （appendLine 内部 rename 可能失败但目标文件已存在旧内容）
-            return FileUtils.appendLine(filename, "");
+            // P3-N2: 使用 writeFileContent 创建 marker 文件，而非 appendLine。
+            // marker 文件只需"存在/不存在"语义，appendLine 会追加空行导致文件增长。
+            return writeFileContent(filename, "");
         } else {
             if (file.exists()) {
                 return file.delete();

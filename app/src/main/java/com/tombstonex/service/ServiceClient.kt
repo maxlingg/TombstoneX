@@ -179,11 +179,11 @@ object ServiceClient {
     }
 
     fun addWhiteApp(pkg: String): Boolean {
-        return transact(TX_ADD_WHITE_APP, { it.writeString(pkg) }, { true }) ?: false
+        return transact(TX_ADD_WHITE_APP, { it.writeString(pkg) }, { it.readBoolean() }) ?: false
     }
 
     fun removeWhiteApp(pkg: String): Boolean {
-        return transact(TX_REMOVE_WHITE_APP, { it.writeString(pkg) }, { true }) ?: false
+        return transact(TX_REMOVE_WHITE_APP, { it.writeString(pkg) }, { it.readBoolean() }) ?: false
     }
 
     fun getWhiteProcesses(): Set<String> {
@@ -191,11 +191,11 @@ object ServiceClient {
     }
 
     fun addWhiteProcess(proc: String): Boolean {
-        return transact(TX_ADD_WHITE_PROCESS, { it.writeString(proc) }, { true }) ?: false
+        return transact(TX_ADD_WHITE_PROCESS, { it.writeString(proc) }, { it.readBoolean() }) ?: false
     }
 
     fun removeWhiteProcess(proc: String): Boolean {
-        return transact(TX_REMOVE_WHITE_PROCESS, { it.writeString(proc) }, { true }) ?: false
+        return transact(TX_REMOVE_WHITE_PROCESS, { it.writeString(proc) }, { it.readBoolean() }) ?: false
     }
 
     fun getBlackSystemApps(): Set<String> {
@@ -203,11 +203,11 @@ object ServiceClient {
     }
 
     fun addBlackSystemApp(pkg: String): Boolean {
-        return transact(TX_ADD_BLACK_SYSTEM_APP, { it.writeString(pkg) }, { true }) ?: false
+        return transact(TX_ADD_BLACK_SYSTEM_APP, { it.writeString(pkg) }, { it.readBoolean() }) ?: false
     }
 
     fun removeBlackSystemApp(pkg: String): Boolean {
-        return transact(TX_REMOVE_BLACK_SYSTEM_APP, { it.writeString(pkg) }, { true }) ?: false
+        return transact(TX_REMOVE_BLACK_SYSTEM_APP, { it.writeString(pkg) }, { it.readBoolean() }) ?: false
     }
 
     // ====== 进程与冻结 ======
