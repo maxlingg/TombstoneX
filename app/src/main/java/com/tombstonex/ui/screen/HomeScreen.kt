@@ -148,15 +148,15 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         loadJob = scope.launch {
             try {
                 // 同时检测模块启用状态、加载状态和 Binder 服务可用性
-                val (enabled, loaded, available) = withContext(Dispatchers.IO) {
+                val (modEnabled, modLoaded, modAvailable) = withContext(Dispatchers.IO) {
                     val e = safeRunCatching { ServiceClient.isModuleEnabled }.getOrDefault(false)
                     val l = safeRunCatching { ServiceClient.isModuleLoaded }.getOrDefault(false)
                     val a = safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
                     Triple(e, l, a)
                 }
-                moduleEnabled = enabled
-                moduleLoaded = loaded
-                moduleAvailable = available
+                moduleEnabled = modEnabled
+                moduleLoaded = modLoaded
+                moduleAvailable = modAvailable
                 val appProvider = AppProvider.getInstance(context)
                 val whiteApps = withContext(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
