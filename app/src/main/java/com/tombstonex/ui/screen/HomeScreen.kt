@@ -67,6 +67,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 
 /**
  * 主页列表项：合并 [AppProvider.AppData] 与 [ServiceClient.ProcessInfo] 信息。
@@ -142,7 +143,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
 
     fun loadApps() {
         loadJob?.cancel()
-        val job = scope.launch {
+        loadJob = scope.launch {
             try {
                 moduleAvailable = withContext(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
@@ -179,13 +180,12 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
             } finally {
                 // P2: 仅当当前 Job 仍为活跃 Job 时才重置 loading 状态，
                 // 避免旧 Job 的 finally 覆盖新 Job 的 loading=true
-                if (loadJob == job) {
+                if (loadJob == coroutineContext[Job]) {
                     loading = false
                     refreshing = false
                 }
             }
         }
-        loadJob = job
     }
 
     // 首次加载 / 系统应用过滤变化时重新加载
