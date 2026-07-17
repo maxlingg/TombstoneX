@@ -22,14 +22,15 @@ import kotlinx.coroutines.withContext
  * @param installed 模块入口（xposed_init 资源）是否存在于本 APK
  * @param entryClass Hook 入口类全限定名
  * @param activated 模块是否真正激活（Binder 服务已就绪，可正常通信）
- * @param moduleLoaded 模块是否已加载到 system_server（通过系统属性检测），
- *   用于区分"模块未加载"和"服务注册失败"
+ * @param moduleEnabled LSPosed 是否已启用模块（initZygote 已执行）
+ * @param moduleLoaded 模块是否已加载到 system_server（handleLoadPackage("android") 已执行）
  */
 @Immutable
 data class ModuleState(
     val installed: Boolean,
     val entryClass: String,
     val activated: Boolean,
+    val moduleEnabled: Boolean = false,
     val moduleLoaded: Boolean = false,
 )
 
@@ -49,16 +50,19 @@ class MainActivity : ComponentActivity() {
         // 初始状态：读取 xposed_init 判断模块入口是否存在
         val moduleState = mutableStateOf(detectModuleState())
 
-        // 异步通过 ServiceClient 检测模块激活状态
-        // 1. isModuleLoaded: 检查系统属性，判断模块是否已加载到 system_server
-        // 2. isAvailable: 检查 Binder 服务，判断服务是否已就绪
+        // 异步通过 ServiceClient 检测模块激活状态（三级检测）
+        // 1. isModuleEnabled: 检查 persist.sys.tombstonex.loaded，判断 LSPosed 是否已启用模块
+        // 2. isModuleLoaded: 检查 persist.sys.tombstonex.active，判断模块是否已加载到 system_server
+        // 3. isAvailable: 检查 Binder 服务，判断服务是否已就绪
         lifecycleScope.launch {
-            val (loaded, activated) = withContext(Dispatchers.IO) {
+            val (enabled, loaded, activated) = withContext(Dispatchers.IO) {
+                val enabled = safeRunCatching { ServiceClient.isModuleEnabled }.getOrDefault(false)
                 val loaded = safeRunCatching { ServiceClient.isModuleLoaded }.getOrDefault(false)
                 val activated = safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
-                loaded to activated
+                Triple(enabled, loaded, activated)
             }
             moduleState.value = moduleState.value.copy(
+                moduleEnabled = enabled,
                 moduleLoaded = loaded,
                 activated = activated,
             )

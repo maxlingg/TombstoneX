@@ -20,6 +20,18 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
         // 那时 /data/system 已就绪。这里仅用默认级别初始化 Logger，实际级别后续修正。
         Logger.init(false);
         Logger.i("TombstoneX Zygote init, SDK=" + Build.VERSION.SDK_INT);
+
+        // 设置系统属性标记模块已被 LSPosed 加载。
+        // initZygote 在 Zygote 进程中运行，只要 LSPosed 启用了模块就会调用。
+        // App 端通过此属性判断 LSPosed 是否已启用模块。
+        try {
+            Class<?> spClass = Class.forName("android.os.SystemProperties");
+            java.lang.reflect.Method setMethod = spClass.getMethod("set", String.class, String.class);
+            setMethod.invoke(null, "persist.sys.tombstonex.loaded", "1");
+            Logger.i("System property 'persist.sys.tombstonex.loaded' set to 1");
+        } catch (Throwable t) {
+            Logger.e("Failed to set system property tombstonex.loaded", t);
+        }
     }
 
     @Override

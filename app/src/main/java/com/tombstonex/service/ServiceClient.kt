@@ -58,6 +58,21 @@ object ServiceClient {
         get() = getBinder() != null
 
     /**
+     * 模块是否已被 LSPosed 启用（通过系统属性检测）。
+     * initZygote 在 Zygote 进程中运行，只要 LSPosed 启用了模块就会设置此属性。
+     * 用于判断 LSPosed 是否已启用模块。
+     */
+    val isModuleEnabled: Boolean
+        get() = try {
+            val spClass = Class.forName("android.os.SystemProperties")
+            val getMethod = spClass.getMethod("get", String::class.java)
+            val value = getMethod.invoke(null, "persist.sys.tombstonex.loaded") as? String
+            value == "1"
+        } catch (e: Throwable) {
+            false
+        }
+
+    /**
      * 模块是否已加载到 system_server（通过系统属性检测）。
      * 仅表示 LSPosed 已在 system_server 中加载了模块代码，
      * 不代表 Binder 服务已注册成功。

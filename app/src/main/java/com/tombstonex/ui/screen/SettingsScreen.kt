@@ -194,20 +194,15 @@ fun SettingsScreen(
                         Text(
                             when {
                                 moduleState.activated -> "已激活（${moduleState.entryClass}）"
-                                moduleState.moduleLoaded -> "模块已加载，但 Binder 服务未就绪\n请重启设备或检查 LSPosed 日志"
-                                moduleState.installed -> "已安装但未加载\n请在 LSPosed 中启用模块并勾选「Android 系统」作用域，然后重启设备"
+                                moduleState.moduleLoaded -> "模块已加载到系统框架，但 Binder 服务未就绪\n请检查 LSPosed 日志"
+                                moduleState.moduleEnabled -> "LSPosed 已启用模块，但未加载到系统框架\n请在作用域中勾选「Android 系统」并重启设备"
+                                moduleState.installed -> "已安装但 LSPosed 未启用\n请在 LSPosed 管理器中启用模块并重启设备"
                                 else -> "未检测到模块入口\n请在 LSPosed 中启用模块"
                             }
                         )
                     },
                     trailingContent = {
-                        StatusDot(
-                            when {
-                                moduleState.activated -> true
-                                moduleState.moduleLoaded -> false // 黄色：已加载但服务未就绪
-                                else -> false
-                            }
-                        )
+                        StatusDot(moduleState.activated)
                     },
                 )
             }

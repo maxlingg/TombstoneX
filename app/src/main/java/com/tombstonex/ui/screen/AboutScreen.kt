@@ -208,7 +208,8 @@ fun AboutScreen(onBack: () -> Unit) {
                             when {
                                 moduleState.activated -> "已激活"
                                 moduleState.moduleLoaded -> "已加载，服务未就绪"
-                                moduleState.installed -> "已安装，未加载"
+                                moduleState.moduleEnabled -> "已启用，未加载到系统框架"
+                                moduleState.installed -> "已安装，未启用"
                                 else -> "未安装"
                             },
                             valueColor = when {

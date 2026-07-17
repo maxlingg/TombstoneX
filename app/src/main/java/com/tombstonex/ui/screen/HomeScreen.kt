@@ -108,6 +108,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
     var moduleAvailable by remember { mutableStateOf(true) }
+    var moduleLoaded by remember { mutableStateOf(false) }
+    var moduleEnabled by remember { mutableStateOf(false) }
 
     // 搜索防抖
     LaunchedEffect(searchQuery) {
@@ -145,9 +147,16 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         loadJob?.cancel()
         loadJob = scope.launch {
             try {
-                moduleAvailable = withContext(Dispatchers.IO) {
-                    safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
+                // 同时检测模块启用状态、加载状态和 Binder 服务可用性
+                val (enabled, loaded, available) = withContext(Dispatchers.IO) {
+                    val e = safeRunCatching { ServiceClient.isModuleEnabled }.getOrDefault(false)
+                    val l = safeRunCatching { ServiceClient.isModuleLoaded }.getOrDefault(false)
+                    val a = safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
+                    Triple(e, l, a)
                 }
+                moduleEnabled = enabled
+                moduleLoaded = loaded
+                moduleAvailable = available
                 val appProvider = AppProvider.getInstance(context)
                 val whiteApps = withContext(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
@@ -282,7 +291,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
             ) {
                 // 模块未激活提示
                 if (!moduleAvailable) {
-                    item { ModuleNotActiveCard() }
+                    item { ModuleNotActiveCard(moduleEnabled = moduleEnabled, moduleLoaded = moduleLoaded) }
                 }
 
                 if (!loading) {
@@ -364,7 +373,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
 }
 
 @Composable
-private fun ModuleNotActiveCard() {
+private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Boolean = false) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -390,7 +399,11 @@ private fun ModuleNotActiveCard() {
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
                 Text(
-                    text = "请在 LSPosed 中启用 TombstoneX 模块并重启系统",
+                    text = when {
+                        !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块并重启设备"
+                        !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」并重启设备"
+                        else -> "模块已加载，但 Binder 服务注册失败\n请检查 LSPosed 日志或尝试重新启用模块"
+                    },
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
                 )
