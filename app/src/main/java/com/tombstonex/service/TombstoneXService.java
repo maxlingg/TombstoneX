@@ -401,18 +401,35 @@ public class TombstoneXService extends Binder {
      * 使用反射调用隐藏 API android.os.ServiceManager，避免编译期依赖。
      */
     public static void register() {
+        Logger.i("TombstoneXService.register() starting...");
         try {
             Class<?> smClass = Class.forName("android.os.ServiceManager");
+            Logger.i("ServiceManager class loaded: " + smClass.getName());
+
             java.lang.reflect.Method getService = smClass.getMethod("getService", String.class);
             java.lang.reflect.Method addService = smClass.getMethod("addService", String.class, IBinder.class);
+            Logger.i("ServiceManager methods resolved: getService, addService");
 
             // P3-04: 防止重复注册。若服务已注册则跳过
-            if (getService.invoke(null, SERVICE_NAME) != null) {
+            Object existing = getService.invoke(null, SERVICE_NAME);
+            if (existing != null) {
                 Logger.i("TombstoneXService already registered, skip");
                 return;
             }
-            addService.invoke(null, SERVICE_NAME, new TombstoneXService());
+
+            TombstoneXService serviceInstance = new TombstoneXService();
+            addService.invoke(null, SERVICE_NAME, serviceInstance);
             Logger.i("TombstoneXService registered as '" + SERVICE_NAME + "'");
+
+            // 验证注册是否成功
+            Object verify = getService.invoke(null, SERVICE_NAME);
+            if (verify != null) {
+                Logger.i("TombstoneXService registration verified OK");
+            } else {
+                Logger.e("TombstoneXService registration verification FAILED - getService returned null after addService");
+            }
+        } catch (NoSuchMethodException e) {
+            Logger.e("ServiceManager.addService method not found - API may have changed in this Android version", e);
         } catch (Throwable t) {
             Logger.e("Failed to register TombstoneXService", t);
         }

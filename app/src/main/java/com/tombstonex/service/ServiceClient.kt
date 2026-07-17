@@ -50,9 +50,28 @@ object ServiceClient {
     @Volatile
     private var binder: android.os.IBinder? = null
 
-    /** 模块是否已激活（服务是否已注册） */
+    /**
+     * 模块是否已激活（Binder 服务是否已注册到 ServiceManager）
+     * 这是真正意义上的"激活"——system_server 中的 Hook 已注入且服务已就绪。
+     */
     val isAvailable: Boolean
         get() = getBinder() != null
+
+    /**
+     * 模块是否已加载到 system_server（通过系统属性检测）。
+     * 仅表示 LSPosed 已在 system_server 中加载了模块代码，
+     * 不代表 Binder 服务已注册成功。
+     * 用于区分"模块未加载"和"服务注册失败"两种情况。
+     */
+    val isModuleLoaded: Boolean
+        get() = try {
+            val spClass = Class.forName("android.os.SystemProperties")
+            val getMethod = spClass.getMethod("get", String::class.java)
+            val value = getMethod.invoke(null, "persist.sys.tombstonex.active") as? String
+            value == "1"
+        } catch (e: Throwable) {
+            false
+        }
 
     /** 通过反射 ServiceManager.getService 获取 Binder 代理 */
     private fun getBinder(): android.os.IBinder? {

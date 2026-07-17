@@ -205,11 +205,16 @@ fun AboutScreen(onBack: () -> Unit) {
                         HorizontalDivider()
                         InfoRow(
                             "激活状态",
-                            if (moduleState.activated) "已安装/已配置" else "未安装",
-                            valueColor = if (moduleState.activated)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.error,
+                            when {
+                                moduleState.activated -> "已激活"
+                                moduleState.moduleLoaded -> "已加载，服务未就绪"
+                                moduleState.installed -> "已安装，未加载"
+                                else -> "未安装"
+                            },
+                            valueColor = when {
+                                moduleState.activated -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.error
+                            },
                         )
                     }
                 }

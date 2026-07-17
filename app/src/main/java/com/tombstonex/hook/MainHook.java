@@ -31,6 +31,18 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         if (PACKAGE_ANDROID.equals(pkg)) {
             Logger.i("Hooking System Framework (android)");
+
+            // 设置系统属性标记模块已加载到 system_server。
+            // App 端通过读取此属性区分"模块未加载"和"Binder服务注册失败"。
+            try {
+                Class<?> spClass = Class.forName("android.os.SystemProperties");
+                java.lang.reflect.Method setMethod = spClass.getMethod("set", String.class, String.class);
+                setMethod.invoke(null, "persist.sys.tombstonex.active", "1");
+                Logger.i("System property 'persist.sys.tombstonex.active' set to 1");
+            } catch (Throwable t) {
+                Logger.e("Failed to set system property tombstonex.active", t);
+            }
+
             // P2-04: 在 system_server 中初始化 ConfigManager（此时 /data/system 已挂载就绪）。
             // ConfigManager.loadConfig() 内部已调用 Logger.init(debugEnabled) 修正日志级别。
             // P3-R4: 移除冗余的 Logger.init 调用，避免重复关闭/重新打开日志文件
