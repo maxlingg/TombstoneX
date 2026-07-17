@@ -105,8 +105,8 @@ fun NavigationHost() {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val showSnackbar: (String) -> Unit = remember(scope, snackbarHostState) { message ->
-        scope.launch { snackbarHostState.showSnackbar(message) }
+    val showSnackbar: (String) -> Unit = remember(scope, snackbarHostState) {
+        { message: String -> scope.launch { snackbarHostState.showSnackbar(message) } }
     }
 
     // 系统返回键支持
