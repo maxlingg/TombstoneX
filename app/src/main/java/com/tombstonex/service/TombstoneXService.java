@@ -67,8 +67,17 @@ public class TombstoneXService extends Binder {
         // 安全：仅允许 system uid 或模块自身 UI 进程调用
         int callingUid = Binder.getCallingUid();
         if (callingUid != Process.SYSTEM_UID && callingUid != 0) {
-            // 允许模块自身 UI 进程调用
-            String[] packages = android.app.AppGlobals.getPackageManager().getPackagesForUid(callingUid);
+            // 允许模块自身 UI 进程调用（反射调用隐藏 API AppGlobals）
+            String[] packages = null;
+            try {
+                Class<?> appGlobals = Class.forName("android.app.AppGlobals");
+                java.lang.reflect.Method getPackageManager = appGlobals.getMethod("getPackageManager");
+                Object pm = getPackageManager.invoke(null);
+                java.lang.reflect.Method getPackagesForUid = pm.getClass().getMethod("getPackagesForUid", int.class);
+                packages = (String[]) getPackagesForUid.invoke(pm, callingUid);
+            } catch (Throwable t) {
+                Logger.e("Failed to get packages for uid", t);
+            }
             boolean isModuleCaller = false;
             if (packages != null) {
                 for (String pkg : packages) {
