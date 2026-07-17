@@ -164,7 +164,7 @@ public class BroadcastHook {
                 List<Object> receiverList = new ArrayList<>(rawReceiverList);
 
                 for (Object receiver : receiverList) {
-                    int pid = getReceiverPid(receiver, queue.getClass().getClassLoader());
+                    int pid = getReceiverPid(receiver);
                     if (pid > 0) {
                         AppInfo appInfo = ProcessTracker.getInstance().getByPid(pid);
                         if (appInfo != null && appInfo.state == AppState.FROZEN) {
@@ -183,7 +183,7 @@ public class BroadcastHook {
      * 从接收器对象获取 pid
      * 支持 BroadcastFilter (有 owningPid) 和 ResolveInfo (需嵌套获取 uid)
      */
-    private static int getReceiverPid(Object receiver, ClassLoader classLoader) {
+    private static int getReceiverPid(Object receiver) {
         // BroadcastFilter（动态注册接收器）：owningPid 即接收进程的真实 pid，
         // 直接返回，由调用方判断该 pid 是否被冻结。
         try {

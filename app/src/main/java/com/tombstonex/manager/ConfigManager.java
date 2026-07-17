@@ -117,7 +117,20 @@ public class ConfigManager {
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
 
-        // 先写新 marker 到临时文件，再原子替换
+        // P2-R1: 先删除旧 markers，再写新 marker。
+        // 若旧 marker 删除失败则中止操作，不写新 marker 也不更新内存，
+        // 避免新旧 marker 共存导致重启后加载错误的冻结模式。
+        for (String marker : markers) {
+            if (marker.equals(targetMarker)) continue;
+            File oldMarker = new File(CONFIG_DIR + "/" + marker);
+            if (oldMarker.exists() && !oldMarker.delete()) {
+                Logger.w("Failed to delete old marker file: " + marker
+                    + ", aborting setFreezeMode to prevent marker conflict");
+                return;
+            }
+        }
+
+        // 旧 markers 已清除，写新 marker 到临时文件再原子替换
         File tmpFile = new File(dir, targetMarker + ".tmp");
         File targetFile = new File(dir, targetMarker);
         try {
@@ -130,17 +143,7 @@ public class ConfigManager {
             return;
         }
 
-        // 删除旧 markers（除了刚写入的 targetMarker）
-        for (String marker : markers) {
-            if (marker.equals(targetMarker)) continue;
-            File oldMarker = new File(CONFIG_DIR + "/" + marker);
-            // P3-05: 检查 delete() 返回值，删除失败时记录日志而非静默忽略
-            if (oldMarker.exists() && !oldMarker.delete()) {
-                Logger.w("Failed to delete old marker file: " + marker);
-            }
-        }
-
-        // 文件写入成功后更新内存
+        // 文件操作全部成功后更新内存
         this.freezeMode = mode;
         FreezeManager.getInstance().reselectFreezer();
     }
@@ -230,13 +233,14 @@ public class ConfigManager {
     private boolean toggleConfig(String filename, boolean create) {
         File file = new File(CONFIG_DIR, filename);
         if (create) {
-            FileUtils.appendLine(filename, "");
-            return file.exists();
+            // P3-R4: 使用 appendLine 返回值判断成功，而非 file.exists()
+            // （appendLine 内部 rename 可能失败但目标文件已存在旧内容）
+            return FileUtils.appendLine(filename, "");
         } else {
             if (file.exists()) {
-                file.delete();
+                return file.delete();
             }
-            return !file.exists();
+            return true;
         }
     }
 

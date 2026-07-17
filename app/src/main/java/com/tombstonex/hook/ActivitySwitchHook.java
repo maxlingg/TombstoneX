@@ -38,31 +38,38 @@ public class ActivitySwitchHook {
     // P2: 2 个核心线程
     private static final ScheduledThreadPoolExecutor freezeExecutor = new ScheduledThreadPoolExecutor(2);
     private static final Map<Integer, ScheduledFuture<?>> pendingFreezes = new ConcurrentHashMap<>();
+    private static volatile boolean cleanupTaskStarted = false;
     static {
         // P1-04: 已取消的任务立即从工作队列移除，避免驻留队列造成内存泄漏与重复触发
         freezeExecutor.setRemoveOnCancelPolicy(true);
-        // P2-05: 定期清理 pendingFreezes 中已不存在于 ProcessTracker 的残留条目。
-        // 正常情况下 ProcessDeathHook 会调用 cancelPendingFreeze 清理，但若进程未走
-        // 死亡回调（如被直接 kill 且未触发 hook），pendingFreezes 条目会永久残留，
-        // 因此每小时兜底清理一次。
-        freezeExecutor.scheduleAtFixedRate(() -> {
-            try {
-                for (Integer pid : pendingFreezes.keySet()) {
-                    if (ProcessTracker.getInstance().getByPid(pid) == null) {
-                        ScheduledFuture<?> f = pendingFreezes.remove(pid);
-                        if (f != null) {
-                            f.cancel(false);
-                            Logger.d("Cleaned stale pendingFreezes entry for pid=" + pid);
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                Logger.e("pendingFreezes periodic cleanup error", t);
-            }
-        }, 1, 1, TimeUnit.HOURS);
     }
 
     public static void init(ClassLoader classLoader) {
+        // P3-R3: 定期清理任务延迟到 init() 内启动，避免类加载时即启动后台线程。
+        // 若 hook 禁用但 ProcessDeathHook 触发类加载，static 块中的清理任务会空跑。
+        // 移到 init() 后，只有 hook 真正初始化时才启动。
+        if (!cleanupTaskStarted) {
+            cleanupTaskStarted = true;
+            // P2-05: 定期清理 pendingFreezes 中已不存在于 ProcessTracker 的残留条目。
+            // 正常情况下 ProcessDeathHook 会调用 cancelPendingFreeze 清理，但若进程未走
+            // 死亡回调（如被直接 kill 且未触发 hook），pendingFreezes 条目会永久残留，
+            // 因此每小时兜底清理一次。
+            freezeExecutor.scheduleAtFixedRate(() -> {
+                try {
+                    for (Integer pid : pendingFreezes.keySet()) {
+                        if (ProcessTracker.getInstance().getByPid(pid) == null) {
+                            ScheduledFuture<?> f = pendingFreezes.remove(pid);
+                            if (f != null) {
+                                f.cancel(false);
+                                Logger.d("Cleaned stale pendingFreezes entry for pid=" + pid);
+                            }
+                        }
+                    }
+                } catch (Throwable t) {
+                    Logger.e("pendingFreezes periodic cleanup error", t);
+                }
+            }, 1, 1, TimeUnit.HOURS);
+        }
         hookActivityPaused(classLoader);
         hookProcessStateChanged(classLoader);
         hookSetOomAdj(classLoader);

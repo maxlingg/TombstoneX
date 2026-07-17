@@ -85,7 +85,7 @@ public class FileUtils {
     /**
      * 原子追加写入：先写到临时文件 file.tmp（含原内容+新行），再 renameTo(file)
      */
-    public static synchronized void appendLine(String filename, String line) {
+    public static synchronized boolean appendLine(String filename, String line) {
         if (filename == null) throw new IllegalArgumentException("filename cannot be null");
         if (line == null) throw new IllegalArgumentException("line cannot be null");
         File dir = new File(CONFIG_DIR);
@@ -123,7 +123,7 @@ public class FileUtils {
             writer.newLine();
         } catch (IOException e) {
             Logger.e("Failed to append to file: " + filename, e);
-            return;
+            return false;
         }
         // 原子替换
         try {
@@ -132,7 +132,9 @@ public class FileUtils {
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             Logger.e("Failed to rename tmp file to: " + filename, e);
+            return false;
         }
+        return true;
     }
 
     public static boolean exists(String filename) {

@@ -1,6 +1,7 @@
 package com.tombstonex.service
 
 import android.os.Parcel
+import androidx.compose.runtime.Immutable
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -96,7 +97,9 @@ object ServiceClient {
         } catch (e: Throwable) {
             // P1-05: 不再静默吞掉 Binder 异常
             // 协程取消异常必须重新抛出，避免破坏协程结构化并发
-            if (e is kotlinx.coroutines.CancellationException) throw e
+            // P3-R1: 使用 java.util.concurrent.CancellationException 而非
+            // kotlinx.coroutines.CancellationException，消除对传递依赖的脆弱引用
+            if (e is java.util.concurrent.CancellationException) throw e
             android.util.Log.e("TombstoneX", "ServiceClient.transact failed: ${e.message}")
             // DeadObjectException 表示服务端进程已死，清空缓存的 binder 引用，
             // 下次调用时会重新通过 ServiceManager.getService 查找
@@ -112,6 +115,7 @@ object ServiceClient {
 
     // ====== 配置 ======
 
+    @Immutable
     data class ConfigSnapshot(
         val freezeMode: Int,
         val freezeDelay: Int,
@@ -128,7 +132,7 @@ object ServiceClient {
         return transact(TX_GET_CONFIG) { reply ->
             val json = JSONObject(reply.readString() ?: "{}")
             ConfigSnapshot(
-                freezeMode = json.optInt("freezeMode", 0),
+                freezeMode = json.optInt("freezeMode", 4), // P3-R6: 默认 SYSTEM_API(ordinal=4)，与 ConfigManager 一致
                 freezeDelay = json.optInt("freezeDelay", 3),
                 debugEnabled = json.optBoolean("debugEnabled", false),
                 globalPaused = json.optBoolean("globalPaused", false),
@@ -208,6 +212,7 @@ object ServiceClient {
 
     // ====== 进程与冻结 ======
 
+    @Immutable
     data class ProcessInfo(
         val pid: Int, val uid: Int,
         val packageName: String, val processName: String,
