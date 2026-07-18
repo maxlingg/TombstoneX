@@ -58,6 +58,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -71,6 +73,7 @@ import com.tombstonex.ui.safeRunCatching
 import com.tombstonex.ui.util.toImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -160,44 +163,53 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         loadJob?.cancel()
         loadJob = scope.launch {
             try {
-                // 同时检测模块启用状态、加载状态和 Binder 服务可用性
-                withContext(Dispatchers.IO) {
+                val appProvider = AppProvider.getInstance(context)
+
+                // 并行执行所有 IPC 调用和应用列表加载，大幅减少总等待时间
+                val moduleDeferred = async(Dispatchers.IO) {
                     val e = safeRunCatching { ServiceClient.isModuleEnabled }.getOrDefault(false)
                     val l = safeRunCatching { ServiceClient.isModuleLoaded }.getOrDefault(false)
                     val a = safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
                     val rs = safeRunCatching { ServiceClient.regStatus }.getOrDefault("")
-                    Triple(e, l, a) to rs
-                }.let { (triple, rs) ->
-                    moduleEnabled = triple.first
-                    moduleLoaded = triple.second
-                    moduleAvailable = triple.third
-                    regStatus = rs
+                    booleanArrayOf(
+                        if (e) 1 else 0,
+                        if (l) 1 else 0,
+                        if (a) 1 else 0,
+                    ) to rs
                 }
-                val appProvider = AppProvider.getInstance(context)
-                val whiteApps = withContext(Dispatchers.IO) {
+                val whiteDeferred = async(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
                 }
-                val procList = withContext(Dispatchers.IO) {
+                val procDeferred = async(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.getAllProcesses() }.getOrDefault(emptyList())
                 }
-                val procByPkg = procList.associateBy { it.packageName }
-
-                val loaded = withContext(Dispatchers.IO) {
-                    // P3-R5: 传 loadIcon=false 跳过预加载图标，HomeScreen 自行懒加载
-                    appProvider.getAllApps(includeSystem, false).map { app ->
-                        val info = procByPkg[app.packageName]
-                        HomeAppItem(
-                            label = app.label,
-                            packageName = app.packageName,
-                            isSystem = app.isSystem,
-                            pid = info?.pid ?: -1,
-                            uid = info?.uid ?: -1,
-                            state = info?.state?.toAppState(),
-                            isWhiteListed = whiteApps.contains(app.packageName),
-                        )
-                    }
+                val appsDeferred = async(Dispatchers.IO) {
+                    appProvider.getAllApps(includeSystem, false)
                 }
-                items = loaded
+
+                val (flags, rs) = moduleDeferred.await()
+                moduleEnabled = flags[0] == 1
+                moduleLoaded = flags[1] == 1
+                moduleAvailable = flags[2] == 1
+                regStatus = rs
+
+                val whiteApps = whiteDeferred.await()
+                val procList = procDeferred.await()
+                val allApps = appsDeferred.await()
+
+                val procByPkg = procList.associateBy { it.packageName }
+                items = allApps.map { app ->
+                    val info = procByPkg[app.packageName]
+                    HomeAppItem(
+                        label = app.label,
+                        packageName = app.packageName,
+                        isSystem = app.isSystem,
+                        pid = info?.pid ?: -1,
+                        uid = info?.uid ?: -1,
+                        state = info?.state?.toAppState(),
+                        isWhiteListed = whiteApps.contains(app.packageName),
+                    )
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -217,6 +229,16 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     LaunchedEffect(includeSystem) {
         loading = true
         loadApps()
+    }
+
+    // 定期刷新进程状态（每 5 秒从 ServiceClient 拉取最新状态）
+    LaunchedEffect(moduleAvailable) {
+        while (true) {
+            delay(5000)
+            if (!loading && items.isNotEmpty()) {
+                refreshStates()
+            }
+        }
     }
 
     fun onFreezeClick(item: HomeAppItem) {
@@ -866,7 +888,9 @@ private fun AppConfigSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(

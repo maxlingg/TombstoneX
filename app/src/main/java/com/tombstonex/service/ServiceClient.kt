@@ -201,12 +201,12 @@ object ServiceClient {
             // 先用 su 获取当前修改时间
             val startTime = getFileLastModified()
             var timeout = 0
-            while (timeout < 50) { // 最多等待 5 秒
-                Thread.sleep(100)
+            while (timeout < 60) { // 最多等待 3 秒（60 次 × 50ms）
+                Thread.sleep(50)
                 val currentMod = getFileLastModified()
                 if (currentMod > startTime) {
                     // 给文件写入一点时间完成
-                    Thread.sleep(50)
+                    Thread.sleep(30)
                     break
                 }
                 timeout++

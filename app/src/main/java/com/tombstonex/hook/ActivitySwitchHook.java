@@ -400,6 +400,7 @@ public class ActivitySwitchHook {
 
     /**
      * Hook OOM adj 变化
+     * setOomAdj 会被系统为所有进程调用，是自动发现已运行进程的理想入口。
      */
     private static void hookSetOomAdj(ClassLoader classLoader) {
         try {
@@ -415,6 +416,13 @@ public class ActivitySwitchHook {
                             int pid = (int) param.args[0];
                             int uid = (int) param.args[1];
                             int oomAdj = (int) param.args[2];
+
+                            // 自动注册未跟踪的进程：模块加载前已在运行的进程不会经过 activityPaused/startProcess hook，
+                            // 通过 setOomAdj 兜底发现并注册它们。
+                            if (ProcessTracker.getInstance().getByPid(pid) == null) {
+                                tryAutoRegisterProcess(pid, uid);
+                            }
+
                             // oomAdj >= 900 通常是缓存进程
                             ProcessTracker.getInstance().updateOomAdj(pid, oomAdj);
                             // OOM adj 调优：根据应用优先级调整 oomAdj
@@ -434,6 +442,36 @@ public class ActivitySwitchHook {
             Logger.i("Hooked setOomAdj");
         } catch (Throwable t) {
             Logger.e("Failed to hook setOomAdj", t);
+        }
+    }
+
+    /**
+     * 通过读取 /proc/<pid>/cmdline 自动注册未跟踪的进程。
+     * 在 system_server 中有权限读取 /proc 文件系统。
+     */
+    private static void tryAutoRegisterProcess(int pid, int uid) {
+        if (pid <= 0) return;
+        try {
+            java.io.File cmdFile = new java.io.File("/proc/" + pid + "/cmdline");
+            if (!cmdFile.exists()) return;
+            byte[] data = java.nio.file.Files.readAllBytes(cmdFile.toPath());
+            // cmdline 以 null 分隔，取第一段作为进程名
+            int nullIdx = 0;
+            while (nullIdx < data.length && data[nullIdx] != 0) nullIdx++;
+            String processName = new String(data, 0, nullIdx, java.nio.charset.StandardCharsets.UTF_8).trim();
+            if (processName.isEmpty()) return;
+
+            String packageName = extractPackageName(processName);
+            if (packageName == null) return;
+
+            boolean isSystemApp = uid < 10000;
+            ProcessTracker.getInstance().registerProcess(packageName, processName, pid, uid, isSystemApp);
+
+            // 根据 uid 判断初始状态：系统进程或前台进程不设为 BACKGROUND
+            // 这里只注册，不改变状态。状态会由后续 hook 更新。
+            Logger.d("Auto-registered process via setOomAdj: " + processName + " pid=" + pid + " uid=" + uid);
+        } catch (Throwable t) {
+            // 进程可能已退出，或无权限读取
         }
     }
 
