@@ -1,6 +1,6 @@
 id=tombstonex
-name=TombstoneX SELinux Helper
-version=v1.1.0
-versionCode=2
+name=TombstoneX Helper
+version=v1.2.0
+versionCode=3
 author=TombstoneX
-description=为 TombstoneX 墓碑模块提供 SELinux 策略支持，允许 system_server 注册自定义 Binder 服务，并禁用系统自带墓碑机制。兼容 Magisk/KernelSU/APatch，安装后重启即可生效。
+description=SELinux policy helper for TombstoneX

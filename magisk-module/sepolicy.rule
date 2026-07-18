@@ -1,29 +1,7 @@
-# TombstoneX SELinux 规则
-# 此文件由 Magisk/KernelSU 在开机时自动注入到内核 SELinux 策略中
-# 允许 system_server 注册自定义 Binder 服务，允许 App 调用该服务
-
-# system_server -> servicemanager: 注册服务所需的 Binder 通信
 allow system_server servicemanager binder call
 allow system_server servicemanager binder transfer
-
-# system_server -> service_manager_type: addService/findService 操作
-allow system_server service_manager_type service_manager add
-allow system_server service_manager_type service_manager find
-
-# untrusted_app -> servicemanager/system_server: App 通过 Binder 调用 TombstoneX 服务
 allow untrusted_app servicemanager binder call
-allow untrusted_app servicemanager_service service_manager find
 allow untrusted_app system_server binder call
 allow untrusted_app system_server binder transfer
-
-# priv_app 兼容（特权应用）
-allow priv_app servicemanager binder call
-allow priv_app servicemanager_service service_manager find
 allow priv_app system_server binder call
 allow priv_app system_server binder transfer
-
-# system_app 兼容（系统应用）
-allow system_app servicemanager binder call
-allow system_app servicemanager_service service_manager find
-allow system_app system_server binder call
-allow system_app system_server binder transfer
