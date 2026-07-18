@@ -433,6 +433,10 @@ public class TombstoneXService extends Binder {
             } catch (NoSuchMethodException e) {
                 Logger.i("addService(String, IBinder) not found, trying alternative signatures");
                 lastError = "NoSuchMethod: addService(String,IBinder)";
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                Throwable cause = e.getCause();
+                lastError = (cause != null ? cause.getClass().getSimpleName() : "ITE") + ": " + (cause != null ? cause.getMessage() : "null");
+                Logger.e("addService(String, IBinder) InvocationTargetException, cause: " + lastError, cause != null ? cause : e);
             } catch (Throwable e) {
                 lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
                 Logger.e("addService(String, IBinder) failed: " + lastError, e);
@@ -448,9 +452,18 @@ public class TombstoneXService extends Binder {
                 } catch (NoSuchMethodException e) {
                     Logger.i("addService(String, IBinder, boolean) not found");
                     if (lastError.isEmpty()) lastError = "NoSuchMethod: addService(String,IBinder,boolean)";
+                } catch (java.lang.reflect.InvocationTargetException e) {
+                    Throwable cause = e.getCause();
+                    String causeStr = (cause != null ? cause.getClass().getSimpleName() : "ITE") + ": " + (cause != null ? cause.getMessage() : "null");
+                    Logger.e("addService(String, IBinder, boolean) InvocationTargetException, cause: " + causeStr, cause != null ? cause : e);
+                    // 如果是相同错误则不覆盖第一次的错误信息
+                    if (lastError.isEmpty() || lastError.startsWith("ITE") || lastError.startsWith("InvocationTargetException")) {
+                        lastError = causeStr;
+                    }
                 } catch (Throwable e) {
-                    lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
-                    Logger.e("addService(String, IBinder, boolean) failed: " + lastError, e);
+                    String errStr = e.getClass().getSimpleName() + ": " + e.getMessage();
+                    Logger.e("addService(String, IBinder, boolean) failed: " + errStr, e);
+                    if (lastError.isEmpty()) lastError = errStr;
                 }
             }
 
@@ -464,9 +477,17 @@ public class TombstoneXService extends Binder {
                     Logger.i("getDeclaredMethod addService(String, IBinder) succeeded");
                 } catch (NoSuchMethodException e) {
                     if (lastError.isEmpty()) lastError = "NoSuchMethod (declared): addService(String,IBinder)";
+                } catch (java.lang.reflect.InvocationTargetException e) {
+                    Throwable cause = e.getCause();
+                    String causeStr = (cause != null ? cause.getClass().getSimpleName() : "ITE") + ": " + (cause != null ? cause.getMessage() : "null");
+                    Logger.e("getDeclaredMethod addService InvocationTargetException, cause: " + causeStr, cause != null ? cause : e);
+                    if (lastError.isEmpty() || lastError.startsWith("ITE") || lastError.startsWith("InvocationTargetException")) {
+                        lastError = causeStr;
+                    }
                 } catch (Throwable e) {
-                    lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
-                    Logger.e("getDeclaredMethod addService failed: " + lastError, e);
+                    String errStr = e.getClass().getSimpleName() + ": " + e.getMessage();
+                    Logger.e("getDeclaredMethod addService failed: " + errStr, e);
+                    if (lastError.isEmpty()) lastError = errStr;
                 }
             }
 
