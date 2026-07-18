@@ -125,6 +125,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     var moduleLoaded by remember { mutableStateOf(false) }
     var moduleEnabled by remember { mutableStateOf(false) }
     var regStatus by remember { mutableStateOf("") }
+    var currentIpcMode by remember { mutableStateOf("none") }
     var showRebootDialog by remember { mutableStateOf(false) }
     // 应用级配置 BottomSheet 状态
     var showAppConfigSheet by remember { mutableStateOf(false) }
@@ -189,6 +190,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 moduleLoaded = triple.second
                 moduleAvailable = triple.third
                 regStatus = rs
+                // 获取当前 IPC 模式，用于判断是否显示一键启用按钮
+                currentIpcMode = safeRunCatching { ServiceClient.currentIpcMode }.getOrDefault("none")
 
                 val initData = dataDeferred.await()
                 val whiteApps = initData?.whiteApps ?: emptySet()
@@ -363,9 +366,16 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // 模块未激活提示
-                if (!moduleAvailable) {
-                    item { ModuleNotActiveCard(moduleEnabled = moduleEnabled, moduleLoaded = moduleLoaded, regStatus = regStatus) }
+                // 模块未激活 或 处于 FileIPC 降级模式时显示状态卡片
+                if (!moduleAvailable || currentIpcMode == "fileipc") {
+                    item {
+                        ModuleNotActiveCard(
+                            moduleEnabled = moduleEnabled,
+                            moduleLoaded = moduleLoaded,
+                            regStatus = regStatus,
+                            ipcMode = currentIpcMode,
+                        )
+                    }
                 }
 
                 if (!loading) {
@@ -510,17 +520,33 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
 }
 
 @Composable
-private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Boolean = false, regStatus: String = "") {
+private fun ModuleNotActiveCard(
+    moduleEnabled: Boolean = false,
+    moduleLoaded: Boolean = false,
+    regStatus: String = "",
+    ipcMode: String = "none",
+) {
     var showInstallDialog by remember { mutableStateOf(false) }
     var installResult by remember { mutableStateOf<com.tombstonex.util.RootModuleInstaller.InstallResult?>(null) }
     var isInstalling by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    // 根据状态决定卡片颜色：FileIPC 用警告色，未激活用错误色
+    val isFileIpcMode = ipcMode == "fileipc"
+    val containerColor = if (isFileIpcMode) {
+        MaterialTheme.colorScheme.tertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.errorContainer
+    }
+    val contentColor = if (isFileIpcMode) {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.onErrorContainer
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-        ),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
     ) {
         Column(
             modifier = Modifier
@@ -530,53 +556,44 @@ private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Bo
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Filled.Warning,
+                    if (isFileIpcMode) Icons.Filled.Bolt else Icons.Filled.Warning,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    tint = contentColor,
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "模块未激活",
+                    text = if (isFileIpcMode) "FileIPC 降级模式" else "模块未激活",
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    color = contentColor,
                 )
             }
             val statusText = when {
                 !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块"
                 !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」"
-                else -> {
-                    val ipcMode = safeRunCatching { ServiceClient.currentIpcMode }.getOrDefault("none")
-                    when (ipcMode) {
-                        "binder" -> "模块已激活（Binder 通道）\n高性能模式，IPC 延迟 ~1ms"
-                        "fileipc" -> "模块已激活（FileIPC 降级模式）\n点击下方按钮一键启用 Binder 高性能模式"
-                        else -> "模块已加载，通信通道未就绪，正在等待..."
-                    }
-                }
+                isFileIpcMode -> "当前使用文件 IPC 通信，速度较慢\n可一键启用 Binder 高性能模式（需 root）"
+                else -> "模块已加载，通信通道未就绪，正在等待..."
             }
             Text(
                 text = statusText,
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                color = contentColor.copy(alpha = 0.8f),
             )
 
             // FileIPC 模式下显示一键安装按钮
-            if (moduleEnabled && moduleLoaded) {
-                val ipcMode = safeRunCatching { ServiceClient.currentIpcMode }.getOrDefault("none")
-                if (ipcMode == "fileipc") {
-                    Button(
-                        onClick = {
-                            showInstallDialog = true
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.onErrorContainer,
-                            contentColor = MaterialTheme.colorScheme.errorContainer,
-                        ),
-                    ) {
-                        Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("一键启用 Binder 高性能模式")
-                    }
+            if (isFileIpcMode) {
+                Button(
+                    onClick = {
+                        showInstallDialog = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = contentColor,
+                        contentColor = containerColor,
+                    ),
+                ) {
+                    Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("一键启用 Binder 高性能模式")
                 }
             }
         }
@@ -600,9 +617,9 @@ private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Bo
                     Text(installResult!!.message)
                 } else {
                     Text(
-                        "将使用 root 权限安装 SELinux 策略模块，允许 system_server 注册 Binder 服务。\n\n" +
-                            "安装后需要重启设备才能生效。\n\n" +
-                            "此操作会写入 /data/adb/modules/tombstonex/ 目录，兼容 Magisk/KernelSU/APatch。",
+                        "将使用 root 权限安装 SELinux 策略，允许 system_server 注册 Binder 服务。\n\n" +
+                            "安装后会尝试立即生效，如果不行则需要重启设备。\n\n" +
+                            "兼容 Magisk/KernelSU/APatch。",
                     )
                 }
             },
