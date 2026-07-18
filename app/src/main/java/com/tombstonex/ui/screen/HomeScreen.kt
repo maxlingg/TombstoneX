@@ -171,11 +171,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     val l = safeRunCatching { ServiceClient.isModuleLoaded }.getOrDefault(false)
                     val a = safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false)
                     val rs = safeRunCatching { ServiceClient.regStatus }.getOrDefault("")
-                    booleanArrayOf(
-                        if (e) 1 else 0,
-                        if (l) 1 else 0,
-                        if (a) 1 else 0,
-                    ) to rs
+                    Triple(e, l, a) to rs
                 }
                 val whiteDeferred = async(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
@@ -187,10 +183,10 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     appProvider.getAllApps(includeSystem, false)
                 }
 
-                val (flags, rs) = moduleDeferred.await()
-                moduleEnabled = flags[0] == 1
-                moduleLoaded = flags[1] == 1
-                moduleAvailable = flags[2] == 1
+                val (triple, rs) = moduleDeferred.await()
+                moduleEnabled = triple.first
+                moduleLoaded = triple.second
+                moduleAvailable = triple.third
                 regStatus = rs
 
                 val whiteApps = whiteDeferred.await()
