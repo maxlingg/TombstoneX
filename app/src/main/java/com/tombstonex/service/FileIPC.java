@@ -311,6 +311,40 @@ public class FileIPC {
                 Logger.clearLog();
                 return true;
             }
+            case TombstoneXService.TX_GET_APP_CONFIG: {
+                String pkg = args.optString("pkg");
+                return com.tombstonex.manager.AppConfigManager.getInstance().getAppConfig(pkg).toString();
+            }
+            case TombstoneXService.TX_SET_APP_CONFIG_ITEM: {
+                String pkg = args.optString("pkg");
+                String key = args.optString("key");
+                String type = args.optString("type", "boolean");
+                Object value;
+                switch (type) {
+                    case "int": value = args.optInt("value"); break;
+                    case "string": value = args.optString("value"); break;
+                    default: value = args.optBoolean("value"); break;
+                }
+                com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, value);
+                return true;
+            }
+            case TombstoneXService.TX_GET_ROTATION_INTERVAL: {
+                return com.tombstonex.manager.ConfigManager.getInstance().getRotationInterval();
+            }
+            case TombstoneXService.TX_SET_ROTATION_INTERVAL: {
+                com.tombstonex.manager.ConfigManager.getInstance().setRotationInterval(args.optInt("interval"));
+                return true;
+            }
+            case TombstoneXService.TX_GET_APP_PRIORITY: {
+                String pkg = args.optString("pkg");
+                return com.tombstonex.manager.OomAdjManager.getInstance().getAppPriority(pkg);
+            }
+            case TombstoneXService.TX_SET_APP_PRIORITY: {
+                String pkg = args.optString("pkg");
+                int priority = args.optInt("priority");
+                com.tombstonex.manager.OomAdjManager.getInstance().setAppPriority(pkg, priority);
+                return true;
+            }
             default:
                 throw new IllegalArgumentException("Unknown command code: " + code);
         }

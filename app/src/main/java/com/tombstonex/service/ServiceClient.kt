@@ -53,6 +53,13 @@ object ServiceClient {
     private const val TX_PAUSE_ALL = 24
     private const val TX_RESUME_ALL = 25
     private const val TX_RESELECT_FREEZER = 26
+    private const val TX_GET_APP_CONFIG = 27
+    private const val TX_SET_APP_CONFIG = 28
+    private const val TX_SET_APP_CONFIG_ITEM = 29
+    private const val TX_GET_ROTATION_INTERVAL = 30
+    private const val TX_SET_ROTATION_INTERVAL = 31
+    private const val TX_GET_APP_PRIORITY = 32
+    private const val TX_SET_APP_PRIORITY = 33
 
     /** 缓存的 IBinder 代理 */
     @Volatile
@@ -586,6 +593,121 @@ object ServiceClient {
             TX_CLEAR_LOG,
             binderParse = { true },
             fileParse = { resp -> resp.opt("data") as? Boolean ?: true }
+        ) ?: false
+    }
+
+    // ====== 应用级配置 ======
+
+    fun getAppConfig(packageName: String): JSONObject {
+        return call(
+            TX_GET_APP_CONFIG,
+            binderPrepare = { it.writeString(packageName) },
+            binderParse = { reply ->
+                JSONObject(reply.readString() ?: "{}")
+            },
+            fileArgs = JSONObject().put("pkg", packageName),
+            fileParse = { resp ->
+                JSONObject(resp.optString("data", "{}"))
+            }
+        ) ?: JSONObject()
+    }
+
+    fun setAppConfigItem(packageName: String, key: String, value: Boolean): Boolean {
+        return call(
+            TX_SET_APP_CONFIG_ITEM,
+            binderPrepare = {
+                it.writeString(packageName)
+                it.writeString(key)
+                it.writeInt(0) // type=boolean
+                it.writeBoolean(value)
+            },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject()
+                .put("pkg", packageName)
+                .put("key", key)
+                .put("type", "boolean")
+                .put("value", value),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
+    }
+
+    fun setAppConfigItem(packageName: String, key: String, value: Int): Boolean {
+        return call(
+            TX_SET_APP_CONFIG_ITEM,
+            binderPrepare = {
+                it.writeString(packageName)
+                it.writeString(key)
+                it.writeInt(1) // type=int
+                it.writeInt(value)
+            },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject()
+                .put("pkg", packageName)
+                .put("key", key)
+                .put("type", "int")
+                .put("value", value),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
+    }
+
+    fun setAppConfigItem(packageName: String, key: String, value: String): Boolean {
+        return call(
+            TX_SET_APP_CONFIG_ITEM,
+            binderPrepare = {
+                it.writeString(packageName)
+                it.writeString(key)
+                it.writeInt(2) // type=string
+                it.writeString(value)
+            },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject()
+                .put("pkg", packageName)
+                .put("key", key)
+                .put("type", "string")
+                .put("value", value),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
+    }
+
+    // ====== 轮番解冻 ======
+
+    fun getRotationInterval(): Int {
+        return call(
+            TX_GET_ROTATION_INTERVAL,
+            binderParse = { it.readInt() },
+            fileParse = { resp -> resp.optInt("data", 360) }
+        ) ?: 360
+    }
+
+    fun setRotationInterval(interval: Int): Boolean {
+        return call(
+            TX_SET_ROTATION_INTERVAL,
+            binderPrepare = { it.writeInt(interval) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("interval", interval),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: true }
+        ) ?: false
+    }
+
+    // ====== OOM 优先级 ======
+
+    fun getAppPriority(packageName: String): Int {
+        return call(
+            TX_GET_APP_PRIORITY,
+            binderPrepare = { it.writeString(packageName) },
+            binderParse = { it.readInt() },
+            fileArgs = JSONObject().put("pkg", packageName),
+            fileParse = { resp -> resp.optInt("data", 1) }
+        ) ?: 1
+    }
+
+    fun setAppPriority(packageName: String, priority: Int): Boolean {
+        return call(
+            TX_SET_APP_PRIORITY,
+            binderPrepare = { it.writeString(packageName); it.writeInt(priority) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("pkg", packageName).put("priority", priority),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
         ) ?: false
     }
 

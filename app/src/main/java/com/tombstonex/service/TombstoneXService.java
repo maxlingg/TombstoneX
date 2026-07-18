@@ -61,6 +61,16 @@ public class TombstoneXService extends Binder {
     public static final int TX_PAUSE_ALL = 24;
     public static final int TX_RESUME_ALL = 25;
     public static final int TX_RESELECT_FREEZER = 26;
+    // 应用级配置
+    public static final int TX_GET_APP_CONFIG = 27;
+    public static final int TX_SET_APP_CONFIG = 28;
+    public static final int TX_SET_APP_CONFIG_ITEM = 29;
+    // 轮番解冻间隔
+    public static final int TX_GET_ROTATION_INTERVAL = 30;
+    public static final int TX_SET_ROTATION_INTERVAL = 31;
+    // OOM 优先级
+    public static final int TX_GET_APP_PRIORITY = 32;
+    public static final int TX_SET_APP_PRIORITY = 33;
 
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
@@ -379,6 +389,60 @@ public class TombstoneXService extends Binder {
                 case TX_RESELECT_FREEZER: {
                     FreezeManager.getInstance().reselectFreezer();
                     reply.writeNoException();
+                    replied = true;
+                    return true;
+                }
+                case TX_GET_APP_CONFIG: {
+                    String pkg = data.readString();
+                    org.json.JSONObject config = com.tombstonex.manager.AppConfigManager.getInstance().getAppConfig(pkg);
+                    reply.writeNoException();
+                    reply.writeString(config.toString());
+                    replied = true;
+                    return true;
+                }
+                case TX_SET_APP_CONFIG_ITEM: {
+                    String pkg = data.readString();
+                    String key = data.readString();
+                    int type = data.readInt(); // 0=boolean, 1=int, 2=string
+                    switch (type) {
+                        case 0: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readBoolean()); break;
+                        case 1: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readInt()); break;
+                        case 2: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readString()); break;
+                    }
+                    reply.writeNoException();
+                    reply.writeBoolean(true);
+                    replied = true;
+                    return true;
+                }
+                case TX_GET_ROTATION_INTERVAL: {
+                    int interval = ConfigManager.getInstance().getRotationInterval();
+                    reply.writeNoException();
+                    reply.writeInt(interval);
+                    replied = true;
+                    return true;
+                }
+                case TX_SET_ROTATION_INTERVAL: {
+                    int interval = data.readInt();
+                    ConfigManager.getInstance().setRotationInterval(interval);
+                    reply.writeNoException();
+                    reply.writeBoolean(true);
+                    replied = true;
+                    return true;
+                }
+                case TX_GET_APP_PRIORITY: {
+                    String pkg = data.readString();
+                    int priority = com.tombstonex.manager.OomAdjManager.getInstance().getAppPriority(pkg);
+                    reply.writeNoException();
+                    reply.writeInt(priority);
+                    replied = true;
+                    return true;
+                }
+                case TX_SET_APP_PRIORITY: {
+                    String pkg = data.readString();
+                    int priority = data.readInt();
+                    com.tombstonex.manager.OomAdjManager.getInstance().setAppPriority(pkg, priority);
+                    reply.writeNoException();
+                    reply.writeBoolean(true);
                     replied = true;
                     return true;
                 }

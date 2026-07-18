@@ -138,12 +138,38 @@ public class ActivitySwitchHook {
             }
 
             // 检查音频播放
-            // 已知局限：isAnyAudioPlaying() 基于 AudioManager.isMusicActive()，
-            // 是全局检查，无法区分具体是哪个应用在播放音频。任何应用播放音乐时
-            // 所有应用都不会被冻结。这里保留该检查以避免误冻结正在播放音频的应用。
             if (isAnyAudioPlaying()) {
                 Logger.d("App is playing audio, skip freeze: " + packageName);
                 return;
+            }
+
+            // 智能状态识别：通话/定位/录音/相机/VPN/无障碍/输入法/自动填充/悬浮窗/常驻通知
+            try {
+                if (com.tombstonex.hook.SmartStateHook.isAppActive(uid, packageName)) {
+                    Logger.d("App is active (smart state), skip freeze: " + packageName);
+                    return;
+                }
+            } catch (Throwable t) {
+                // SmartStateHook 可能未初始化，忽略
+            }
+
+            // 检查应用级配置：后台播放/常驻通知/网速识别
+            try {
+                com.tombstonex.manager.AppConfigManager appConfig = com.tombstonex.manager.AppConfigManager.getInstance();
+                if (appConfig.getConfig(packageName, "playAllowed", false)) {
+                    Logger.d("App has playAllowed config, skip freeze: " + packageName);
+                    return;
+                }
+                if (appConfig.getConfig(packageName, "ongoingNotification", false)) {
+                    Logger.d("App has ongoingNotification config, skip freeze: " + packageName);
+                    return;
+                }
+                if (appConfig.getConfig(packageName, "netTransfer", false)) {
+                    Logger.d("App has netTransfer config, skip freeze: " + packageName);
+                    return;
+                }
+            } catch (Throwable t) {
+                // AppConfigManager 可能未初始化，忽略
             }
 
             // 注册进程
@@ -391,6 +417,15 @@ public class ActivitySwitchHook {
                             int oomAdj = (int) param.args[2];
                             // oomAdj >= 900 通常是缓存进程
                             ProcessTracker.getInstance().updateOomAdj(pid, oomAdj);
+                            // OOM adj 调优：根据应用优先级调整 oomAdj
+                            try {
+                                int adjusted = com.tombstonex.manager.OomAdjManager.getInstance().applyOomAdj(uid, pid, oomAdj);
+                                if (adjusted != oomAdj) {
+                                    param.args[2] = adjusted;
+                                }
+                            } catch (Throwable t) {
+                                // OomAdjManager 可能未初始化，忽略
+                            }
                         } catch (Throwable t) {
                             Logger.w("setOomAdj hook error: " + t.getMessage());
                         }

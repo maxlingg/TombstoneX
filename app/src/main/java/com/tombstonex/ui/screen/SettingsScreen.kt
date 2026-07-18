@@ -100,6 +100,14 @@ fun SettingsScreen(
     var hookActivitySwitch by remember { mutableStateOf(true) }
     var hookScreenState by remember { mutableStateOf(true) }
 
+    // 高级设置：轮番解冻间隔（秒）
+    var rotationInterval by remember { mutableFloatStateOf(360f) }
+    var committedRotationInterval by remember { mutableFloatStateOf(360f) }
+    var rotationLoaded by remember { mutableStateOf(false) }
+
+    // ReKernel 状态：null=检测中，true=可用，false=未安装
+    var rekernelAvailable by remember { mutableStateOf<Boolean?>(null) }
+
     // 当配置首次加载完成时同步到本地状态
     LaunchedEffect(initialConfig) {
         val (cfg, freezer) = initialConfig
@@ -117,6 +125,33 @@ fun SettingsScreen(
             configLoaded = true
         }
         currentFreezerName = freezer
+    }
+
+    // 异步加载轮番解冻间隔
+    LaunchedEffect(Unit) {
+        val interval = withContext(Dispatchers.IO) {
+            safeRunCatching { ServiceClient.getRotationInterval() }.getOrDefault(360)
+        }
+        if (!rotationLoaded) {
+            rotationInterval = interval.toFloat()
+            committedRotationInterval = interval.toFloat()
+            rotationLoaded = true
+        }
+    }
+
+    // 异步检测 ReKernel 状态（通过 su 检查设备节点是否存在）
+    LaunchedEffect(Unit) {
+        rekernelAvailable = withContext(Dispatchers.IO) {
+            safeRunCatching {
+                val paths = listOf("/dev/rekernel", "/dev/rekernel_x", "/proc/rekernel")
+                paths.any { path ->
+                    val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "test -e $path && echo 1 || echo 0"))
+                    val out = p.inputStream.bufferedReader().use { it.readLine() ?: "0" }
+                    p.waitFor()
+                    out.trim() == "1"
+                }
+            }.getOrDefault(false)
+        }
     }
 
     val modeDisplayName = freezeMode.displayLabel()
@@ -212,6 +247,52 @@ fun SettingsScreen(
                     supportingContent = { Text("v${BuildConfig.VERSION_NAME}（build ${BuildConfig.VERSION_CODE}）") },
                 )
             }
+            item {
+                // 已启用的 Hook 列表（依据已加载的子 Hook 开关）
+                val enabledHooksText = if (!configLoaded) {
+                    "加载中…"
+                } else {
+                    buildList {
+                        if (hookActivitySwitch) add("Activity 切换")
+                        if (hookScreenState) add("锁屏冻结")
+                        if (hookBroadcast) add("广播拦截")
+                        if (hookWakeLock) add("WakeLock 拦截")
+                        if (hookAnr) add("ANR 拦截")
+                    }.joinToString("、").ifEmpty { "无" }
+                }
+                ListItem(
+                    headlineContent = { Text("已启用 Hook") },
+                    supportingContent = { Text(enabledHooksText) },
+                )
+            }
+            item {
+                // 后台管理器运行状态：模块激活后由 MainHook 启动
+                ListItem(
+                    headlineContent = { Text("后台管理器") },
+                    supportingContent = {
+                        Text(
+                            if (moduleState.activated)
+                                "ScheduledFreezeManager、RotationThawManager（运行中）"
+                            else "未运行（模块未激活）"
+                        )
+                    },
+                )
+            }
+            item {
+                // ReKernel 状态：检测内核模块设备节点是否存在
+                ListItem(
+                    headlineContent = { Text("ReKernel 状态") },
+                    supportingContent = {
+                        Text(
+                            when (rekernelAvailable) {
+                                null -> "检测中…"
+                                true -> "可用（网络包通知已集成）"
+                                false -> "未安装"
+                            }
+                        )
+                    },
+                )
+            }
             item { HorizontalDivider() }
 
             // ---- 冻结配置 ----
@@ -264,6 +345,50 @@ fun SettingsScreen(
                     )
                     Text(
                         "应用退到后台后等待指定秒数再冻结",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    )
+                }
+            }
+            item { HorizontalDivider() }
+
+            // ---- 高级设置 ----
+            item { SectionHeader("高级设置") }
+            item {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("轮番解冻间隔", modifier = Modifier.weight(1f))
+                        val totalSec = rotationInterval.toInt()
+                        val mins = totalSec / 60
+                        val secs = totalSec % 60
+                        Text(
+                            if (secs == 0) "$mins 分钟" else "$mins 分 $secs 秒",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                    Slider(
+                        value = rotationInterval,
+                        onValueChange = { rotationInterval = it },
+                        onValueChangeFinished = {
+                            val newInterval = rotationInterval.toInt()
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) {
+                                    safeRunCatching { ServiceClient.setRotationInterval(newInterval) }.getOrDefault(false)
+                                }
+                                if (ok) {
+                                    committedRotationInterval = newInterval.toFloat()
+                                } else {
+                                    rotationInterval = committedRotationInterval
+                                    showSnackbar("设置未生效（模块未激活或无权限）")
+                                }
+                            }
+                        },
+                        valueRange = 60f..3600f,
+                        steps = 58,
+                    )
+                    Text(
+                        "定期解冻最久未使用的应用，间隔越小越频繁（耗电略增）",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     )

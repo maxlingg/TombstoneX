@@ -207,6 +207,32 @@ public class ConfigManager {
         return 60; // 默认 60 秒
     }
 
+    /**
+     * 获取轮番解冻间隔（秒），默认 360 秒（6 分钟）。
+     * 供 {@link RotationThawManager} 使用。
+     */
+    public int getRotationInterval() {
+        try {
+            String intervalStr = readFileContent("rotation_interval");
+            if (intervalStr != null && !intervalStr.isEmpty()) {
+                return Math.max(60, Math.min(3600, Integer.parseInt(intervalStr.trim())));
+            }
+        } catch (Exception e) {
+            Logger.d("ConfigManager: failed to parse rotationInterval: " + e.getMessage());
+        }
+        return 360; // 默认 360 秒（6 分钟）
+    }
+
+    /**
+     * 设置轮番解冻间隔（秒），范围 [60, 3600]。
+     */
+    public void setRotationInterval(int seconds) {
+        int clamped = Math.max(60, Math.min(3600, seconds));
+        if (writeFileContent("rotation_interval", String.valueOf(clamped))) {
+            Logger.i("Rotation interval set to " + clamped + "s");
+        }
+    }
+
     public boolean isHookANREnabled() { return hookANREnabled; }
     public void setHookANREnabled(boolean enabled) {
         if (toggleConfig("disable_anr", !enabled)) {

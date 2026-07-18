@@ -1,6 +1,7 @@
 package com.tombstonex.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -35,7 +37,9 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Switch
@@ -70,6 +74,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -115,6 +120,9 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     var moduleEnabled by remember { mutableStateOf(false) }
     var regStatus by remember { mutableStateOf("") }
     var showRebootDialog by remember { mutableStateOf(false) }
+    // 应用级配置 BottomSheet 状态
+    var showAppConfigSheet by remember { mutableStateOf(false) }
+    var selectedAppForConfig by remember { mutableStateOf<HomeAppItem?>(null) }
 
     // 搜索防抖
     LaunchedEffect(searchQuery) {
@@ -401,6 +409,10 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                                 onToggleFreeze = { item, enabled ->
                                     onToggleFreeze(item, enabled)
                                 },
+                                onConfigClick = { item ->
+                                    selectedAppForConfig = item
+                                    showAppConfigSheet = true
+                                },
                             )
                         }
                     }
@@ -461,6 +473,20 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     }
                 },
             )
+        }
+
+        // 应用级配置 BottomSheet
+        if (showAppConfigSheet) {
+            selectedAppForConfig?.let { app ->
+                AppConfigSheet(
+                    item = app,
+                    onDismiss = {
+                        showAppConfigSheet = false
+                        selectedAppForConfig = null
+                    },
+                    showSnackbar = showSnackbar,
+                )
+            }
         }
     }
 }
@@ -570,6 +596,7 @@ private fun AppCard(
     loadIcon: suspend (String) -> ImageBitmap?,
     onFreezeClick: (HomeAppItem) -> Unit,
     onToggleFreeze: (HomeAppItem, Boolean) -> Unit,
+    onConfigClick: (HomeAppItem) -> Unit,
 ) {
     // 图标在列表项内异步懒加载
     var icon by remember(item.packageName) { mutableStateOf<ImageBitmap?>(null) }
@@ -665,6 +692,18 @@ private fun AppCard(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                // 应用配置按钮（齿轮图标）
+                IconButton(
+                    onClick = { onConfigClick(item) },
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = "应用配置",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+
                 // 冻结开关：ON = 参与自动冻结，OFF = 不冻结（白名单）
                 Switch(
                     checked = freezeEnabled,
@@ -725,5 +764,258 @@ private fun StateBadge(state: AppState?) {
             color = color,
             fontWeight = FontWeight.Medium,
         )
+    }
+}
+
+/**
+ * 应用级配置 BottomSheet。
+ *
+ * 打开时异步加载该应用的 [ServiceClient.getAppConfig] 与 [ServiceClient.getAppPriority]；
+ * 切换开关时立即保存（乐观更新），失败回滚。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppConfigSheet(
+    item: HomeAppItem,
+    onDismiss: () -> Unit,
+    showSnackbar: (String) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+
+    var configLoaded by remember { mutableStateOf(false) }
+    var playAllowed by remember { mutableStateOf(false) }
+    var ongoingNotification by remember { mutableStateOf(false) }
+    var netTransfer by remember { mutableStateOf(false) }
+    var autoStartAllowed by remember { mutableStateOf(false) }
+    var keepConnection by remember { mutableStateOf(false) }
+    var priority by remember { mutableStateOf(1) }
+    var backgroundLevel by remember { mutableStateOf(0) }
+
+    // BottomSheet 打开时异步加载配置
+    LaunchedEffect(item.packageName) {
+        val cfg = withContext(Dispatchers.IO) {
+            safeRunCatching { ServiceClient.getAppConfig(item.packageName) }.getOrDefault(JSONObject())
+        }
+        val prio = withContext(Dispatchers.IO) {
+            safeRunCatching { ServiceClient.getAppPriority(item.packageName) }.getOrDefault(1)
+        }
+        playAllowed = cfg.optBoolean("playAllowed", false)
+        ongoingNotification = cfg.optBoolean("ongoingNotification", false)
+        netTransfer = cfg.optBoolean("netTransfer", false)
+        autoStartAllowed = cfg.optBoolean("autoStartAllowed", false)
+        keepConnection = cfg.optBoolean("keepConnection", false)
+        backgroundLevel = cfg.optInt("backgroundLevel", 0)
+        priority = prio
+        configLoaded = true
+    }
+
+    /**
+     * 切换布尔配置项：乐观更新，失败回滚。
+     */
+    fun toggleConfig(key: String, current: Boolean, onUpdate: (Boolean) -> Unit) {
+        val newValue = !current
+        onUpdate(newValue)
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                safeRunCatching {
+                    ServiceClient.setAppConfigItem(item.packageName, key, newValue)
+                }.getOrDefault(false)
+            }
+            if (!ok) {
+                onUpdate(!newValue)
+                showSnackbar("设置未生效（模块未激活或无权限）")
+            }
+        }
+    }
+
+    /** 设置优先级：乐观更新，失败回滚。 */
+    fun setPriority(newPriority: Int) {
+        val old = priority
+        priority = newPriority
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                safeRunCatching {
+                    ServiceClient.setAppPriority(item.packageName, newPriority)
+                }.getOrDefault(false)
+            }
+            if (!ok) {
+                priority = old
+                showSnackbar("设置未生效（模块未激活或无权限）")
+            }
+        }
+    }
+
+    /** 设置后台级别：乐观更新，失败回滚。 */
+    fun setBackgroundLevel(newLevel: Int) {
+        val old = backgroundLevel
+        backgroundLevel = newLevel
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                safeRunCatching {
+                    ServiceClient.setAppConfigItem(item.packageName, "backgroundLevel", newLevel)
+                }.getOrDefault(false)
+            }
+            if (!ok) {
+                backgroundLevel = old
+                showSnackbar("设置未生效（模块未激活或无权限）")
+            }
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "应用配置",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = item.label,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            )
+            Text(
+                text = item.packageName,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (!configLoaded) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                // ---- 开关配置项 ----
+                ConfigSwitchRow(
+                    title = "后台播放",
+                    subtitle = "播放期间不冻结",
+                    checked = playAllowed,
+                ) { toggleConfig("playAllowed", playAllowed) { playAllowed = it } }
+                ConfigSwitchRow(
+                    title = "常驻通知",
+                    subtitle = "通知常驻时不冻结",
+                    checked = ongoingNotification,
+                ) { toggleConfig("ongoingNotification", ongoingNotification) { ongoingNotification = it } }
+                ConfigSwitchRow(
+                    title = "网速识别",
+                    subtitle = "后台上传/下载达到阈值时不冻结",
+                    checked = netTransfer,
+                ) { toggleConfig("netTransfer", netTransfer) { netTransfer = it } }
+                ConfigSwitchRow(
+                    title = "允许自启",
+                    subtitle = "允许后台自启动",
+                    checked = autoStartAllowed,
+                ) { toggleConfig("autoStartAllowed", autoStartAllowed) { autoStartAllowed = it } }
+                ConfigSwitchRow(
+                    title = "保持连接",
+                    subtitle = "冻结后保持网络连接",
+                    checked = keepConnection,
+                ) { toggleConfig("keepConnection", keepConnection) { keepConnection = it } }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // ---- 优先级 ----
+                Text(
+                    text = "优先级",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                )
+                val priorities = listOf(
+                    0 to "高",
+                    1 to "中",
+                    2 to "低",
+                )
+                priorities.forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { setPriority(value) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = priority == value,
+                            onClick = { setPriority(value) },
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(label)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // ---- 后台级别 ----
+                Text(
+                    text = "后台级别",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                )
+                val levels = listOf(
+                    0 to "前台服务",
+                    1 to "可见窗口",
+                    2 to "强制冻结",
+                )
+                levels.forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { setBackgroundLevel(value) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = backgroundLevel == value,
+                            onClick = { setBackgroundLevel(value) },
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(label)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+/**
+ * 应用配置项开关行（Column + Row 布局）。
+ */
+@Composable
+private fun ConfigSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            )
+        }
+        Switch(checked = checked, onCheckedChange = { onToggle() })
     }
 }

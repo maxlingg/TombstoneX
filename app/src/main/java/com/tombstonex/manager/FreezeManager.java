@@ -107,6 +107,15 @@ public class FreezeManager {
             boolean result = currentFreezer.freeze(pid, uid);
             if (result) {
                 ProcessTracker.getInstance().updateState(pid, AppState.FROZEN);
+                // 通知 NetworkHook 断网
+                try {
+                    AppInfo info = ProcessTracker.getInstance().getByPid(pid);
+                    if (info != null) {
+                        com.tombstonex.hook.NetworkHook.onProcessFrozen(uid, info.packageName);
+                    }
+                } catch (Throwable t) {
+                    // NetworkHook 可能未初始化，忽略
+                }
             }
             return result;
         }
@@ -141,6 +150,15 @@ public class FreezeManager {
             boolean result = currentFreezer.unfreeze(pid, uid);
             if (result) {
                 ProcessTracker.getInstance().updateState(pid, AppState.BACKGROUND);
+                // 通知 NetworkHook 恢复网络
+                try {
+                    AppInfo info = ProcessTracker.getInstance().getByPid(pid);
+                    if (info != null) {
+                        com.tombstonex.hook.NetworkHook.onProcessUnfrozen(uid, info.packageName);
+                    }
+                } catch (Throwable t) {
+                    // NetworkHook 可能未初始化，忽略
+                }
             }
             return result;
         }

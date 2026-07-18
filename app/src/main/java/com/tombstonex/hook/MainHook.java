@@ -70,14 +70,28 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
         ClassLoader classLoader = lpparam.classLoader;
         ConfigManager config = ConfigManager.getInstance();
 
-        // 进程死亡清理 — 始终启用，防止内存泄漏和 PID 复用问题
+        // 1. 禁用系统自带 Cached Apps Freezer（必须最先执行，避免与 TombstoneX 冲突）
+        try {
+            SystemFreezerDisableHook.init(classLoader);
+        } catch (Throwable t) {
+            Logger.e("Failed to init SystemFreezerDisableHook", t);
+        }
+
+        // 2. 智能状态识别（其他 Hook 依赖此模块判断应用是否活跃）
+        try {
+            SmartStateHook.init(classLoader);
+        } catch (Throwable t) {
+            Logger.e("Failed to init SmartStateHook", t);
+        }
+
+        // 3. 进程死亡清理 — 始终启用，防止内存泄漏和 PID 复用问题
         try {
             ProcessDeathHook.init(classLoader);
         } catch (Throwable t) {
             Logger.e("Failed to init ProcessDeathHook", t);
         }
 
-        // Activity 切换冻结 — 核心功能
+        // 4. Activity 切换冻结 — 核心功能
         if (config.isHookActivitySwitchEnabled()) {
             try {
                 ActivitySwitchHook.init(classLoader);
@@ -88,7 +102,7 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             Logger.i("ActivitySwitchHook disabled by config");
         }
 
-        // 广播拦截
+        // 5. 广播拦截
         if (config.isHookBroadcastEnabled()) {
             try {
                 BroadcastHook.init(classLoader);
@@ -99,7 +113,7 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             Logger.i("BroadcastHook disabled by config");
         }
 
-        // ANR 拦截
+        // 6. ANR 拦截
         if (config.isHookANREnabled()) {
             try {
                 ANRHook.init(classLoader);
@@ -110,7 +124,7 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             Logger.i("ANRHook disabled by config");
         }
 
-        // WakeLock 拦截
+        // 7. WakeLock 拦截
         if (config.isHookWakeLockEnabled()) {
             try {
                 WakeLockHook.init(classLoader);
@@ -121,7 +135,7 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             Logger.i("WakeLockHook disabled by config");
         }
 
-        // 锁屏批量冻结
+        // 8. 锁屏批量冻结
         if (config.isHookScreenStateEnabled()) {
             try {
                 ScreenStateHook.init(classLoader);
@@ -132,14 +146,71 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             Logger.i("ScreenStateHook disabled by config");
         }
 
+        // 9. Activity 休眠保护（防止冻结应用在最近任务中消失）
+        try {
+            ActivitySleepHook.init(classLoader);
+        } catch (Throwable t) {
+            Logger.e("Failed to init ActivitySleepHook", t);
+        }
+
+        // 10. 冻结新进程（拦截后台应用启动新进程）
+        try {
+            ProcessStartHook.init(classLoader);
+        } catch (Throwable t) {
+            Logger.e("Failed to init ProcessStartHook", t);
+        }
+
+        // 11. 冻结后断网
+        try {
+            NetworkHook.init(classLoader);
+        } catch (Throwable t) {
+            Logger.e("Failed to init NetworkHook", t);
+        }
+
+        // 12. 自启拦截
+        try {
+            AutoStartHook.init(classLoader);
+        } catch (Throwable t) {
+            Logger.e("Failed to init AutoStartHook", t);
+        }
+
+        // 13. 定时器限制（禁止冻结应用设置闹钟/定时器）
+        try {
+            TimerHook.init(classLoader);
+        } catch (Throwable t) {
+            Logger.e("Failed to init TimerHook", t);
+        }
+
         Logger.i("All system framework hooks initialized");
+
+        // 启动后台管理器
+        try {
+            // 定时冻结（每分钟扫描）
+            com.tombstonex.manager.ScheduledFreezeManager.getInstance().start();
+            Logger.i("ScheduledFreezeManager started");
+        } catch (Throwable t) {
+            Logger.e("Failed to start ScheduledFreezeManager", t);
+        }
+
+        try {
+            // 轮番解冻（定期解冻最久应用 3 秒）
+            com.tombstonex.manager.RotationThawManager.getInstance().start();
+            Logger.i("RotationThawManager started");
+        } catch (Throwable t) {
+            Logger.e("Failed to start RotationThawManager", t);
+        }
+
+        try {
+            // ReKernel 集成（可选，ReKernel 不存在时安全跳过）
+            com.tombstonex.hook.ReKernelHook.init();
+        } catch (Throwable t) {
+            Logger.e("Failed to init ReKernelHook", t);
+        }
 
         // 注册 IPC 服务到 ServiceManager，供 UI 进程调用
         TombstoneXService.register();
 
-        // 启动文件 IPC 作为降级通信方案（无论 Binder 注册是否成功都启动）。
-        // 当 SELinux 阻止 ServiceManager.addService 时，App 通过 FileIPC 与 system_server 通信。
-        // App 端优先使用 Binder，失败时自动降级到 FileIPC。
+        // 启动文件 IPC 作为降级通信方案
         try {
             com.tombstonex.service.FileIPC.start();
             Logger.i("FileIPC started as fallback IPC channel");
