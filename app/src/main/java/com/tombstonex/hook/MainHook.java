@@ -136,5 +136,15 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         // 注册 IPC 服务到 ServiceManager，供 UI 进程调用
         TombstoneXService.register();
+
+        // 启动文件 IPC 作为降级通信方案（无论 Binder 注册是否成功都启动）。
+        // 当 SELinux 阻止 ServiceManager.addService 时，App 通过 FileIPC 与 system_server 通信。
+        // App 端优先使用 Binder，失败时自动降级到 FileIPC。
+        try {
+            com.tombstonex.service.FileIPC.start();
+            Logger.i("FileIPC started as fallback IPC channel");
+        } catch (Throwable t) {
+            Logger.e("Failed to start FileIPC", t);
+        }
     }
 }

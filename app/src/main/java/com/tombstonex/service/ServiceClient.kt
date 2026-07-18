@@ -4,19 +4,31 @@ import android.os.Parcel
 import androidx.compose.runtime.Immutable
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.File
+import java.io.FileReader
+import java.io.FileWriter
+import java.nio.charset.StandardCharsets
 
 /**
- * UI 侧客户端，通过反射 ServiceManager.getService("tombstonex") 与 system_server 中的
- * TombstoneXService 通信。解决 App 进程无权限访问 /data/system/ 的问题。
+ * UI 侧客户端，通过两种方式与 system_server 中的 TombstoneXService 通信：
+ *
+ * 1. Binder（首选）：通过反射 ServiceManager.getService("tombstonex") 获取 Binder 代理
+ * 2. FileIPC（降级）：当 SELinux 阻止 Binder 注册时，通过 /data/system/TombstoneX/ 下的
+ *    文件系统进行通信，App 端通过 su 执行文件读写
  *
  * 所有方法在 IO 线程调用（非主线程），返回 null/默认值表示服务不可用。
  */
 object ServiceClient {
 
     private const val SERVICE_NAME = "tombstonex"
-
-    /** Binder 接口描述符，必须与 TombstoneXService.java 中的 DESCRIPTOR 一致 */
     private const val DESCRIPTOR = "com.tombstonex.service.TombstoneXService"
+
+    // FileIPC 文件路径
+    private const val IPC_DIR = "/data/system/TombstoneX"
+    private const val CMD_FILE = "$IPC_DIR/cmd.json"
+    private const val RESP_FILE = "$IPC_DIR/resp.json"
+    private const val READY_FILE = "$IPC_DIR/ipc_ready"
 
     // 事务码 — 必须与 TombstoneXService.java 保持一致
     private const val TX_GET_CONFIG = 1
@@ -50,16 +62,29 @@ object ServiceClient {
     @Volatile
     private var binder: android.os.IBinder? = null
 
+    /** 缓存的 IPC 模式：true=Binder，false=FileIPC */
+    @Volatile
+    private var useBinder: Boolean = true
+
     /**
-     * 模块是否已激活（Binder 服务是否已注册到 ServiceManager）
-     * 这是真正意义上的"激活"——system_server 中的 Hook 已注入且服务已就绪。
+     * 模块是否已激活（Binder 或 FileIPC 任一可用即视为激活）
      */
     val isAvailable: Boolean
-        get() = getBinder() != null
+        get() = getBinder() != null || isFileIPCReady()
+
+    /**
+     * FileIPC 是否就绪
+     */
+    private fun isFileIPCReady(): Boolean {
+        return try {
+            File(READY_FILE).exists()
+        } catch (e: Throwable) {
+            false
+        }
+    }
 
     /**
      * 获取 Binder 服务注册失败的诊断信息。
-     * 由 TombstoneXService.register() 写入系统属性。
      */
     val regStatus: String
         get() = try {
@@ -71,9 +96,7 @@ object ServiceClient {
         }
 
     /**
-     * 模块是否已被 LSPosed 启用（通过系统属性检测）。
-     * initZygote 在 Zygote 进程中运行，只要 LSPosed 启用了模块就会设置此属性。
-     * 用于判断 LSPosed 是否已启用模块。
+     * 模块是否已被 LSPosed 启用
      */
     val isModuleEnabled: Boolean
         get() = try {
@@ -86,10 +109,7 @@ object ServiceClient {
         }
 
     /**
-     * 模块是否已加载到 system_server（通过系统属性检测）。
-     * 仅表示 LSPosed 已在 system_server 中加载了模块代码，
-     * 不代表 Binder 服务已注册成功。
-     * 用于区分"模块未加载"和"服务注册失败"两种情况。
+     * 模块是否已加载到 system_server
      */
     val isModuleLoaded: Boolean
         get() = try {
@@ -106,8 +126,6 @@ object ServiceClient {
         val cached = binder
         if (cached != null) {
             if (cached.isBinderAlive) return cached
-            // P3-03: binder 已死亡，清除缓存的死引用，避免持有无用对象，
-            // 下面的逻辑会重新通过 ServiceManager.getService 查找
             binder = null
         }
         return try {
@@ -122,9 +140,7 @@ object ServiceClient {
     }
 
     /**
-     * 执行一次 transact 调用，自动处理 Parcel 回收和异常检查。
-     * 服务端必须以 writeNoException() 开头写入 reply，此方法会先调用 readException() 消费标记，
-     * 再通过 parse 回调解析实际数据。
+     * 执行一次 Binder transact 调用
      */
     private fun <T> transact(
         code: Int,
@@ -142,15 +158,8 @@ object ServiceClient {
             reply.readException()
             parse(reply)
         } catch (e: Throwable) {
-            // P1-05: 不再静默吞掉 Binder 异常
-            // 协程取消异常必须重新抛出，避免破坏协程结构化并发
-            // P3-R1: 使用 java.util.concurrent.CancellationException 而非
-            // kotlinx.coroutines.CancellationException，消除对传递依赖的脆弱引用
             if (e is java.util.concurrent.CancellationException) throw e
-            // P3-R7: 传递 Throwable 对象以保留堆栈信息
             android.util.Log.e("TombstoneX", "ServiceClient.transact failed: ${e.message}", e)
-            // DeadObjectException 表示服务端进程已死，清空缓存的 binder 引用，
-            // 下次调用时会重新通过 ServiceManager.getService 查找
             if (e is android.os.DeadObjectException) {
                 binder = null
             }
@@ -159,6 +168,80 @@ object ServiceClient {
             data.recycle()
             reply.recycle()
         }
+    }
+
+    /**
+     * 通过 FileIPC 发送命令（降级方案）
+     * 使用 su 写入命令文件，等待 system_server 的 FileObserver 处理后读取响应
+     */
+    private fun fileTransact(code: Int, args: JSONObject = JSONObject()): JSONObject? {
+        if (!isFileIPCReady()) return null
+
+        val cmd = JSONObject()
+        cmd.put("code", code)
+        cmd.put("args", args)
+
+        return try {
+            // 通过 su 写入命令文件
+            val cmdContent = cmd.toString()
+            val suCmd = "echo '${cmdContent.replace("'", "'\\''")}' > $CMD_FILE"
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", suCmd))
+            process.waitFor()
+
+            // 等待响应（轮询 resp.json 修改时间变化）
+            val respFile = File(RESP_FILE)
+            val startTime = respFile.lastModified()
+            var timeout = 0
+            while (timeout < 50) { // 最多等待 5 秒
+                Thread.sleep(100)
+                val currentMod = respFile.lastModified()
+                if (currentMod > startTime) {
+                    // 给文件写入一点时间完成
+                    Thread.sleep(50)
+                    break
+                }
+                timeout++
+            }
+
+            // 读取响应
+            val respContent = readFile(respFile) ?: return null
+            if (respContent.trim().isEmpty()) return null
+
+            val resp = JSONObject(respContent)
+            if (!resp.optBoolean("ok", false)) {
+                val error = resp.optString("error", "unknown error")
+                android.util.Log.e("TombstoneX", "FileIPC command $code failed: $error")
+                return null
+            }
+            resp
+        } catch (e: Throwable) {
+            if (e is java.util.concurrent.CancellationException) throw e
+            android.util.Log.e("TombstoneX", "FileIPC.transact failed: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
+     * 统一调用：优先使用 Binder，失败时降级到 FileIPC
+     */
+    private fun <T> call(
+        code: Int,
+        binderPrepare: (Parcel) -> Unit = {},
+        binderParse: (Parcel) -> T?,
+        fileArgs: JSONObject = JSONObject(),
+        fileParse: (JSONObject) -> T?
+    ): T? {
+        // 优先使用 Binder
+        if (useBinder) {
+            val result = transact(code, binderPrepare, binderParse)
+            if (result != null) return result
+            // Binder 失败，切换到 FileIPC
+            useBinder = false
+        }
+
+        // 降级到 FileIPC
+        val resp = fileTransact(code, fileArgs) ?: return null
+        return fileParse(resp)
     }
 
     // ====== 配置 ======
@@ -177,85 +260,191 @@ object ServiceClient {
     )
 
     fun getConfig(): ConfigSnapshot? {
-        return transact(TX_GET_CONFIG) { reply ->
-            val json = JSONObject(reply.readString() ?: "{}")
-            ConfigSnapshot(
-                freezeMode = json.optInt("freezeMode", 4), // P3-R6: 默认 SYSTEM_API(ordinal=4)，与 ConfigManager 一致
-                freezeDelay = json.optInt("freezeDelay", 3),
-                debugEnabled = json.optBoolean("debugEnabled", false),
-                globalPaused = json.optBoolean("globalPaused", false),
-                hookANR = json.optBoolean("hookANR", true),
-                hookBroadcast = json.optBoolean("hookBroadcast", true),
-                hookWakeLock = json.optBoolean("hookWakeLock", true),
-                hookActivitySwitch = json.optBoolean("hookActivitySwitch", true),
-                hookScreenState = json.optBoolean("hookScreenState", true),
-            )
-        }
+        return call(
+            TX_GET_CONFIG,
+            binderParse = { reply ->
+                val json = JSONObject(reply.readString() ?: "{}")
+                ConfigSnapshot(
+                    freezeMode = json.optInt("freezeMode", 4),
+                    freezeDelay = json.optInt("freezeDelay", 3),
+                    debugEnabled = json.optBoolean("debugEnabled", false),
+                    globalPaused = json.optBoolean("globalPaused", false),
+                    hookANR = json.optBoolean("hookANR", true),
+                    hookBroadcast = json.optBoolean("hookBroadcast", true),
+                    hookWakeLock = json.optBoolean("hookWakeLock", true),
+                    hookActivitySwitch = json.optBoolean("hookActivitySwitch", true),
+                    hookScreenState = json.optBoolean("hookScreenState", true),
+                )
+            },
+            fileParse = { resp ->
+                val json = resp.optJSONObject("data") ?: JSONObject()
+                ConfigSnapshot(
+                    freezeMode = json.optInt("freezeMode", 4),
+                    freezeDelay = json.optInt("freezeDelay", 3),
+                    debugEnabled = json.optBoolean("debugEnabled", false),
+                    globalPaused = json.optBoolean("globalPaused", false),
+                    hookANR = json.optBoolean("hookANR", true),
+                    hookBroadcast = json.optBoolean("hookBroadcast", true),
+                    hookWakeLock = json.optBoolean("hookWakeLock", true),
+                    hookActivitySwitch = json.optBoolean("hookActivitySwitch", true),
+                    hookScreenState = json.optBoolean("hookScreenState", true),
+                )
+            }
+        )
     }
 
     fun setFreezeMode(modeOrdinal: Int): Boolean {
-        return transact(TX_SET_FREEZE_MODE, { it.writeInt(modeOrdinal) }, { it.readBoolean() }) ?: false
+        return call(
+            TX_SET_FREEZE_MODE,
+            binderPrepare = { it.writeInt(modeOrdinal) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("mode", modeOrdinal),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     fun setFreezeDelay(delay: Int): Boolean {
-        return transact(TX_SET_FREEZE_DELAY, { it.writeInt(delay) }, { true }) ?: false
+        return call(
+            TX_SET_FREEZE_DELAY,
+            binderPrepare = { it.writeInt(delay) },
+            binderParse = { true },
+            fileArgs = JSONObject().put("delay", delay),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: true }
+        ) ?: false
     }
 
     fun setDebugEnabled(enabled: Boolean): Boolean {
-        return transact(TX_SET_DEBUG_ENABLED, { it.writeBoolean(enabled) }, { true }) ?: false
+        return call(
+            TX_SET_DEBUG_ENABLED,
+            binderPrepare = { it.writeBoolean(enabled) },
+            binderParse = { true },
+            fileArgs = JSONObject().put("enabled", enabled),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: true }
+        ) ?: false
     }
 
     /** hookId: 0=ANR, 1=Broadcast, 2=WakeLock, 3=ActivitySwitch, 4=ScreenState */
     fun setHookEnabled(hookId: Int, enabled: Boolean): Boolean {
-        return transact(TX_SET_HOOK_ENABLED, {
-            it.writeInt(hookId); it.writeBoolean(enabled)
-        }, { it.readBoolean() }) ?: false
+        return call(
+            TX_SET_HOOK_ENABLED,
+            binderPrepare = { it.writeInt(hookId); it.writeBoolean(enabled) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("hookId", hookId).put("enabled", enabled),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     fun setGlobalPaused(paused: Boolean): Boolean {
-        return transact(TX_SET_GLOBAL_PAUSED, { it.writeBoolean(paused) }, { true }) ?: false
+        return call(
+            TX_SET_GLOBAL_PAUSED,
+            binderPrepare = { it.writeBoolean(paused) },
+            binderParse = { true },
+            fileArgs = JSONObject().put("paused", paused),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: true }
+        ) ?: false
     }
 
     fun isGlobalPaused(): Boolean {
-        return transact(TX_IS_GLOBAL_PAUSED, {}, { it.readBoolean() }) ?: false
+        return call(
+            TX_IS_GLOBAL_PAUSED,
+            binderParse = { it.readBoolean() },
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     // ====== 白名单 ======
 
     fun getWhiteApps(): Set<String> {
-        return transact(TX_GET_WHITE_APPS, {}, { reply -> jsonToStringSet(reply.readString()) }) ?: emptySet()
+        return call(
+            TX_GET_WHITE_APPS,
+            binderParse = { reply -> jsonToStringSet(reply.readString()) },
+            fileParse = { resp ->
+                val arr = resp.optJSONArray("data")
+                jsonArrayToStringSet(arr)
+            }
+        ) ?: emptySet()
     }
 
     fun addWhiteApp(pkg: String): Boolean {
-        return transact(TX_ADD_WHITE_APP, { it.writeString(pkg) }, { it.readBoolean() }) ?: false
+        return call(
+            TX_ADD_WHITE_APP,
+            binderPrepare = { it.writeString(pkg) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("pkg", pkg),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     fun removeWhiteApp(pkg: String): Boolean {
-        return transact(TX_REMOVE_WHITE_APP, { it.writeString(pkg) }, { it.readBoolean() }) ?: false
+        return call(
+            TX_REMOVE_WHITE_APP,
+            binderPrepare = { it.writeString(pkg) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("pkg", pkg),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     fun getWhiteProcesses(): Set<String> {
-        return transact(TX_GET_WHITE_PROCESSES, {}, { reply -> jsonToStringSet(reply.readString()) }) ?: emptySet()
+        return call(
+            TX_GET_WHITE_PROCESSES,
+            binderParse = { reply -> jsonToStringSet(reply.readString()) },
+            fileParse = { resp ->
+                val arr = resp.optJSONArray("data")
+                jsonArrayToStringSet(arr)
+            }
+        ) ?: emptySet()
     }
 
     fun addWhiteProcess(proc: String): Boolean {
-        return transact(TX_ADD_WHITE_PROCESS, { it.writeString(proc) }, { it.readBoolean() }) ?: false
+        return call(
+            TX_ADD_WHITE_PROCESS,
+            binderPrepare = { it.writeString(proc) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("proc", proc),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     fun removeWhiteProcess(proc: String): Boolean {
-        return transact(TX_REMOVE_WHITE_PROCESS, { it.writeString(proc) }, { it.readBoolean() }) ?: false
+        return call(
+            TX_REMOVE_WHITE_PROCESS,
+            binderPrepare = { it.writeString(proc) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("proc", proc),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     fun getBlackSystemApps(): Set<String> {
-        return transact(TX_GET_BLACK_SYSTEM_APPS, {}, { reply -> jsonToStringSet(reply.readString()) }) ?: emptySet()
+        return call(
+            TX_GET_BLACK_SYSTEM_APPS,
+            binderParse = { reply -> jsonToStringSet(reply.readString()) },
+            fileParse = { resp ->
+                val arr = resp.optJSONArray("data")
+                jsonArrayToStringSet(arr)
+            }
+        ) ?: emptySet()
     }
 
     fun addBlackSystemApp(pkg: String): Boolean {
-        return transact(TX_ADD_BLACK_SYSTEM_APP, { it.writeString(pkg) }, { it.readBoolean() }) ?: false
+        return call(
+            TX_ADD_BLACK_SYSTEM_APP,
+            binderPrepare = { it.writeString(pkg) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("pkg", pkg),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     fun removeBlackSystemApp(pkg: String): Boolean {
-        return transact(TX_REMOVE_BLACK_SYSTEM_APP, { it.writeString(pkg) }, { it.readBoolean() }) ?: false
+        return call(
+            TX_REMOVE_BLACK_SYSTEM_APP,
+            binderPrepare = { it.writeString(pkg) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("pkg", pkg),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     // ====== 进程与冻结 ======
@@ -269,64 +458,113 @@ object ServiceClient {
     )
 
     fun getAllProcesses(): List<ProcessInfo> {
-        return transact(TX_GET_ALL_PROCESSES, {}, { reply ->
-            val arr = JSONArray(reply.readString() ?: "[]")
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                ProcessInfo(
-                    pid = o.optInt("pid", -1),
-                    uid = o.optInt("uid", -1),
-                    packageName = o.optString("packageName"),
-                    processName = o.optString("processName"),
-                    state = o.optInt("state", 0),
-                    isSystemApp = o.optBoolean("isSystemApp", false),
-                    isWhiteListed = o.optBoolean("isWhiteListed", false),
-                    oomAdj = o.optInt("oomAdj", 0),
-                )
+        return call(
+            TX_GET_ALL_PROCESSES,
+            binderParse = { reply ->
+                val arr = JSONArray(reply.readString() ?: "[]")
+                parseProcessArray(arr)
+            },
+            fileParse = { resp ->
+                val arr = resp.optJSONArray("data") ?: JSONArray()
+                parseProcessArray(arr)
             }
-        }) ?: emptyList()
+        ) ?: emptyList()
+    }
+
+    private fun parseProcessArray(arr: JSONArray): List<ProcessInfo> {
+        return (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            ProcessInfo(
+                pid = o.optInt("pid", -1),
+                uid = o.optInt("uid", -1),
+                packageName = o.optString("packageName"),
+                processName = o.optString("processName"),
+                state = o.optInt("state", 0),
+                isSystemApp = o.optBoolean("isSystemApp", false),
+                isWhiteListed = o.optBoolean("isWhiteListed", false),
+                oomAdj = o.optInt("oomAdj", 0),
+            )
+        }
     }
 
     fun getFrozenCount(): Int {
-        return transact(TX_GET_FROZEN_COUNT, {}, { it.readInt() }) ?: 0
+        return call(
+            TX_GET_FROZEN_COUNT,
+            binderParse = { it.readInt() },
+            fileParse = { resp -> resp.optInt("data", 0) }
+        ) ?: 0
     }
 
     fun freezeProcess(pid: Int, uid: Int): Boolean {
-        return transact(TX_FREEZE_PROCESS, {
-            it.writeInt(pid); it.writeInt(uid)
-        }, { it.readBoolean() }) ?: false
+        return call(
+            TX_FREEZE_PROCESS,
+            binderPrepare = { it.writeInt(pid); it.writeInt(uid) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("pid", pid).put("uid", uid),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     fun unfreezeProcess(pid: Int, uid: Int): Boolean {
-        return transact(TX_UNFREEZE_PROCESS, {
-            it.writeInt(pid); it.writeInt(uid)
-        }, { it.readBoolean() }) ?: false
+        return call(
+            TX_UNFREEZE_PROCESS,
+            binderPrepare = { it.writeInt(pid); it.writeInt(uid) },
+            binderParse = { it.readBoolean() },
+            fileArgs = JSONObject().put("pid", pid).put("uid", uid),
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
+        ) ?: false
     }
 
     fun getCurrentFreezerName(): String {
-        return transact(TX_GET_CURRENT_FREEZER_NAME, {}, { it.readString() ?: "未知" }) ?: "未知"
+        return call(
+            TX_GET_CURRENT_FREEZER_NAME,
+            binderParse = { it.readString() ?: "未知" },
+            fileParse = { resp -> resp.optString("data", "未知") }
+        ) ?: "未知"
     }
 
     fun pauseAll(): Boolean {
-        return transact(TX_PAUSE_ALL, {}, { true }) ?: false
+        return call(
+            TX_PAUSE_ALL,
+            binderParse = { true },
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: true }
+        ) ?: false
     }
 
     fun resumeAll(): Boolean {
-        return transact(TX_RESUME_ALL, {}, { true }) ?: false
+        return call(
+            TX_RESUME_ALL,
+            binderParse = { true },
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: true }
+        ) ?: false
     }
 
     fun reselectFreezer(): Boolean {
-        return transact(TX_RESELECT_FREEZER, {}, { true }) ?: false
+        return call(
+            TX_RESELECT_FREEZER,
+            binderParse = { true },
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: true }
+        ) ?: false
     }
 
     // ====== 日志 ======
 
     fun readLog(maxLines: Int): String {
-        return transact(TX_READ_LOG, { it.writeInt(maxLines) }, { it.readString() ?: "" }) ?: ""
+        return call(
+            TX_READ_LOG,
+            binderPrepare = { it.writeInt(maxLines) },
+            binderParse = { it.readString() ?: "" },
+            fileArgs = JSONObject().put("maxLines", maxLines),
+            fileParse = { resp -> resp.optString("data", "") }
+        ) ?: ""
     }
 
     fun clearLog(): Boolean {
-        return transact(TX_CLEAR_LOG, {}, { true }) ?: false
+        return call(
+            TX_CLEAR_LOG,
+            binderParse = { true },
+            fileParse = { resp -> resp.opt("data") as? Boolean ?: true }
+        ) ?: false
     }
 
     // ====== 辅助 ======
@@ -337,5 +575,27 @@ object ServiceClient {
             val arr = JSONArray(json)
             (0 until arr.length()).map { arr.getString(it) }.toSet()
         } catch (e: Exception) { emptySet() }
+    }
+
+    private fun jsonArrayToStringSet(arr: JSONArray?): Set<String> {
+        if (arr == null) return emptySet()
+        return try {
+            (0 until arr.length()).map { arr.getString(it) }.toSet()
+        } catch (e: Exception) { emptySet() }
+    }
+
+    private fun readFile(file: File): String? {
+        return try {
+            BufferedReader(FileReader(file, StandardCharsets.UTF_8)).use { reader ->
+                val sb = StringBuilder()
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    sb.append(line)
+                }
+                sb.toString()
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 }
