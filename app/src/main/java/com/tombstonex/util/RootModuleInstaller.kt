@@ -215,7 +215,9 @@ object RootModuleInstaller {
     }
 
     /**
-     * 用 KernelSU 的 ksud sepolicy patch 注入规则
+     * 用 KernelSU 的 ksud sepolicy apply 注入规则
+     * 命令格式: ksud sepolicy apply <file>
+     * 参考: https://deepwiki.com/tiann/KernelSU/3.4-boot-image-patching
      */
     private fun tryKsudSepolicy(): Boolean {
         return try {
@@ -224,16 +226,17 @@ object RootModuleInstaller {
             checkProcess.waitFor()
             if (checkOut.trim() != "1") return false
 
-            // ksud sepolicy patch --apply <rule_file>
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "ksud sepolicy patch --apply $MODULE_DIR/sepolicy.rule"))
+            // 正确命令: ksud sepolicy apply <file>（不是 patch --apply）
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "ksud sepolicy apply $MODULE_DIR/sepolicy.rule"))
             val exitCode = process.waitFor()
             if (exitCode == 0) {
-                Log.i(TAG, "SELinux rules injected via ksud sepolicy patch")
+                Log.i(TAG, "SELinux rules injected via ksud sepolicy apply")
                 true
             } else {
                 val err = process.errorStream.bufferedReader().use { it.readText() }
-                Log.w(TAG, "ksud sepolicy patch failed (exit=$exitCode): $err")
-                false
+                Log.w(TAG, "ksud sepolicy apply failed (exit=$exitCode): $err")
+                // 备用方案：逐条 patch
+                tryKsudSepolicyPatch()
             }
         } catch (e: Exception) {
             Log.w(TAG, "ksud injection failed: ${e.message}")
@@ -242,7 +245,33 @@ object RootModuleInstaller {
     }
 
     /**
-     * 用 APatch 的 apd sepolicy patch 注入规则
+     * 备用方案：用 ksud sepolicy patch 逐条注入规则
+     * 命令格式: ksud sepolicy patch "<statement>"
+     */
+    private fun tryKsudSepolicyPatch(): Boolean {
+        return try {
+            val rules = SEPOLICY_RULE.lines().filter { it.isNotBlank() }
+            var allSuccess = true
+            for (rule in rules) {
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "ksud sepolicy patch \"$rule\""))
+                val exitCode = process.waitFor()
+                if (exitCode != 0) {
+                    allSuccess = false
+                    Log.w(TAG, "ksud sepolicy patch '$rule' failed (exit=$exitCode)")
+                }
+            }
+            if (allSuccess) {
+                Log.i(TAG, "SELinux rules injected via ksud sepolicy patch (individual)")
+            }
+            allSuccess
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * 用 APatch 的 apd sepolicy apply 注入规则
+     * 命令格式: apd sepolicy apply <file>
      */
     private fun tryApdSepolicy(): Boolean {
         return try {
@@ -251,12 +280,14 @@ object RootModuleInstaller {
             checkProcess.waitFor()
             if (checkOut.trim() != "1") return false
 
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "apd sepolicy patch --apply $MODULE_DIR/sepolicy.rule"))
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "apd sepolicy apply $MODULE_DIR/sepolicy.rule"))
             val exitCode = process.waitFor()
             if (exitCode == 0) {
-                Log.i(TAG, "SELinux rules injected via apd sepolicy patch")
+                Log.i(TAG, "SELinux rules injected via apd sepolicy apply")
                 true
             } else {
+                val err = process.errorStream.bufferedReader().use { it.readText() }
+                Log.w(TAG, "apd sepolicy apply failed (exit=$exitCode): $err")
                 false
             }
         } catch (e: Exception) {
