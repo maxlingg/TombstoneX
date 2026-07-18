@@ -236,6 +236,41 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         }
     }
 
+    /**
+     * 切换应用的冻结参与状态。
+     * enabled=true: 参与自动冻结（从白名单移除）
+     * enabled=false: 不参与冻结（加入白名单）
+     */
+    fun onToggleFreeze(item: HomeAppItem, enabled: Boolean) {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                safeRunCatching {
+                    if (enabled) {
+                        // 参与冻结 = 从白名单移除
+                        ServiceClient.removeWhiteApp(item.packageName)
+                    } else {
+                        // 不冻结 = 加入白名单
+                        ServiceClient.addWhiteApp(item.packageName)
+                    }
+                }.getOrDefault(false)
+            }
+            if (ok) {
+                // 更新本地列表状态
+                items = items.map {
+                    if (it.packageName == item.packageName) {
+                        it.copy(isWhiteListed = !enabled)
+                    } else it
+                }
+                showSnackbar(
+                    if (enabled) "已开启冻结：${item.label}"
+                    else "已加入白名单：${item.label}"
+                )
+            } else {
+                showSnackbar("设置失败（模块未激活或无权限）")
+            }
+        }
+    }
+
     val filtered = remember(items, debouncedQuery) {
         if (debouncedQuery.isBlank()) {
             items
@@ -359,7 +394,14 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                         }
                     } else {
                         items(filtered, key = { it.packageName }) { app ->
-                            AppCard(app, loadIcon) { onFreezeClick(it) }
+                            AppCard(
+                                app,
+                                loadIcon,
+                                onFreezeClick = { onFreezeClick(it) },
+                                onToggleFreeze = { item, enabled ->
+                                    onToggleFreeze(item, enabled)
+                                },
+                            )
                         }
                     }
                 }
@@ -527,12 +569,16 @@ private fun AppCard(
     item: HomeAppItem,
     loadIcon: suspend (String) -> ImageBitmap?,
     onFreezeClick: (HomeAppItem) -> Unit,
+    onToggleFreeze: (HomeAppItem, Boolean) -> Unit,
 ) {
     // 图标在列表项内异步懒加载
     var icon by remember(item.packageName) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(item.packageName) {
         icon = loadIcon(item.packageName)
     }
+
+    // 冻结开关状态：白名单内的应用 = 不冻结 = 开关关闭
+    val freezeEnabled = !item.isWhiteListed
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -614,30 +660,43 @@ private fun AppCard(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // 立即冻结 / 解冻 按钮
-            if (item.pid > 0) {
-                val isFrozen = item.state == AppState.FROZEN
-                FilledTonalButton(
-                    onClick = { onFreezeClick(item) },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                ) {
-                    Icon(
-                        imageVector = if (isFrozen) Icons.Filled.PlayArrow else Icons.Filled.Lock,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (isFrozen) "解冻" else "冻结",
-                        fontSize = 12.sp,
-                    )
-                }
-            } else {
-                Text(
-                    text = "未运行",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+            // 冻结开关 + 手动冻结按钮
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                // 冻结开关：ON = 参与自动冻结，OFF = 不冻结（白名单）
+                Switch(
+                    checked = freezeEnabled,
+                    onCheckedChange = { enabled ->
+                        onToggleFreeze(item, enabled)
+                    },
                 )
+                Text(
+                    text = if (freezeEnabled) "冻结" else "不冻结",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+
+                // 立即冻结 / 解冻 按钮（仅运行中显示）
+                if (item.pid > 0) {
+                    val isFrozen = item.state == AppState.FROZEN
+                    FilledTonalButton(
+                        onClick = { onFreezeClick(item) },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (isFrozen) Icons.Filled.PlayArrow else Icons.Filled.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isFrozen) "解冻" else "冻结",
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
             }
         }
     }

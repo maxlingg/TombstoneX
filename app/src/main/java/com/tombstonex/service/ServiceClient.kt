@@ -4,10 +4,6 @@ import android.os.Parcel
 import androidx.compose.runtime.Immutable
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.File
-import java.io.FileReader
-import java.io.FileWriter
 import java.nio.charset.StandardCharsets
 
 /**
@@ -73,11 +69,14 @@ object ServiceClient {
         get() = getBinder() != null || isFileIPCReady()
 
     /**
-     * FileIPC 是否就绪
+     * FileIPC 是否就绪（通过 su 检查，App 进程无权直接访问 /data/system/）
      */
     private fun isFileIPCReady(): Boolean {
         return try {
-            File(READY_FILE).exists()
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "test -f $READY_FILE && echo 1 || echo 0"))
+            val output = process.inputStream.bufferedReader().use { it.readLine() ?: "0" }
+            process.waitFor()
+            output.trim() == "1"
         } catch (e: Throwable) {
             false
         }
@@ -180,21 +179,24 @@ object ServiceClient {
         val cmd = JSONObject()
         cmd.put("code", code)
         cmd.put("args", args)
+        val cmdContent = cmd.toString()
 
         return try {
-            // 通过 su 写入命令文件
-            val cmdContent = cmd.toString()
-            val suCmd = "echo '${cmdContent.replace("'", "'\\''")}' > $CMD_FILE"
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", suCmd))
-            process.waitFor()
+            // 通过 su + stdin 写入命令文件（避免 shell 引号转义问题）
+            val writeProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat > $CMD_FILE"))
+            writeProcess.outputStream.use { os ->
+                os.write(cmdContent.toByteArray(StandardCharsets.UTF_8))
+                os.flush()
+            }
+            writeProcess.waitFor()
 
             // 等待响应（轮询 resp.json 修改时间变化）
-            val respFile = File(RESP_FILE)
-            val startTime = respFile.lastModified()
+            // 先用 su 获取当前修改时间
+            val startTime = getFileLastModified()
             var timeout = 0
             while (timeout < 50) { // 最多等待 5 秒
                 Thread.sleep(100)
-                val currentMod = respFile.lastModified()
+                val currentMod = getFileLastModified()
                 if (currentMod > startTime) {
                     // 给文件写入一点时间完成
                     Thread.sleep(50)
@@ -203,9 +205,15 @@ object ServiceClient {
                 timeout++
             }
 
-            // 读取响应
-            val respContent = readFile(respFile) ?: return null
-            if (respContent.trim().isEmpty()) return null
+            // 通过 su cat 读取响应（App 进程可能无权限直接读取 /data/system/）
+            val readProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat $RESP_FILE"))
+            val respContent = readProcess.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            readProcess.waitFor()
+
+            if (respContent.trim().isEmpty()) {
+                android.util.Log.e("TombstoneX", "FileIPC: empty response after timeout, code=$code")
+                return null
+            }
 
             val resp = JSONObject(respContent)
             if (!resp.optBoolean("ok", false)) {
@@ -218,6 +226,20 @@ object ServiceClient {
             if (e is java.util.concurrent.CancellationException) throw e
             android.util.Log.e("TombstoneX", "FileIPC.transact failed: ${e.message}", e)
             null
+        }
+    }
+
+    /**
+     * 通过 su 获取 resp.json 的修改时间
+     */
+    private fun getFileLastModified(): Long {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "stat -c %Y $RESP_FILE 2>/dev/null || echo 0"))
+            val output = process.inputStream.bufferedReader().use { it.readLine() ?: "0" }
+            process.waitFor()
+            output.trim().toLongOrNull() ?: 0L
+        } catch (e: Throwable) {
+            0L
         }
     }
 
@@ -582,20 +604,5 @@ object ServiceClient {
         return try {
             (0 until arr.length()).map { arr.getString(it) }.toSet()
         } catch (e: Exception) { emptySet() }
-    }
-
-    private fun readFile(file: File): String? {
-        return try {
-            BufferedReader(FileReader(file, StandardCharsets.UTF_8)).use { reader ->
-                val sb = StringBuilder()
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    sb.append(line)
-                }
-                sb.toString()
-            }
-        } catch (e: Exception) {
-            null
-        }
     }
 }
