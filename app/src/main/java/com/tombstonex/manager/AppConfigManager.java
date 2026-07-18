@@ -269,7 +269,9 @@ public class AppConfigManager {
      */
     private JSONObject applyDefaults(JSONObject config) {
         JSONObject result = defaultConfig();
-        for (String key : config.keySet()) {
+        java.util.Iterator<String> it = config.keys();
+        while (it.hasNext()) {
+            String key = it.next();
             try {
                 result.put(key, config.get(key));
             } catch (JSONException e) {
