@@ -71,6 +71,9 @@ public class TombstoneXService extends Binder {
     // OOM 优先级
     public static final int TX_GET_APP_PRIORITY = 32;
     public static final int TX_SET_APP_PRIORITY = 33;
+    // 批量事务（减少 IPC 往返次数）
+    public static final int TX_GET_INIT_DATA = 34;
+    public static final int TX_GET_APP_CONFIG_FULL = 35;
 
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
@@ -443,6 +446,61 @@ public class TombstoneXService extends Binder {
                     com.tombstonex.manager.OomAdjManager.getInstance().setAppPriority(pkg, priority);
                     reply.writeNoException();
                     reply.writeBoolean(true);
+                    replied = true;
+                    return true;
+                }
+                case TX_GET_INIT_DATA: {
+                    // 批量返回首页所需全部数据：配置 + 白名单 + 进程列表
+                    JSONObject result = new JSONObject();
+                    // 配置
+                    ConfigManager cm = ConfigManager.getInstance();
+                    JSONObject config = new JSONObject();
+                    config.put("freezeMode", cm.getFreezeMode().ordinal());
+                    config.put("freezeDelay", cm.getFreezeDelay());
+                    config.put("debugEnabled", cm.isDebugEnabled());
+                    config.put("globalPaused", cm.isGlobalPaused());
+                    config.put("hookANR", cm.isHookANREnabled());
+                    config.put("hookBroadcast", cm.isHookBroadcastEnabled());
+                    config.put("hookWakeLock", cm.isHookWakeLockEnabled());
+                    config.put("hookActivitySwitch", cm.isHookActivitySwitchEnabled());
+                    config.put("hookScreenState", cm.isHookScreenStateEnabled());
+                    result.put("config", config);
+                    // 白名单
+                    JSONArray whiteArr = new JSONArray();
+                    for (String pkg : WhitelistManager.getInstance().getWhiteApps()) whiteArr.put(pkg);
+                    result.put("whiteApps", whiteArr);
+                    // 进程列表
+                    JSONArray procArr = new JSONArray();
+                    for (Map.Entry<Integer, AppInfo> entry :
+                            ProcessTracker.getInstance().getAllProcesses().entrySet()) {
+                        AppInfo info = entry.getValue();
+                        JSONObject obj = new JSONObject();
+                        obj.put("pid", info.pid);
+                        obj.put("uid", info.uid);
+                        obj.put("packageName", info.packageName);
+                        obj.put("processName", info.processName);
+                        obj.put("state", info.state.ordinal());
+                        obj.put("isSystemApp", info.isSystemApp);
+                        obj.put("isWhiteListed", info.isWhiteListed);
+                        obj.put("oomAdj", info.oomAdj);
+                        procArr.put(obj);
+                    }
+                    result.put("processes", procArr);
+                    reply.writeNoException();
+                    reply.writeString(result.toString());
+                    replied = true;
+                    return true;
+                }
+                case TX_GET_APP_CONFIG_FULL: {
+                    // 批量返回应用配置 + 优先级，避免两次 IPC 往返
+                    String pkg = data.readString();
+                    JSONObject result = new JSONObject();
+                    result.put("config", com.tombstonex.manager.AppConfigManager.getInstance()
+                        .getConfig(pkg).toString());
+                    result.put("priority", com.tombstonex.manager.OomAdjManager.getInstance()
+                        .getAppPriority(pkg));
+                    reply.writeNoException();
+                    reply.writeString(result.toString());
                     replied = true;
                     return true;
                 }

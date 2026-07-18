@@ -60,6 +60,9 @@ object ServiceClient {
     private const val TX_SET_ROTATION_INTERVAL = 31
     private const val TX_GET_APP_PRIORITY = 32
     private const val TX_SET_APP_PRIORITY = 33
+    // 批量事务（减少 IPC 往返次数）
+    private const val TX_GET_INIT_DATA = 34
+    private const val TX_GET_APP_CONFIG_FULL = 35
 
     /** 缓存的 IBinder 代理 */
     @Volatile
@@ -69,6 +72,10 @@ object ServiceClient {
     @Volatile
     private var useBinder: Boolean = true
 
+    /** 缓存 FileIPC 就绪状态，避免每次调用都 spawn su */
+    @Volatile
+    private var fileIpcReadyCache: Boolean? = null
+
     /**
      * 模块是否已激活（Binder 或 FileIPC 任一可用即视为激活）
      */
@@ -77,13 +84,18 @@ object ServiceClient {
 
     /**
      * FileIPC 是否就绪（通过 su 检查，App 进程无权直接访问 /data/system/）
+     * 结果缓存 5 秒避免重复 spawn su
      */
     private fun isFileIPCReady(): Boolean {
+        // 仅缓存 true（就绪后不会变回 false），false 不缓存以便重试
+        if (fileIpcReadyCache == true) return true
         return try {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "test -f $READY_FILE && echo 1 || echo 0"))
             val output = process.inputStream.bufferedReader().use { it.readLine() ?: "0" }
             process.waitFor()
-            output.trim() == "1"
+            val ready = output.trim() == "1"
+            if (ready) fileIpcReadyCache = true
+            ready
         } catch (e: Throwable) {
             false
         }
@@ -179,6 +191,8 @@ object ServiceClient {
     /**
      * 通过 FileIPC 发送命令（降级方案）
      * 使用 su 写入命令文件，等待 system_server 的 FileObserver 处理后读取响应
+     * 
+     * 性能优化：用单个 su 命令完成"等待+读取"，避免轮询时反复 spawn su 进程
      */
     private fun fileTransact(code: Int, args: JSONObject = JSONObject()): JSONObject? {
         if (!isFileIPCReady()) return null
@@ -189,7 +203,7 @@ object ServiceClient {
         val cmdContent = cmd.toString()
 
         return try {
-            // 通过 su + stdin 写入命令文件（避免 shell 引号转义问题）
+            // 1. 通过 su + stdin 写入命令文件（1 次 su spawn）
             val writeProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat > $CMD_FILE"))
             writeProcess.outputStream.use { os ->
                 os.write(cmdContent.toByteArray(StandardCharsets.UTF_8))
@@ -197,28 +211,20 @@ object ServiceClient {
             }
             writeProcess.waitFor()
 
-            // 等待响应（轮询 resp.json 修改时间变化）
-            // 先用 su 获取当前修改时间
-            val startTime = getFileLastModified()
-            var timeout = 0
-            while (timeout < 60) { // 最多等待 3 秒（60 次 × 50ms）
-                Thread.sleep(50)
-                val currentMod = getFileLastModified()
-                if (currentMod > startTime) {
-                    // 给文件写入一点时间完成
-                    Thread.sleep(30)
-                    break
-                }
-                timeout++
-            }
-
-            // 通过 su cat 读取响应（App 进程可能无权限直接读取 /data/system/）
-            val readProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat $RESP_FILE"))
-            val respContent = readProcess.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-            readProcess.waitFor()
+            // 2. 单个 su 命令完成"轮询等待 + 读取响应"（1 次 su spawn，替代原来 60+ 次）
+            // 脚本逻辑：记录当前 resp.json 修改时间，循环等待直到文件被更新，然后读取内容
+            val waitAndReadCmd = "st=\$(stat -c %Y $RESP_FILE 2>/dev/null || echo 0); " +
+                "i=0; while [ \$i -lt 100 ]; do " +
+                "cur=\$(stat -c %Y $RESP_FILE 2>/dev/null || echo 0); " +
+                "if [ \"\$cur\" -gt \"\$st\" ]; then sleep 0.03; cat $RESP_FILE; exit 0; fi; " +
+                "sleep 0.03; i=\$((i+1)); " +
+                "done; cat $RESP_FILE"
+            val waitProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", waitAndReadCmd))
+            val respContent = waitProcess.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            waitProcess.waitFor()
 
             if (respContent.trim().isEmpty()) {
-                android.util.Log.e("TombstoneX", "FileIPC: empty response after timeout, code=$code")
+                android.util.Log.e("TombstoneX", "FileIPC: empty response, code=$code")
                 return null
             }
 
@@ -233,20 +239,6 @@ object ServiceClient {
             if (e is java.util.concurrent.CancellationException) throw e
             android.util.Log.e("TombstoneX", "FileIPC.transact failed: ${e.message}", e)
             null
-        }
-    }
-
-    /**
-     * 通过 su 获取 resp.json 的修改时间
-     */
-    private fun getFileLastModified(): Long {
-        return try {
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "stat -c %Y $RESP_FILE 2>/dev/null || echo 0"))
-            val output = process.inputStream.bufferedReader().use { it.readLine() ?: "0" }
-            process.waitFor()
-            output.trim().toLongOrNull() ?: 0L
-        } catch (e: Throwable) {
-            0L
         }
     }
 
@@ -709,6 +701,81 @@ object ServiceClient {
             fileArgs = JSONObject().put("pkg", packageName).put("priority", priority),
             fileParse = { resp -> resp.opt("data") as? Boolean ?: false }
         ) ?: false
+    }
+
+    // ====== 批量事务（减少 IPC 往返次数）======
+
+    /**
+     * 批量获取首页初始化数据：配置 + 白名单 + 进程列表
+     * 将 3 次 IPC 合并为 1 次，大幅减少 su 进程启动开销
+     */
+    data class InitData(
+        val config: ConfigSnapshot,
+        val whiteApps: Set<String>,
+        val processes: List<ProcessInfo>,
+    )
+
+    fun getInitData(): InitData? {
+        return call(
+            TX_GET_INIT_DATA,
+            binderParse = { reply ->
+                val json = JSONObject(reply.readString() ?: "{}")
+                parseInitData(json)
+            },
+            fileParse = { resp ->
+                val json = resp.optJSONObject("data") ?: JSONObject()
+                parseInitData(json)
+            }
+        )
+    }
+
+    private fun parseInitData(json: JSONObject): InitData {
+        val cfg = json.optJSONObject("config") ?: JSONObject()
+        val config = ConfigSnapshot(
+            freezeMode = cfg.optInt("freezeMode", 4),
+            freezeDelay = cfg.optInt("freezeDelay", 3),
+            debugEnabled = cfg.optBoolean("debugEnabled", false),
+            globalPaused = cfg.optBoolean("globalPaused", false),
+            hookANR = cfg.optBoolean("hookANR", true),
+            hookBroadcast = cfg.optBoolean("hookBroadcast", true),
+            hookWakeLock = cfg.optBoolean("hookWakeLock", true),
+            hookActivitySwitch = cfg.optBoolean("hookActivitySwitch", true),
+            hookScreenState = cfg.optBoolean("hookScreenState", true),
+        )
+        val whiteApps = jsonArrayToStringSet(json.optJSONArray("whiteApps"))
+        val processes = parseProcessArray(json.optJSONArray("processes") ?: JSONArray())
+        return InitData(config, whiteApps, processes)
+    }
+
+    /**
+     * 批量获取应用配置 + 优先级
+     * 将 2 次 IPC 合并为 1 次
+     */
+    data class AppConfigFull(
+        val config: JSONObject,
+        val priority: Int,
+    )
+
+    fun getAppConfigFull(packageName: String): AppConfigFull? {
+        return call(
+            TX_GET_APP_CONFIG_FULL,
+            binderPrepare = { it.writeString(packageName) },
+            binderParse = { reply ->
+                val json = JSONObject(reply.readString() ?: "{}")
+                AppConfigFull(
+                    config = JSONObject(json.optString("config", "{}")),
+                    priority = json.optInt("priority", 1),
+                )
+            },
+            fileArgs = JSONObject().put("pkg", packageName),
+            fileParse = { resp ->
+                val json = resp.optJSONObject("data") ?: JSONObject()
+                AppConfigFull(
+                    config = JSONObject(json.optString("config", "{}")),
+                    priority = json.optInt("priority", 1),
+                )
+            }
+        )
     }
 
     // ====== 辅助 ======

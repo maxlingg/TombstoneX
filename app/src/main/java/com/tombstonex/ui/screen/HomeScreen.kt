@@ -165,7 +165,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
             try {
                 val appProvider = AppProvider.getInstance(context)
 
-                // 并行执行所有 IPC 调用和应用列表加载，大幅减少总等待时间
+                // 并行执行：模块状态检测（只读系统属性，快速）+ 批量 IPC + 应用列表加载
                 val moduleDeferred = async(Dispatchers.IO) {
                     val e = safeRunCatching { ServiceClient.isModuleEnabled }.getOrDefault(false)
                     val l = safeRunCatching { ServiceClient.isModuleLoaded }.getOrDefault(false)
@@ -173,11 +173,9 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     val rs = safeRunCatching { ServiceClient.regStatus }.getOrDefault("")
                     Triple(e, l, a) to rs
                 }
-                val whiteDeferred = async(Dispatchers.IO) {
-                    safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet())
-                }
-                val procDeferred = async(Dispatchers.IO) {
-                    safeRunCatching { ServiceClient.getAllProcesses() }.getOrDefault(emptyList())
+                // 批量 IPC：配置 + 白名单 + 进程列表合并为 1 次调用
+                val dataDeferred = async(Dispatchers.IO) {
+                    safeRunCatching { ServiceClient.getInitData() }.getOrNull()
                 }
                 val appsDeferred = async(Dispatchers.IO) {
                     appProvider.getAllApps(includeSystem, false)
@@ -189,8 +187,9 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 moduleAvailable = triple.third
                 regStatus = rs
 
-                val whiteApps = whiteDeferred.await()
-                val procList = procDeferred.await()
+                val initData = dataDeferred.await()
+                val whiteApps = initData?.whiteApps ?: emptySet()
+                val procList = initData?.processes ?: emptyList()
                 val allApps = appsDeferred.await()
 
                 val procByPkg = procList.associateBy { it.packageName }
@@ -211,8 +210,6 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
             } catch (e: Exception) {
                 showSnackbar("加载应用列表失败：${e.message ?: "未知错误"}")
             } finally {
-                // P2: 仅当当前 Job 仍为活跃 Job 时才重置 loading 状态，
-                // 避免旧 Job 的 finally 覆盖新 Job 的 loading=true
                 if (loadJob == coroutineContext[Job]) {
                     loading = false
                     refreshing = false
@@ -809,21 +806,19 @@ private fun AppConfigSheet(
     var priority by remember { mutableStateOf(1) }
     var backgroundLevel by remember { mutableStateOf(0) }
 
-    // BottomSheet 打开时异步加载配置
+    // BottomSheet 打开时异步加载配置（批量获取配置+优先级，单次 IPC）
     LaunchedEffect(item.packageName) {
-        val cfg = withContext(Dispatchers.IO) {
-            safeRunCatching { ServiceClient.getAppConfig(item.packageName) }.getOrDefault(JSONObject())
+        val full = withContext(Dispatchers.IO) {
+            safeRunCatching { ServiceClient.getAppConfigFull(item.packageName) }.getOrNull()
         }
-        val prio = withContext(Dispatchers.IO) {
-            safeRunCatching { ServiceClient.getAppPriority(item.packageName) }.getOrDefault(1)
-        }
+        val cfg = full?.config ?: JSONObject()
         playAllowed = cfg.optBoolean("playAllowed", false)
         ongoingNotification = cfg.optBoolean("ongoingNotification", false)
         netTransfer = cfg.optBoolean("netTransfer", false)
         autoStartAllowed = cfg.optBoolean("autoStartAllowed", false)
         keepConnection = cfg.optBoolean("keepConnection", false)
         backgroundLevel = cfg.optInt("backgroundLevel", 0)
-        priority = prio
+        priority = full?.priority ?: 1
         configLoaded = true
     }
 
