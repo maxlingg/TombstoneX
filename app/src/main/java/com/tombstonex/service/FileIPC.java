@@ -385,7 +385,7 @@ public class FileIPC {
                 String pkg = args.optString("pkg");
                 JSONObject result = new JSONObject();
                 result.put("config", com.tombstonex.manager.AppConfigManager.getInstance()
-                    .getConfig(pkg).toString());
+                    .getAppConfig(pkg).toString());
                 result.put("priority", com.tombstonex.manager.OomAdjManager.getInstance()
                     .getAppPriority(pkg));
                 return result;
