@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
@@ -30,8 +29,6 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -511,124 +508,63 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
 
 @Composable
 private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Boolean = false, regStatus: String = "") {
-    var showInstallDialog by remember { mutableStateOf(false) }
-    var installResult by remember { mutableStateOf<com.tombstonex.util.RootModuleInstaller.InstallResult?>(null) }
-    var isInstalling by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer,
         ),
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                )
-                Spacer(modifier = Modifier.width(12.dp))
+            Icon(
+                Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
                 Text(
                     text = "模块未激活",
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
-            }
-            val statusText = when {
-                !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块"
-                !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」"
-                else -> {
-                    val ipcMode = safeRunCatching { ServiceClient.currentIpcMode }.getOrDefault("none")
-                    when (ipcMode) {
-                        "binder" -> "模块已激活（Binder 通道）\n高性能模式，IPC 延迟 ~1ms"
-                        "fileipc" -> "模块已激活（FileIPC 降级模式）\n点击下方按钮一键启用 Binder 高性能模式"
-                        else -> "模块已加载，通信通道未就绪，正在等待..."
+                val statusText = when {
+                    !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块\n点击右上角电源按钮可快速重启设备"
+                    !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」\n点击右上角电源按钮可快速重启设备"
+                    else -> {
+                        val ipcMode = safeRunCatching { ServiceClient.currentIpcMode }.getOrDefault("none")
+                        when (ipcMode) {
+                            "binder" -> "模块已激活（Binder 通道）\n高性能模式，IPC 延迟 ~1ms"
+                            "fileipc" -> {
+                                val base = "模块已激活（FileIPC 降级模式）\n建议安装 Magisk 模块以启用 Binder 高性能模式\n点击右上角电源按钮可快速重启设备"
+                                if (regStatus.isNotEmpty() && !regStatus.startsWith("ok")) {
+                                    "$base\n\n注册诊断: $regStatus"
+                                } else {
+                                    base
+                                }
+                            }
+                            else -> {
+                                val base = "模块已加载，但通信通道未就绪\n正在等待服务启动..."
+                                if (regStatus.isNotEmpty() && !regStatus.startsWith("ok")) {
+                                    "$base\n\n注册诊断: $regStatus"
+                                } else {
+                                    base
+                                }
+                            }
+                        }
                     }
                 }
-            }
-            Text(
-                text = statusText,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
-            )
-
-            // FileIPC 模式下显示一键安装按钮
-            if (moduleEnabled && moduleLoaded) {
-                val ipcMode = safeRunCatching { ServiceClient.currentIpcMode }.getOrDefault("none")
-                if (ipcMode == "fileipc") {
-                    Button(
-                        onClick = {
-                            showInstallDialog = true
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.onErrorContainer,
-                            contentColor = MaterialTheme.colorScheme.errorContainer,
-                        ),
-                    ) {
-                        Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("一键启用 Binder 高性能模式")
-                    }
-                }
+                Text(
+                    text = statusText,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                )
             }
         }
-    }
-
-    // 安装确认对话框
-    if (showInstallDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                if (!isInstalling) showInstallDialog = false
-            },
-            title = { Text("启用 Binder 高性能模式") },
-            text = {
-                if (isInstalling) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("正在安装 SELinux 策略...")
-                    }
-                } else if (installResult != null) {
-                    Text(installResult!!.message)
-                } else {
-                    Text(
-                        "将使用 root 权限安装 SELinux 策略模块，允许 system_server 注册 Binder 服务。\n\n" +
-                            "安装后需要重启设备才能生效。\n\n" +
-                            "此操作会写入 /data/adb/modules/tombstonex/ 目录，兼容 Magisk/KernelSU/APatch。",
-                    )
-                }
-            },
-            confirmButton = {
-                if (installResult == null && !isInstalling) {
-                    TextButton(onClick = {
-                        isInstalling = true
-                        scope.launch(Dispatchers.IO) {
-                            val result = com.tombstonex.util.RootModuleInstaller.install()
-                            installResult = result
-                            isInstalling = false
-                        }
-                    }) { Text("安装") }
-                } else if (installResult != null) {
-                    TextButton(onClick = {
-                        showInstallDialog = false
-                        installResult = null
-                    }) { Text("关闭") }
-                }
-            },
-            dismissButton = {
-                if (installResult == null && !isInstalling) {
-                    TextButton(onClick = { showInstallDialog = false }) { Text("取消") }
-                }
-            },
-        )
     }
 }
 
