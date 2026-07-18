@@ -83,6 +83,17 @@ object ServiceClient {
         get() = getBinder() != null || isFileIPCReady()
 
     /**
+     * 当前 IPC 模式："binder" / "fileipc" / "none"
+     * 用于 UI 显示当前通信通道
+     */
+    val currentIpcMode: String
+        get() {
+            if (useBinder && getBinder() != null) return "binder"
+            if (isFileIPCReady()) return "fileipc"
+            return "none"
+        }
+
+    /**
      * FileIPC 是否就绪（通过 su 检查，App 进程无权直接访问 /data/system/）
      * 结果缓存 5 秒避免重复 spawn su
      */
@@ -242,8 +253,14 @@ object ServiceClient {
         }
     }
 
+    /** 上次尝试 Binder 的时间戳，用于定期重试 */
+    @Volatile
+    private var lastBinderRetryTime: Long = 0
+    private val BINDER_RETRY_INTERVAL_MS = 10000L // 10 秒重试一次
+
     /**
      * 统一调用：优先使用 Binder，失败时降级到 FileIPC
+     * 当 useBinder=false 时，每隔 10 秒重试 Binder（因为 MainHook 重试线程可能稍后注册成功）
      */
     private fun <T> call(
         code: Int,
@@ -258,6 +275,20 @@ object ServiceClient {
             if (result != null) return result
             // Binder 失败，切换到 FileIPC
             useBinder = false
+            lastBinderRetryTime = System.currentTimeMillis()
+        } else {
+            // 定期重试 Binder（MainHook 重试线程可能已注册成功）
+            val now = System.currentTimeMillis()
+            if (now - lastBinderRetryTime > BINDER_RETRY_INTERVAL_MS) {
+                lastBinderRetryTime = now
+                val binder = getBinder()
+                if (binder != null) {
+                    useBinder = true
+                    val result = transact(code, binderPrepare, binderParse)
+                    if (result != null) return result
+                    useBinder = false
+                }
+            }
         }
 
         // 降级到 FileIPC

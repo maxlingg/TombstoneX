@@ -647,4 +647,11 @@ public class TombstoneXService extends Binder {
             Logger.e("Failed to set reg status property", t);
         }
     }
+
+    /**
+     * 供 MainHook 重试线程调用的 public 包装方法。
+     */
+    public static void setRegStatusPublic(String status) {
+        setRegStatus(status);
+    }
 }

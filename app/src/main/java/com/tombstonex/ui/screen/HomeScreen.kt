@@ -536,11 +536,25 @@ private fun ModuleNotActiveCard(moduleEnabled: Boolean = false, moduleLoaded: Bo
                     !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块\n点击右上角电源按钮可快速重启设备"
                     !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」\n点击右上角电源按钮可快速重启设备"
                     else -> {
-                        val base = "模块已加载，但 Binder 服务注册失败\n正在使用文件 IPC 降级方案，如仍有问题请检查权限\n点击右上角电源按钮可快速重启设备"
-                        if (regStatus.isNotEmpty() && !regStatus.startsWith("ok")) {
-                            "$base\n\n注册诊断: $regStatus"
-                        } else {
-                            base
+                        val ipcMode = safeRunCatching { ServiceClient.currentIpcMode }.getOrDefault("none")
+                        when (ipcMode) {
+                            "binder" -> "模块已激活（Binder 通道）\n高性能模式，IPC 延迟 ~1ms"
+                            "fileipc" -> {
+                                val base = "模块已激活（FileIPC 降级模式）\n建议安装 Magisk 模块以启用 Binder 高性能模式\n点击右上角电源按钮可快速重启设备"
+                                if (regStatus.isNotEmpty() && !regStatus.startsWith("ok")) {
+                                    "$base\n\n注册诊断: $regStatus"
+                                } else {
+                                    base
+                                }
+                            }
+                            else -> {
+                                val base = "模块已加载，但通信通道未就绪\n正在等待服务启动..."
+                                if (regStatus.isNotEmpty() && !regStatus.startsWith("ok")) {
+                                    "$base\n\n注册诊断: $regStatus"
+                                } else {
+                                    base
+                                }
+                            }
                         }
                     }
                 }

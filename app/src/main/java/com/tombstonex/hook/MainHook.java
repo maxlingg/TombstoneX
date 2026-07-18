@@ -208,14 +208,73 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
         }
 
         // 注册 IPC 服务到 ServiceManager，供 UI 进程调用
+        // 优先尝试 Binder 注册（需要 SELinux 策略支持，Magisk 模块提供）
         TombstoneXService.register();
 
-        // 启动文件 IPC 作为降级通信方案
+        // 检查 Binder 是否注册成功，如果失败则启动后台重试线程
+        // （SELinux 策略可能由 service.sh 在稍后注入，需要重试）
+        try {
+            Class<?> spClass = Class.forName("android.os.SystemProperties");
+            java.lang.reflect.Method getMethod = spClass.getMethod("get", String.class);
+            String regStatus = (String) getMethod.invoke(null, "persist.sys.tombstonex.regstatus");
+            if (!"ok".equals(regStatus) && !"already_registered".equals(regStatus)) {
+                Logger.i("Binder registration failed (status=" + regStatus + "), starting background retry thread");
+                startBinderRetryThread();
+            } else {
+                Logger.i("Binder registration OK, FileIPC not needed");
+            }
+        } catch (Throwable t) {
+            Logger.e("Failed to check reg status for retry decision", t);
+        }
+
+        // 启动文件 IPC 作为降级通信方案（Binder 成功时作为备用，失败时作为主通道）
         try {
             com.tombstonex.service.FileIPC.start();
             Logger.i("FileIPC started as fallback IPC channel");
         } catch (Throwable t) {
             Logger.e("Failed to start FileIPC", t);
         }
+    }
+
+    /**
+     * 后台重试 Binder 注册。
+     * SELinux 策略可能由 Magisk 模块的 service.sh 在 system_server 启动后注入，
+     * 因此需要定期重试 addService，直到成功或超过最大重试次数。
+     */
+    private static void startBinderRetryThread() {
+        new Thread(() -> {
+            for (int i = 0; i < 30; i++) {  // 最多重试 30 次，每次间隔 5 秒（共 150 秒）
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                try {
+                    // 检查是否已有服务注册（可能其他实例已成功）
+                    Class<?> smClass = Class.forName("android.os.ServiceManager");
+                    java.lang.reflect.Method getService = smClass.getMethod("getService", String.class);
+                    Object existing = getService.invoke(null, "tombstonex");
+                    if (existing != null) {
+                        Logger.i("Binder retry: service already registered by another instance");
+                        TombstoneXService.setRegStatusPublic("already_registered");
+                        return;
+                    }
+                    // 尝试注册
+                    TombstoneXService.register();
+                    // 检查结果
+                    Class<?> spClass = Class.forName("android.os.SystemProperties");
+                    java.lang.reflect.Method getMethod = spClass.getMethod("get", String.class);
+                    String regStatus = (String) getMethod.invoke(null, "persist.sys.tombstonex.regstatus");
+                    if ("ok".equals(regStatus)) {
+                        Logger.i("Binder retry: registration succeeded after " + (i + 1) + " attempts");
+                        return;
+                    }
+                    Logger.d("Binder retry attempt " + (i + 1) + " failed, status=" + regStatus);
+                } catch (Throwable t) {
+                    Logger.e("Binder retry attempt " + (i + 1) + " error", t);
+                }
+            }
+            Logger.w("Binder retry: max attempts reached, staying on FileIPC");
+        }, "TombstoneX-BinderRetry").start();
     }
 }
