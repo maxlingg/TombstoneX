@@ -1,6 +1,7 @@
 package com.tombstonex.service
 
 import android.os.Parcel
+import android.util.Log
 import androidx.compose.runtime.Immutable
 import org.json.JSONArray
 import org.json.JSONObject
@@ -314,7 +315,7 @@ object ServiceClient {
             lastBinderRetryTime = System.currentTimeMillis()
             // 模块已安装 → 不降级，直接返回 null
             if (moduleInstalled) {
-                Logger.w("Binder failed but SELinux module installed, refusing to degrade to FileIPC")
+                Log.w("TombstoneX-ServiceClient", "Binder failed but SELinux module installed, refusing to degrade to FileIPC")
                 return null
             }
         } else {
