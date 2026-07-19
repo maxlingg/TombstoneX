@@ -59,12 +59,12 @@ public class ActivitySwitchHook {
                             ScheduledFuture<?> f = pendingFreezes.remove(pid);
                             if (f != null) {
                                 f.cancel(false);
-                                Logger.d("Cleaned stale pendingFreezes entry for pid=" + pid);
+                                Logger.d("已清理残留的 pendingFreezes 条目 pid=" + pid);
                             }
                         }
                     }
                 } catch (Throwable t) {
-                    Logger.e("pendingFreezes periodic cleanup error", t);
+                    Logger.e("pendingFreezes 定期清理出错", t);
                 }
             }, 1, 1, TimeUnit.HOURS);
         }
@@ -91,13 +91,13 @@ public class ActivitySwitchHook {
                         try {
                             handleActivityPaused(param);
                         } catch (Throwable t) {
-                            Logger.e("activityPaused hook error", t);
+                            Logger.e("activityPaused Hook 出错", t);
                         }
                     }
                 });
-            Logger.i("Hooked activityPaused");
+            Logger.i("已 Hook activityPaused");
         } catch (Throwable t) {
-            Logger.e("Failed to hook activityPaused", t);
+            Logger.e("Hook activityPaused 失败", t);
         }
     }
 
@@ -117,36 +117,36 @@ public class ActivitySwitchHook {
             if (pid <= 0 || packageName == null) return;
 
             boolean isSystemApp = uid < 10000;
-            Logger.d("App paused: " + packageName + " pid=" + pid + " uid=" + uid);
+            Logger.d("应用暂停: " + packageName + " pid=" + pid + " uid=" + uid);
 
             // 检查白名单
             if (!WhitelistManager.getInstance().shouldFreeze(packageName, processName, isSystemApp)) {
-                Logger.d("App in whitelist, skip freeze: " + packageName);
+                Logger.d("应用在白名单中，跳过冻结: " + packageName);
                 return;
             }
 
             // 检查前台服务保护
             if (hasForegroundService(processRecord)) {
-                Logger.d("App has foreground service, skip freeze: " + packageName);
+                Logger.d("应用有前台服务，跳过冻结: " + packageName);
                 return;
             }
 
             // 检查 ContentProvider 保护
             if (hasActiveContentProvider(processRecord)) {
-                Logger.d("App has active ContentProvider, skip freeze: " + packageName);
+                Logger.d("应用有活跃的 ContentProvider，跳过冻结: " + packageName);
                 return;
             }
 
             // 检查音频播放
             if (isAnyAudioPlaying()) {
-                Logger.d("App is playing audio, skip freeze: " + packageName);
+                Logger.d("应用正在播放音频，跳过冻结: " + packageName);
                 return;
             }
 
             // 智能状态识别：通话/定位/录音/相机/VPN/无障碍/输入法/自动填充/悬浮窗/常驻通知
             try {
                 if (com.tombstonex.hook.SmartStateHook.isAppActive(uid, packageName)) {
-                    Logger.d("App is active (smart state), skip freeze: " + packageName);
+                    Logger.d("应用处于活跃状态（智能状态识别），跳过冻结: " + packageName);
                     return;
                 }
             } catch (Throwable t) {
@@ -157,15 +157,15 @@ public class ActivitySwitchHook {
             try {
                 com.tombstonex.manager.AppConfigManager appConfig = com.tombstonex.manager.AppConfigManager.getInstance();
                 if (appConfig.getConfig(packageName, "playAllowed", false)) {
-                    Logger.d("App has playAllowed config, skip freeze: " + packageName);
+                    Logger.d("应用有 playAllowed 配置，跳过冻结: " + packageName);
                     return;
                 }
                 if (appConfig.getConfig(packageName, "ongoingNotification", false)) {
-                    Logger.d("App has ongoingNotification config, skip freeze: " + packageName);
+                    Logger.d("应用有 ongoingNotification 配置，跳过冻结: " + packageName);
                     return;
                 }
                 if (appConfig.getConfig(packageName, "netTransfer", false)) {
-                    Logger.d("App has netTransfer config, skip freeze: " + packageName);
+                    Logger.d("应用有 netTransfer 配置，跳过冻结: " + packageName);
                     return;
                 }
             } catch (Throwable t) {
@@ -187,21 +187,21 @@ public class ActivitySwitchHook {
                         AppInfo info = ProcessTracker.getInstance().getByPid(targetPid);
                         if (info == null) return;
                         if (info.state == AppState.FOREGROUND) {
-                            Logger.d("App returned to foreground, cancel freeze: " + targetPkg);
+                            Logger.d("应用已返回前台，取消冻结: " + targetPkg);
                             return;
                         }
                         if (!WhitelistManager.getInstance().shouldFreeze(targetPkg, info.processName, info.isSystemApp)) {
-                            Logger.d("App added to whitelist during delay, cancel freeze: " + targetPkg);
+                            Logger.d("延迟期间应用被加入白名单，取消冻结: " + targetPkg);
                             return;
                         }
                         FreezeManager.getInstance().freezeProcess(targetPid, targetUid);
                     } catch (Throwable t) {
-                        Logger.e("Delayed freeze error for pid=" + targetPid, t);
+                        Logger.e("延迟冻结出错 pid=" + targetPid, t);
                     }
                 }, delaySec, TimeUnit.SECONDS);
             });
         } catch (Throwable t) {
-            Logger.e("handleActivityPaused error", t);
+            Logger.e("handleActivityPaused 出错", t);
         }
     }
 
@@ -212,7 +212,7 @@ public class ActivitySwitchHook {
         ScheduledFuture<?> future = pendingFreezes.remove(pid);
         if (future != null) {
             future.cancel(false);
-            Logger.d("Cancelled pending freeze for pid=" + pid);
+            Logger.d("已取消待冻结任务 pid=" + pid);
         }
     }
 
@@ -247,11 +247,11 @@ public class ActivitySwitchHook {
                                     }
                                 }
                             } catch (Throwable t) {
-                                Logger.e("setCurrentSchedulingGroup hook error", t);
+                                Logger.e("setCurrentSchedulingGroup Hook 出错", t);
                             }
                         }
                     });
-                Logger.i("Hooked setCurrentSchedulingGroup");
+                Logger.i("已 Hook setCurrentSchedulingGroup");
             } else {
                 // Android 14+：尝试在 ProcessStateRecord 上查找
                 hookSetSchedulingGroupOnStateRecord(processRecordClass, classLoader);
@@ -282,20 +282,20 @@ public class ActivitySwitchHook {
                                         ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
                                     }
                                 } catch (Throwable t) {
-                                    Logger.e("setProcessState hook error", t);
+                                    Logger.e("setProcessState Hook 出错", t);
                                 }
                             }
                         });
-                    Logger.i("Hooked setProcessState");
+                    Logger.i("已 Hook setProcessState");
                 } catch (Throwable e) {
-                    Logger.d("setProcessState hook variant failed: " + e.getMessage());
+                    Logger.d("setProcessState Hook 变体失败: " + e.getMessage());
                 }
             } else {
                 // Android 14+：尝试在 ProcessStateRecord 上查找
                 hookSetProcessStateOnStateRecord(processRecordClass, classLoader);
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook process state", t);
+            Logger.e("Hook 进程状态失败", t);
         }
     }
 
@@ -340,13 +340,13 @@ public class ActivitySwitchHook {
                                 }
                             }
                         } catch (Throwable t) {
-                            Logger.e("setCurrentSchedulingGroup (StateRecord) hook error", t);
+                            Logger.e("setCurrentSchedulingGroup (StateRecord) Hook 出错", t);
                         }
                     }
                 });
-            Logger.i("Hooked setCurrentSchedulingGroup on ProcessStateRecord");
+            Logger.i("已在 ProcessStateRecord 上 Hook setCurrentSchedulingGroup");
         } catch (Throwable t) {
-            Logger.w("Failed to hook setCurrentSchedulingGroup on StateRecord: " + t.getMessage());
+            Logger.w("在 StateRecord 上 Hook setCurrentSchedulingGroup 失败: " + t.getMessage());
         }
     }
 
@@ -388,13 +388,13 @@ public class ActivitySwitchHook {
                                 ProcessTracker.getInstance().updateState(pid, AppState.FOREGROUND);
                             }
                         } catch (Throwable t) {
-                            Logger.e("setProcessState (StateRecord) hook error", t);
+                            Logger.e("setProcessState (StateRecord) Hook 出错", t);
                         }
                     }
                 });
-            Logger.i("Hooked setProcessState on ProcessStateRecord");
+            Logger.i("已在 ProcessStateRecord 上 Hook setProcessState");
         } catch (Throwable t) {
-            Logger.w("Failed to hook setProcessState on StateRecord: " + t.getMessage());
+            Logger.w("在 StateRecord 上 Hook setProcessState 失败: " + t.getMessage());
         }
     }
 
@@ -435,13 +435,13 @@ public class ActivitySwitchHook {
                                 // OomAdjManager 可能未初始化，忽略
                             }
                         } catch (Throwable t) {
-                            Logger.w("setOomAdj hook error: " + t.getMessage());
+                            Logger.w("setOomAdj Hook 出错: " + t.getMessage());
                         }
                     }
                 });
-            Logger.i("Hooked setOomAdj");
+            Logger.i("已 Hook setOomAdj");
         } catch (Throwable t) {
-            Logger.e("Failed to hook setOomAdj", t);
+            Logger.e("Hook setOomAdj 失败", t);
         }
     }
 
@@ -469,7 +469,7 @@ public class ActivitySwitchHook {
 
             // 根据 uid 判断初始状态：系统进程或前台进程不设为 BACKGROUND
             // 这里只注册，不改变状态。状态会由后续 hook 更新。
-            Logger.d("Auto-registered process via setOomAdj: " + processName + " pid=" + pid + " uid=" + uid);
+            Logger.d("通过 setOomAdj 自动注册进程: " + processName + " pid=" + pid + " uid=" + uid);
         } catch (Throwable t) {
             // 进程可能已退出，或无权限读取
         }
@@ -508,18 +508,18 @@ public class ActivitySwitchHook {
                                         }
                                     }
                                 } catch (Throwable t) {
-                                    Logger.e("uidStateChanged hook error", t);
+                                    Logger.e("uidStateChanged Hook 出错", t);
                                 }
                             }
                         });
-                    Logger.i("Hooked " + methodName);
+                    Logger.i("已 Hook " + methodName);
                     break;
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook uid state change", t);
+            Logger.e("Hook uid 状态变化失败", t);
         }
     }
 
@@ -548,7 +548,7 @@ public class ActivitySwitchHook {
                 }
             }
         } catch (Throwable e) {
-            Logger.d("Hook variant failed: " + e.getMessage());
+            Logger.d("Hook 变体失败: " + e.getMessage());
         }
         return true;
     }
@@ -578,7 +578,7 @@ public class ActivitySwitchHook {
                 return size > 0;
             }
         } catch (Throwable e) {
-            Logger.d("Hook variant failed: " + e.getMessage());
+            Logger.d("Hook 变体失败: " + e.getMessage());
         }
         return true;
     }
@@ -607,7 +607,7 @@ public class ActivitySwitchHook {
                 return (boolean) isMusicActiveMethod.invoke(audioService);
             }
         } catch (Throwable t) {
-            Logger.d("isAnyAudioPlaying check failed: " + t.getMessage());
+            Logger.d("isAnyAudioPlaying 检查失败: " + t.getMessage());
         }
         return false;
     }

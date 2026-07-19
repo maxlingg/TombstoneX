@@ -50,7 +50,7 @@ public class RotationThawManager {
      */
     public synchronized void start() {
         if (executor != null && !executor.isShutdown()) {
-            Logger.d("RotationThawManager already running");
+            Logger.d("RotationThawManager 已在运行");
             return;
         }
         int interval = ConfigManager.getInstance().getRotationInterval();
@@ -58,7 +58,7 @@ public class RotationThawManager {
         executor.setRemoveOnCancelPolicy(true);
         executor.scheduleAtFixedRate(this::rotateThaw,
             interval, interval, TimeUnit.SECONDS);
-        Logger.i("RotationThawManager started, interval=" + interval + "s");
+        Logger.i("RotationThawManager 已启动，间隔=" + interval + "s");
     }
 
     /**
@@ -68,7 +68,7 @@ public class RotationThawManager {
         if (executor != null) {
             executor.shutdownNow();
             executor = null;
-            Logger.i("RotationThawManager stopped");
+            Logger.i("RotationThawManager 已停止");
         }
     }
 
@@ -79,24 +79,24 @@ public class RotationThawManager {
         try {
             // 全局暂停时跳过
             if (ConfigManager.getInstance().isGlobalPaused()) {
-                Logger.d("RotationThawManager: global paused, skip rotation");
+                Logger.d("RotationThawManager: 全局已暂停，跳过轮番");
                 return;
             }
 
             AppInfo target = findLongestFrozen();
             if (target == null) {
-                Logger.d("RotationThawManager: no frozen app to rotate");
+                Logger.d("RotationThawManager: 没有可轮番的冻结应用");
                 return;
             }
 
-            Logger.i("RotationThawManager: rotating " + target.packageName
+            Logger.i("RotationThawManager: 正在轮番 " + target.packageName
                 + " pid=" + target.pid
                 + " frozenSince=" + target.freezeTimestamp);
 
             // 1. 解冻
             boolean unfrozen = FreezeManager.getInstance().unfreezeProcess(target.pid, target.uid);
             if (!unfrozen) {
-                Logger.w("RotationThawManager: unfreeze failed for pid=" + target.pid);
+                Logger.w("RotationThawManager: 解冻失败 pid=" + target.pid);
                 return;
             }
 
@@ -105,12 +105,12 @@ public class RotationThawManager {
                 Thread.sleep(THAW_DURATION_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                Logger.d("RotationThawManager: sleep interrupted, re-freezing immediately");
+                Logger.d("RotationThawManager: 睡眠被中断，立即重新冻结");
             }
 
             // 3. 重新冻结（再次检查全局暂停，避免暂停期间误冻结）
             if (ConfigManager.getInstance().isGlobalPaused()) {
-                Logger.d("RotationThawManager: global paused during thaw, skip re-freeze");
+                Logger.d("RotationThawManager: 解冻期间全局已暂停，跳过重新冻结");
                 return;
             }
             FreezeManager.getInstance().freezeProcess(target.pid, target.uid);
@@ -120,10 +120,10 @@ public class RotationThawManager {
             // 这里显式再更新一次以保证时间戳反映轮番解冻后的新冻结时刻。
             ProcessTracker.getInstance().updateState(target.pid, AppState.FROZEN);
 
-            Logger.d("RotationThawManager: re-froze " + target.packageName
+            Logger.d("RotationThawManager: 已重新冻结 " + target.packageName
                 + " pid=" + target.pid);
         } catch (Throwable t) {
-            Logger.e("RotationThawManager rotate error", t);
+            Logger.e("RotationThawManager 轮番出错", t);
         }
     }
 

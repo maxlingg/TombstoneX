@@ -49,7 +49,7 @@ public class ProcessTracker {
         packageToPids.computeIfAbsent(packageName, k -> new CopyOnWriteArrayList<>()).add(pid);
         uidToPids.computeIfAbsent(uid, k -> new CopyOnWriteArrayList<>()).add(pid);
 
-        Logger.d("Process registered: " + processName + " pid=" + pid + " uid=" + uid
+        Logger.d("进程已注册: " + processName + " pid=" + pid + " uid=" + uid
             + " system=" + isSystemApp + " white=" + info.isWhiteListed);
     }
 
@@ -94,12 +94,12 @@ public class ProcessTracker {
         AppInfo info = processMap.remove(pid);
         if (info != null) {
             removeProcessFromMaps(pid, info);
-            Logger.d("Process removed: " + info.processName + " pid=" + pid);
+            Logger.d("进程已移除: " + info.processName + " pid=" + pid);
         } else {
             // P3-R3: processMap 中已无此 pid（可能双重清理），直接返回避免 O(n) 全表扫描。
             // registerProcess 和 removeProcess 都在 synchronized 块内维护映射一致性，
             // 正常情况下不会出现残留条目。
-            Logger.d("Process not found in processMap, skip cleanup: pid=" + pid);
+            Logger.d("在 processMap 中未找到进程，跳过清理: pid=" + pid);
         }
     }
 
@@ -188,6 +188,6 @@ public class ProcessTracker {
         processMap.clear();
         packageToPids.clear();
         uidToPids.clear();
-        Logger.i("ProcessTracker cleared all records");
+        Logger.i("ProcessTracker 已清空所有记录");
     }
 }

@@ -21,7 +21,7 @@ public class TombstoneXApp extends Application {
             // 不在此初始化 ConfigManager（会因无权限失败），仅初始化 Logger。
             // 调试开关默认关闭（false），配置写入由 system_server 侧的模块完成。
             Logger.init(false);
-            Logger.i("TombstoneX Application created");
+            Logger.i("TombstoneX Application 已创建");
         }
     }
 

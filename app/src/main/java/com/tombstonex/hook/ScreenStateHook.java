@@ -59,18 +59,18 @@ public class ScreenStateHook {
                                 scheduleBatchFreeze();
                             }
                         });
-                        Logger.i("Hooked " + methodName + " on AMS");
+                        Logger.i("已 Hook AMS." + methodName);
                         hasAmsHook = true;
                         hooked = true;
                         break;
                     } catch (Throwable e) {
-                        Logger.d("Hook variant failed: " + e.getMessage());
+                        Logger.d("Hook 变体失败: " + e.getMessage());
                     }
                 }
                 if (hooked) break;
             }
         } catch (Throwable t) {
-            Logger.w("Failed to hook screen off on AMS: " + t.getMessage());
+            Logger.w("Hook AMS 屏幕关闭失败: " + t.getMessage());
         }
 
         // 2. 尝试在 PowerManagerService 上 hook（备选目标）
@@ -93,22 +93,22 @@ public class ScreenStateHook {
                                     scheduleBatchFreeze();
                                 }
                             });
-                            Logger.i("Hooked " + methodName + " on PMS");
+                            Logger.i("已 Hook PMS." + methodName);
                             hooked = true;
                             break;
                         } catch (Throwable e) {
-                            Logger.d("Hook variant failed: " + e.getMessage());
+                            Logger.d("Hook 变体失败: " + e.getMessage());
                         }
                     }
                     if (hooked) break;
                 }
             } catch (Throwable t) {
-                Logger.w("Failed to hook screen off on PMS: " + t.getMessage());
+                Logger.w("Hook PMS 屏幕关闭失败: " + t.getMessage());
             }
         }
 
         if (!hooked) {
-            Logger.w("Failed to hook screen off on any known class");
+            Logger.w("未在任何已知类上 Hook 到屏幕关闭");
         }
     }
 
@@ -133,21 +133,21 @@ public class ScreenStateHook {
                             protected void afterHookedMethod(MethodHookParam param) {
                                 amsInstance = param.thisObject;
                                 cancelBatchFreeze();
-                                Logger.i("Screen on, cancelled pending batch freeze");
+                                Logger.i("亮屏，已取消待执行的批量冻结");
                             }
                         });
-                        Logger.i("Hooked " + methodName + " on AMS");
+                        Logger.i("已 Hook AMS." + methodName);
                         hasAmsHook = true;
                         hooked = true;
                         break;
                     } catch (Throwable e) {
-                        Logger.d("Hook variant failed: " + e.getMessage());
+                        Logger.d("Hook 变体失败: " + e.getMessage());
                     }
                 }
                 if (hooked) break;
             }
         } catch (Throwable t) {
-            Logger.w("Failed to hook screen on on AMS: " + t.getMessage());
+            Logger.w("Hook AMS 屏幕点亮失败: " + t.getMessage());
         }
 
         // 2. 尝试在 PowerManagerService 上 hook（备选目标）
@@ -168,25 +168,25 @@ public class ScreenStateHook {
                                 @Override
                                 protected void afterHookedMethod(MethodHookParam param) {
                                     cancelBatchFreeze();
-                                    Logger.i("Screen on (PMS), cancelled pending batch freeze");
+                                    Logger.i("亮屏 (PMS)，已取消待执行的批量冻结");
                                 }
                             });
-                            Logger.i("Hooked " + methodName + " on PMS");
+                            Logger.i("已 Hook PMS." + methodName);
                             hooked = true;
                             break;
                         } catch (Throwable e) {
-                            Logger.d("Hook variant failed: " + e.getMessage());
+                            Logger.d("Hook 变体失败: " + e.getMessage());
                         }
                     }
                     if (hooked) break;
                 }
             } catch (Throwable t) {
-                Logger.w("Failed to hook screen on on PMS: " + t.getMessage());
+                Logger.w("Hook PMS 屏幕点亮失败: " + t.getMessage());
             }
         }
 
         if (!hooked) {
-            Logger.w("Failed to hook screen on on any known class");
+            Logger.w("未在任何已知类上 Hook 到屏幕点亮");
         }
     }
 
@@ -195,7 +195,7 @@ public class ScreenStateHook {
      */
     private static void scheduleBatchFreeze() {
         int delaySec = ConfigManager.getInstance().getScreenOffDelay();
-        Logger.i("Screen off, batch freezing in " + delaySec + "s");
+        Logger.i("息屏，" + delaySec + " 秒后批量冻结");
 
         synchronized (batchFreezeLock) {
             // 重置取消标志
@@ -208,7 +208,7 @@ public class ScreenStateHook {
                 try {
                     batchFreezeAll();
                 } catch (Throwable t) {
-                    Logger.e("Batch freeze error", t);
+                    Logger.e("批量冻结出错", t);
                 }
             }, delaySec, TimeUnit.SECONDS);
         }
@@ -244,7 +244,7 @@ public class ScreenStateHook {
                 ProcessTracker.getInstance().getAllProcesses().entrySet()) {
             // P2-N4: 亮屏时取消批量冻结，避免亮屏后仍继续冻结应用
             if (batchFreezeCancelled) {
-                Logger.i("Batch freeze cancelled by screen on, processed=" + frozen + "+" + skipped);
+                Logger.i("批量冻结已被亮屏取消，已处理=" + frozen + "+" + skipped);
                 break;
             }
             AppInfo info = entry.getValue();
@@ -277,22 +277,22 @@ public class ScreenStateHook {
             // 注意：无论 hasAmsHook 是否为 true，只要拿不到 ProcessRecord 就跳过，
             // 避免在缺少 AMS 引用或反射失败时误冻结前台进程。
             if (processRecord == null) {
-                Logger.d("Skip freezing " + info.packageName + ": cannot verify foreground status");
+                Logger.d("跳过冻结 " + info.packageName + "：无法验证前台状态");
                 skipped++;
                 continue;
             }
             if (ActivitySwitchHook.hasForegroundService(processRecord)) {
-                Logger.d("Batch freeze: skip (foreground service) " + info.packageName);
+                Logger.d("批量冻结：跳过（前台服务）" + info.packageName);
                 skipped++;
                 continue;
             }
             if (ActivitySwitchHook.hasActiveContentProvider(processRecord)) {
-                Logger.d("Batch freeze: skip (ContentProvider) " + info.packageName);
+                Logger.d("批量冻结：跳过（ContentProvider）" + info.packageName);
                 skipped++;
                 continue;
             }
             if (audioPlaying) {
-                Logger.d("Batch freeze: skip (audio playing) " + info.packageName);
+                Logger.d("批量冻结：跳过（音频播放中）" + info.packageName);
                 skipped++;
                 continue;
             }
@@ -301,7 +301,7 @@ public class ScreenStateHook {
             if (result) frozen++;
             else skipped++;
         }
-        Logger.i("Batch freeze complete: frozen=" + frozen + " skipped=" + skipped);
+        Logger.i("批量冻结完成：已冻结=" + frozen + " 已跳过=" + skipped);
     }
 
     /**
@@ -316,17 +316,17 @@ public class ScreenStateHook {
                 try {
                     return XposedHelpers.callMethod(pidsSelfLocked, "get", pid);
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
             // 尝试 findProcessLocked(pid)
             try {
                 return XposedHelpers.callMethod(amsInstance, "findProcessLocked", pid);
             } catch (Throwable e) {
-                Logger.d("Hook variant failed: " + e.getMessage());
+                Logger.d("Hook 变体失败: " + e.getMessage());
             }
         } catch (Throwable t) {
-            Logger.d("Failed to get ProcessRecord for pid=" + pid + ": " + t.getMessage());
+            Logger.d("获取 pid=" + pid + " 的 ProcessRecord 失败: " + t.getMessage());
         }
         return null;
     }

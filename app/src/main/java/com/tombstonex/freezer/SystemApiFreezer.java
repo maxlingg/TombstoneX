@@ -14,7 +14,7 @@ public class SystemApiFreezer implements IFreezer {
                 "setProcessFrozen", int.class, int.class, boolean.class);
             setProcessFrozenMethod.setAccessible(true);
         } catch (NoSuchMethodException e) {
-            Logger.w("Process.setProcessFrozen not available");
+            Logger.w("Process.setProcessFrozen 不可用");
         }
     }
 
@@ -23,10 +23,10 @@ public class SystemApiFreezer implements IFreezer {
         if (setProcessFrozenMethod == null) return false;
         try {
             setProcessFrozenMethod.invoke(null, pid, uid, true);
-            Logger.d("SystemApi frozen: pid=" + pid + " uid=" + uid);
+            Logger.d("SystemApi 已冻结: pid=" + pid + " uid=" + uid);
             return true;
         } catch (Exception e) {
-            Logger.e("SystemApi freeze failed for pid=" + pid, e);
+            Logger.e("SystemApi 冻结失败 pid=" + pid, e);
             return false;
         }
     }
@@ -36,10 +36,10 @@ public class SystemApiFreezer implements IFreezer {
         if (setProcessFrozenMethod == null) return false;
         try {
             setProcessFrozenMethod.invoke(null, pid, uid, false);
-            Logger.d("SystemApi unfrozen: pid=" + pid + " uid=" + uid);
+            Logger.d("SystemApi 已解冻: pid=" + pid + " uid=" + uid);
             return true;
         } catch (Exception e) {
-            Logger.e("SystemApi unfreeze failed for pid=" + pid, e);
+            Logger.e("SystemApi 解冻失败 pid=" + pid, e);
             return false;
         }
     }

@@ -74,7 +74,7 @@ public class WhitelistManager {
             whiteProcesses = FileUtils.readLines("whiteProcess.conf");
             blackSystemApps = FileUtils.readLines("blackSystemApp.conf");
         }
-        Logger.d("Whitelist reloaded: whiteApps=" + whiteApps.size()
+        Logger.d("白名单已重载: whiteApps=" + whiteApps.size()
             + " whiteProcesses=" + whiteProcesses.size()
             + " blackSystemApps=" + blackSystemApps.size());
     }

@@ -61,7 +61,7 @@ public class ReKernelHook {
      */
     public static void init() {
         if (!isReKernelAvailable()) {
-            Logger.i("ReKernel not installed, skipping ReKernelHook");
+            Logger.i("ReKernel 未安装，跳过 ReKernelHook");
             return;
         }
         startMonitoring();
@@ -97,11 +97,11 @@ public class ReKernelHook {
     private static void startMonitoring() {
         monitoredPath = findReKernelPath();
         if (monitoredPath == null) {
-            Logger.w("ReKernel path disappeared, cannot start monitoring");
+            Logger.w("ReKernel 路径已消失，无法启动监控");
             return;
         }
         running = true;
-        Logger.i("ReKernelHook monitoring: " + monitoredPath);
+        Logger.i("ReKernelHook 监控中: " + monitoredPath);
 
         // 1) FileObserver 监控文件变化（/proc/rekernel 等常规文件场景）
         try {
@@ -113,14 +113,14 @@ public class ReKernelHook {
                     try {
                         readAndHandle();
                     } catch (Throwable t) {
-                        Logger.d("ReKernel FileObserver onEvent error: " + t.getMessage());
+                        Logger.d("ReKernel FileObserver onEvent 出错: " + t.getMessage());
                     }
                 }
             };
             fileObserver.startWatching();
-            Logger.i("ReKernel FileObserver started on " + monitoredPath);
+            Logger.i("ReKernel FileObserver 已启动于 " + monitoredPath);
         } catch (Throwable t) {
-            Logger.w("ReKernel FileObserver setup failed: " + t.getMessage());
+            Logger.w("ReKernel FileObserver 设置失败: " + t.getMessage());
         }
 
         // 2) 后台线程阻塞读取字符设备（/dev/rekernel 场景）
@@ -139,11 +139,11 @@ public class ReKernelHook {
                     if (!running) break;
                     consecutiveErrors++;
                     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                        Logger.w("ReKernel reader stopped after " + consecutiveErrors
-                            + " consecutive errors: " + t.getMessage());
+                        Logger.w("ReKernel 读取线程在连续 " + consecutiveErrors
+                            + " 次错误后停止: " + t.getMessage());
                         break;
                     }
-                    Logger.d("ReKernel reader error (" + consecutiveErrors + "): "
+                    Logger.d("ReKernel 读取出错 (第 " + consecutiveErrors + " 次): "
                         + t.getMessage());
                     try {
                         Thread.sleep(3000);
@@ -174,7 +174,7 @@ public class ReKernelHook {
                 handleNotification(line);
             }
         } catch (Throwable t) {
-            Logger.d("readAndHandle error: " + t.getMessage());
+            Logger.d("readAndHandle 出错: " + t.getMessage());
         } finally {
             if (reader != null) {
                 try { reader.close(); } catch (Throwable ignore) {}
@@ -208,7 +208,7 @@ public class ReKernelHook {
         // 既无有效 uid 也无包名，忽略
         if (uid < 10000 && pkg == null) return;
 
-        Logger.i("ReKernel notification: uid=" + uid + " pkg=" + pkg);
+        Logger.i("ReKernel 通知: uid=" + uid + " pkg=" + pkg);
 
         if (pkg != null) {
             temporarilyUnfreezePackage(pkg);
@@ -233,7 +233,7 @@ public class ReKernelHook {
         }
         if (!anyFrozen) return;
 
-        Logger.i("ReKernel: temporarily unfreezing package " + packageName);
+        Logger.i("ReKernel: 临时解冻包 " + packageName);
         FreezeManager.getInstance().unfreezePackage(packageName);
         scheduleRefreeze(packageName, -1);
     }
@@ -254,7 +254,7 @@ public class ReKernelHook {
         }
         if (!anyFrozen) return;
 
-        Logger.i("ReKernel: temporarily unfreezing uid=" + uid);
+        Logger.i("ReKernel: 临时解冻 uid=" + uid);
         for (AppInfo info : processes) {
             if (info.state == AppState.FROZEN) {
                 FreezeManager.getInstance().unfreezeProcess(info.pid, info.uid);
@@ -274,7 +274,7 @@ public class ReKernelHook {
                 try {
                     if (packageName != null) {
                         FreezeManager.getInstance().freezePackage(packageName);
-                        Logger.d("ReKernel: re-frozen package " + packageName);
+                        Logger.d("ReKernel: 已重新冻结包 " + packageName);
                     } else if (uid > 0) {
                         for (AppInfo info : ProcessTracker.getInstance().getByUid(uid)) {
                             if (info.state != AppState.FOREGROUND
@@ -282,10 +282,10 @@ public class ReKernelHook {
                                 FreezeManager.getInstance().freezeProcess(info.pid, info.uid);
                             }
                         }
-                        Logger.d("ReKernel: re-frozen uid=" + uid);
+                        Logger.d("ReKernel: 已重新冻结 uid=" + uid);
                     }
                 } catch (Throwable t) {
-                    Logger.e("ReKernel re-freeze error", t);
+                    Logger.e("ReKernel 重新冻结出错", t);
                 }
             }, REFREEZE_DELAY_SEC, TimeUnit.SECONDS);
         });
@@ -308,6 +308,6 @@ public class ReKernelHook {
             readerThread.interrupt();
             readerThread = null;
         }
-        Logger.i("ReKernelHook stopped");
+        Logger.i("ReKernelHook 已停止");
     }
 }

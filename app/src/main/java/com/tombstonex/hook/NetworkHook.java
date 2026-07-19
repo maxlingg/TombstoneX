@@ -28,7 +28,7 @@ public class NetworkHook {
         hookGetAllNetworkStateForUid(classLoader);
         hookNetworkAgentInfo(classLoader);
         initialized = true;
-        Logger.i("NetworkHook initialized");
+        Logger.i("NetworkHook 已初始化");
     }
 
     /**
@@ -61,23 +61,23 @@ public class NetworkHook {
                                 Object emptyArray = Array.newInstance(
                                     returnType.getComponentType(), 0);
                                 param.setResult(emptyArray);
-                                Logger.d("Blocked getAllNetworkStateForUid for frozen uid=" + uid);
+                                Logger.d("已拦截已冻结 uid 的 getAllNetworkStateForUid uid=" + uid);
                             }
                         }
                     } catch (Throwable t) {
-                        Logger.e("getAllNetworkStateForUid hook error", t);
+                        Logger.e("getAllNetworkStateForUid Hook 出错", t);
                     }
                 }
             };
 
             int n = hookAllMethodsByName(csClass, "getAllNetworkStateForUid", callback);
             if (n > 0) {
-                Logger.i("Hooked getAllNetworkStateForUid (" + n + " overloads)");
+                Logger.i("已 Hook getAllNetworkStateForUid (" + n + " 个重载)");
             } else {
-                Logger.w("getAllNetworkStateForUid not found");
+                Logger.w("未找到 getAllNetworkStateForUid");
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook getAllNetworkStateForUid", t);
+            Logger.e("Hook getAllNetworkStateForUid 失败", t);
         }
     }
 
@@ -108,19 +108,19 @@ public class NetworkHook {
                         }
                         if (uid >= 10000 && isUidFrozen(uid)) {
                             Logger.d("NetworkAgentInfo." + param.method.getName()
-                                + " for frozen uid=" + uid);
+                                + " 已冻结 uid=" + uid);
                         }
                     } catch (Throwable t) {
-                        Logger.e("NetworkAgentInfo hook error", t);
+                        Logger.e("NetworkAgentInfo Hook 出错", t);
                     }
                 }
             };
 
             int n1 = hookAllMethodsByName(naiClass, "setConnected", callback);
             int n2 = hookAllMethodsByName(naiClass, "unregister", callback);
-            Logger.i("Hooked NetworkAgentInfo (setConnected=" + n1 + " unregister=" + n2 + ")");
+            Logger.i("已 Hook NetworkAgentInfo (setConnected=" + n1 + " unregister=" + n2 + ")");
         } catch (Throwable t) {
-            Logger.w("Failed to hook NetworkAgentInfo: " + t.getMessage());
+            Logger.w("Hook NetworkAgentInfo 失败: " + t.getMessage());
         }
     }
 
@@ -132,7 +132,7 @@ public class NetworkHook {
         if (!initialized) return;
         if (uid < 10000) return; // 系统应用不断网
         if (isKeepConnection(packageName)) {
-            Logger.d("keepConnection enabled, skip blocking network for uid=" + uid);
+            Logger.d("keepConnection 已启用，跳过断网 uid=" + uid);
             return;
         }
         setUidNetworkRules(uid, false);
@@ -157,21 +157,21 @@ public class NetworkHook {
         try {
             Object nms = getNetworkManagementService();
             if (nms == null) {
-                Logger.w("NetworkManagementService unavailable, cannot setUidNetworkRules uid=" + uid);
+                Logger.w("NetworkManagementService 不可用，无法设置 setUidNetworkRules uid=" + uid);
                 return;
             }
             // 反射调用 setUidNetworkRules(int uid, boolean allowOnMetered)
             // 注意：AOSP 中此方法签名为 setUidNetworkRules(int, boolean)，allow=false 即切断网络
             Method method = findMethod(nms.getClass(), "setUidNetworkRules", int.class, boolean.class);
             if (method == null) {
-                Logger.w("setUidNetworkRules method not found on " + nms.getClass().getName());
+                Logger.w("在 " + nms.getClass().getName() + " 上未找到 setUidNetworkRules 方法");
                 return;
             }
             method.setAccessible(true);
             method.invoke(nms, uid, allow);
             Logger.d("setUidNetworkRules uid=" + uid + " allow=" + allow);
         } catch (Throwable t) {
-            Logger.e("setUidNetworkRules failed uid=" + uid + " allow=" + allow, t);
+            Logger.e("setUidNetworkRules 失败 uid=" + uid + " allow=" + allow, t);
         }
     }
 
@@ -188,7 +188,7 @@ public class NetworkHook {
             Method asInterface = stubClass.getMethod("asInterface", android.os.IBinder.class);
             return asInterface.invoke(null, binder);
         } catch (Throwable t) {
-            Logger.e("getNetworkManagementService failed", t);
+            Logger.e("获取 NetworkManagementService 失败", t);
             return null;
         }
     }
@@ -202,7 +202,7 @@ public class NetworkHook {
             Method getServiceMethod = smClass.getMethod("getService", String.class);
             return getServiceMethod.invoke(null, name);
         } catch (Throwable t) {
-            Logger.e("getService failed: " + name, t);
+            Logger.e("getService 失败: " + name, t);
             return null;
         }
     }
@@ -217,7 +217,7 @@ public class NetworkHook {
                 if (info.state == AppState.FROZEN) return true;
             }
         } catch (Throwable t) {
-            Logger.d("isUidFrozen failed uid=" + uid + ": " + t.getMessage());
+            Logger.d("isUidFrozen 失败 uid=" + uid + ": " + t.getMessage());
         }
         return false;
     }
@@ -250,9 +250,9 @@ public class NetworkHook {
             }
         } catch (ClassNotFoundException e) {
             // AppConfigManager 不存在，默认 false（即冻结后断网）
-            Logger.d("AppConfigManager not found, keepConnection defaults to false");
+            Logger.d("未找到 AppConfigManager，keepConnection 默认为 false");
         } catch (Throwable t) {
-            Logger.d("isKeepConnection check failed: " + t.getMessage());
+            Logger.d("isKeepConnection 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -285,7 +285,7 @@ public class NetworkHook {
                     XposedBridge.hookMethod(method, callback);
                     count++;
                 } catch (Throwable t) {
-                    Logger.d("hookMethod failed for " + methodName + ": " + t.getMessage());
+                    Logger.d("hookMethod 失败 " + methodName + ": " + t.getMessage());
                 }
             }
         }

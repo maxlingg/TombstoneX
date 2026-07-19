@@ -62,7 +62,7 @@ public class ConfigManager {
                 freezeDelay = Math.max(1, Math.min(10, Integer.parseInt(delayStr.trim())));
             }
         } catch (Exception e) {
-            Logger.d("ConfigManager: failed to parse freezeDelay: " + e.getMessage());
+            Logger.d("ConfigManager: 解析 freezeDelay 失败: " + e.getMessage());
         }
 
         // Hook 开关
@@ -73,7 +73,7 @@ public class ConfigManager {
         hookScreenStateEnabled = !FileUtils.exists("disable_screen");
 
         Logger.init(debugEnabled);
-        Logger.i("Config loaded: mode=" + freezeMode + " debug=" + debugEnabled
+        Logger.i("配置已加载: mode=" + freezeMode + " debug=" + debugEnabled
             + " delay=" + freezeDelay + "s"
             + " anr=" + hookANREnabled + " broadcast=" + hookBroadcastEnabled
             + " wakelock=" + hookWakeLockEnabled + " activity=" + hookActivitySwitchEnabled
@@ -86,7 +86,7 @@ public class ConfigManager {
         try {
             return new String(Files.readAllBytes(file.toPath())).trim();
         } catch (Exception e) {
-            Logger.w("Failed to read config file: " + filename + ": " + e.getMessage());
+            Logger.w("读取配置文件失败: " + filename + ": " + e.getMessage());
             return null;
         }
     }
@@ -104,7 +104,7 @@ public class ConfigManager {
                 StandardCopyOption.ATOMIC_MOVE);
             return true;
         } catch (IOException e) {
-            Logger.e("Failed to write config: " + filename);
+            Logger.e("写入配置失败: " + filename);
             return false;
         }
     }
@@ -134,7 +134,7 @@ public class ConfigManager {
         try {
             Files.write(tmpFile.toPath(), new byte[0]);
         } catch (IOException e) {
-            Logger.e("Failed to write marker temp file: " + targetMarker);
+            Logger.e("写入 marker 临时文件失败: " + targetMarker);
             return;
         }
 
@@ -143,8 +143,8 @@ public class ConfigManager {
             if (marker.equals(targetMarker)) continue;
             File oldMarker = new File(CONFIG_DIR + "/" + marker);
             if (oldMarker.exists() && !oldMarker.delete()) {
-                Logger.w("Failed to delete old marker file: " + marker
-                    + ", aborting setFreezeMode to prevent marker conflict");
+                Logger.w("删除旧 marker 文件失败: " + marker
+                    + "，为防止 marker 冲突中止 setFreezeMode");
                 tmpFile.delete();
                 return;
             }
@@ -156,7 +156,7 @@ public class ConfigManager {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            Logger.e("Failed to rename marker file: " + targetMarker);
+            Logger.e("重命名 marker 文件失败: " + targetMarker);
             tmpFile.delete();
             return;
         }
@@ -202,7 +202,7 @@ public class ConfigManager {
                 return Math.max(10, Math.min(300, Integer.parseInt(delayStr.trim())));
             }
         } catch (Exception e) {
-            Logger.d("ConfigManager: failed to parse screenOffDelay: " + e.getMessage());
+            Logger.d("ConfigManager: 解析 screenOffDelay 失败: " + e.getMessage());
         }
         return 60; // 默认 60 秒
     }
@@ -218,7 +218,7 @@ public class ConfigManager {
                 return Math.max(60, Math.min(3600, Integer.parseInt(intervalStr.trim())));
             }
         } catch (Exception e) {
-            Logger.d("ConfigManager: failed to parse rotationInterval: " + e.getMessage());
+            Logger.d("ConfigManager: 解析 rotationInterval 失败: " + e.getMessage());
         }
         return 360; // 默认 360 秒（6 分钟）
     }
@@ -229,7 +229,7 @@ public class ConfigManager {
     public void setRotationInterval(int seconds) {
         int clamped = Math.max(60, Math.min(3600, seconds));
         if (writeFileContent("rotation_interval", String.valueOf(clamped))) {
-            Logger.i("Rotation interval set to " + clamped + "s");
+            Logger.i("轮番解冻间隔已设置为 " + clamped + "s");
         }
     }
 
@@ -311,7 +311,7 @@ public class ConfigManager {
             success = !pausedFile.exists() || pausedFile.delete();
         }
         if (success) {
-            Logger.i("Global paused: " + paused);
+            Logger.i("全局暂停: " + paused);
         }
     }
 }

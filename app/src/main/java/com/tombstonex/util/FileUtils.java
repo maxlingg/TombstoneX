@@ -47,7 +47,7 @@ public class FileUtils {
                 }
             }
         } catch (IOException e) {
-            Logger.e("Failed to read file: " + filename, e);
+            Logger.e("读取文件失败: " + filename, e);
         }
         return lines;
     }
@@ -69,7 +69,7 @@ public class FileUtils {
                 writer.newLine();
             }
         } catch (IOException e) {
-            Logger.e("Failed to write file: " + filename, e);
+            Logger.e("写入文件失败: " + filename, e);
             return false;
         }
         // 原子替换
@@ -78,7 +78,7 @@ public class FileUtils {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            Logger.e("Failed to rename tmp file to: " + filename, e);
+            Logger.e("重命名临时文件失败: " + filename, e);
             // P3-6: 清理残留的 tmp 文件
             tmpFile.delete();
             return false;
@@ -126,7 +126,7 @@ public class FileUtils {
             writer.write(line);
             writer.newLine();
         } catch (IOException e) {
-            Logger.e("Failed to append to file: " + filename, e);
+            Logger.e("追加写入文件失败: " + filename, e);
             return false;
         }
         // 原子替换
@@ -135,7 +135,7 @@ public class FileUtils {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            Logger.e("Failed to rename tmp file to: " + filename, e);
+            Logger.e("重命名临时文件失败: " + filename, e);
             // P3-6: 清理残留的 tmp 文件
             tmpFile.delete();
             return false;

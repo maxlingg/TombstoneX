@@ -45,19 +45,19 @@ public class TimerHook {
                     try {
                         blockIfCallerFrozen(param);
                     } catch (Throwable t) {
-                        Logger.e("AlarmManagerService.setImpl hook error", t);
+                        Logger.e("AlarmManagerService.setImpl Hook 出错", t);
                     }
                 }
             };
 
             int n = hookAllMethodsByName(amsClass, "setImpl", callback);
             if (n > 0) {
-                Logger.i("Hooked AlarmManagerService.setImpl (" + n + " overloads)");
+                Logger.i("已 Hook AlarmManagerService.setImpl（" + n + " 个重载）");
             } else {
-                Logger.w("AlarmManagerService.setImpl not found");
+                Logger.w("未找到 AlarmManagerService.setImpl");
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook AlarmManagerService.setImpl", t);
+            Logger.e("Hook AlarmManagerService.setImpl 失败", t);
         }
     }
 
@@ -79,12 +79,12 @@ public class TimerHook {
                         int uid = Binder.getCallingUid();
                         if (uid < 10000) return; // 系统应用不拦截
                         if (isUidFrozen(uid)) {
-                            Logger.d("Blocking " + param.method.getName()
-                                + " for frozen uid=" + uid);
+                            Logger.d("已拦截已冻结 uid 的 " + param.method.getName()
+                                + " uid=" + uid);
                             param.setResult(null);
                         }
                     } catch (Throwable t) {
-                        Logger.e("AlarmManager.set hook error", t);
+                        Logger.e("AlarmManager.set Hook 出错", t);
                     }
                 }
             };
@@ -97,9 +97,9 @@ public class TimerHook {
             for (String name : methodNames) {
                 total += hookAllMethodsByName(alarmManagerClass, name, callback);
             }
-            Logger.i("Hooked AlarmManager methods (" + total + " overloads)");
+            Logger.i("已 Hook AlarmManager 方法（" + total + " 个重载）");
         } catch (Throwable t) {
-            Logger.e("Failed to hook AlarmManager", t);
+            Logger.e("Hook AlarmManager 失败", t);
         }
     }
 
@@ -113,7 +113,7 @@ public class TimerHook {
     private static void hookHandler(ClassLoader classLoader) {
         // 仅在应用进程中注册，避免 system_server 热路径开销
         if (Process.myUid() < 10000) {
-            Logger.d("Skip Handler hook in system process (uid=" + Process.myUid() + ")");
+            Logger.d("跳过系统进程中的 Handler Hook（uid=" + Process.myUid() + "）");
             return;
         }
         try {
@@ -126,22 +126,22 @@ public class TimerHook {
                         int uid = Process.myUid();
                         if (uid < 10000) return;
                         if (isUidFrozen(uid)) {
-                            Logger.d("Blocking " + param.method.getName()
-                                + " for frozen process uid=" + uid);
+                            Logger.d("已拦截已冻结进程的 " + param.method.getName()
+                                + " uid=" + uid);
                             param.setResult(null);
                         }
                     } catch (Throwable t) {
-                        Logger.e("Handler hook error", t);
+                        Logger.e("Handler Hook 出错", t);
                     }
                 }
             };
 
             int n1 = hookAllMethodsByName(handlerClass, "sendMessageDelayed", callback);
             int n2 = hookAllMethodsByName(handlerClass, "postDelayed", callback);
-            Logger.i("Hooked Handler (sendMessageDelayed=" + n1
-                + " postDelayed=" + n2 + ") in app process");
+            Logger.i("已 Hook Handler（sendMessageDelayed=" + n1
+                + " postDelayed=" + n2 + "）于应用进程中");
         } catch (Throwable t) {
-            Logger.w("Failed to hook Handler: " + t.getMessage());
+            Logger.w("Hook Handler 失败: " + t.getMessage());
         }
     }
 
@@ -153,8 +153,8 @@ public class TimerHook {
         int callingUid = Binder.getCallingUid();
         if (callingUid < 10000) return; // 系统应用不拦截
         if (isUidFrozen(callingUid)) {
-            Logger.d("Blocking " + param.method.getName()
-                + " for frozen caller uid=" + callingUid);
+            Logger.d("已拦截已冻结调用方的 " + param.method.getName()
+                + " uid=" + callingUid);
             param.setResult(null);
         }
     }
@@ -169,7 +169,7 @@ public class TimerHook {
                 if (info.state == AppState.FROZEN) return true;
             }
         } catch (Throwable t) {
-            Logger.d("isUidFrozen failed uid=" + uid + ": " + t.getMessage());
+            Logger.d("isUidFrozen 失败 uid=" + uid + ": " + t.getMessage());
         }
         return false;
     }
@@ -187,7 +187,7 @@ public class TimerHook {
                     XposedBridge.hookMethod(method, callback);
                     count++;
                 } catch (Throwable t) {
-                    Logger.d("hookMethod failed for " + methodName + ": " + t.getMessage());
+                    Logger.d("hookMethod 失败: " + methodName + ": " + t.getMessage());
                 }
             }
         }

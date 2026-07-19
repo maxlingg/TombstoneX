@@ -38,10 +38,10 @@ public class CgroupFreezerV1 implements IFreezer {
         try (FileWriter writer = new FileWriter(path)) {
             writer.write(value);
             writer.flush();
-            Logger.d("CgroupV1 write " + value + " to " + path);
+            Logger.d("CgroupV1 写入 " + value + " 到 " + path);
             return true;
         } catch (IOException e) {
-            Logger.e("CgroupV1 write failed: " + path, e);
+            Logger.e("CgroupV1 写入失败: " + path, e);
             return false;
         }
     }

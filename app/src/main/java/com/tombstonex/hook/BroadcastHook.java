@@ -69,24 +69,24 @@ public class BroadcastHook {
                                 int owningPid = XposedHelpers.getIntField(filter, "owningPid");
                                 AppInfo appInfo = ProcessTracker.getInstance().getByPid(owningPid);
                                 if (appInfo != null && appInfo.state == AppState.FROZEN) {
-                                    Logger.d("Blocking broadcast to frozen app: "
+                                    Logger.d("拦截已冻结应用的广播: "
                                         + appInfo.packageName + " pid=" + owningPid);
                                     // 在 beforeHookedMethod 中 setResult 跳过冻结接收器
                                     param.setResult(null);
                                 }
                             } catch (Throwable t) {
-                                Logger.e("Broadcast delivery hook error", t);
+                                Logger.e("广播分发 Hook 出错", t);
                             }
                         }
                     });
-                    Logger.i("Hooked deliverToRegisteredReceiver");
+                    Logger.i("已 Hook deliverToRegisteredReceiver");
                     break;
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook broadcast delivery", t);
+            Logger.e("Hook 广播分发失败", t);
         }
     }
 
@@ -123,23 +123,23 @@ public class BroadcastHook {
                                 // 检查有序广播队列中的接收器
                                 checkAndSkipFrozenReceivers(queue, "mOrderedBroadcasts");
                             } catch (Throwable t) {
-                                Logger.e("processNextBroadcast hook error", t);
+                                Logger.e("processNextBroadcast Hook 出错", t);
                             }
                         }
                     });
-                    Logger.i("Hooked processNextBroadcast with " + paramTypes.length + " params");
+                    Logger.i("已 Hook processNextBroadcast (" + paramTypes.length + " 个参数)");
                     hooked = true;
                     break;
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
 
             if (!hooked) {
-                Logger.w("Could not find processNextBroadcast with known signatures");
+                Logger.w("未找到已知签名的 processNextBroadcast");
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook processNextBroadcast", t);
+            Logger.e("Hook processNextBroadcast 失败", t);
         }
     }
 
@@ -170,14 +170,14 @@ public class BroadcastHook {
                     if (pid > 0) {
                         AppInfo appInfo = ProcessTracker.getInstance().getByPid(pid);
                         if (appInfo != null && appInfo.state == AppState.FROZEN) {
-                            Logger.d("Frozen receiver detected (will be skipped by delivery hook): "
+                            Logger.d("检测到已冻结的接收器（将被分发 Hook 跳过）: "
                                 + appInfo.packageName + " pid=" + pid);
                         }
                     }
                 }
             }
         } catch (Throwable t) {
-            Logger.e("checkAndSkipFrozenReceivers error for field " + fieldName, t);
+            Logger.e("checkAndSkipFrozenReceivers 出错，字段 " + fieldName, t);
         }
     }
 
@@ -191,7 +191,7 @@ public class BroadcastHook {
         try {
             return XposedHelpers.getIntField(receiver, "owningPid");
         } catch (Throwable e) {
-            Logger.d("Hook variant failed: " + e.getMessage());
+            Logger.d("Hook 变体失败: " + e.getMessage());
         }
 
         // ResolveInfo（静态接收器）：没有 pid，需通过 uid 查找运行中的进程
@@ -213,7 +213,7 @@ public class BroadcastHook {
                 }
             }
         } catch (Throwable e) {
-            Logger.d("Hook variant failed: " + e.getMessage());
+            Logger.d("Hook 变体失败: " + e.getMessage());
         }
 
         return -1;

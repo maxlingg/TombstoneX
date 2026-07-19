@@ -55,7 +55,7 @@ public class SystemFreezerDisableHook {
         hookSettingsGlobalGetCachedAppsFreezerEnabled(classLoader);
         hookActivityManagerConstantsFreezerMethods(classLoader);
         hookAmsSystemReadyToDisable(classLoader);
-        Logger.i("SystemFreezerDisableHook initialized, system CachedAppsFreezer will be disabled");
+        Logger.i("SystemFreezerDisableHook 已初始化，系统 CachedAppsFreezer 将被禁用");
     }
 
     /**
@@ -91,18 +91,18 @@ public class SystemFreezerDisableHook {
                                 int boolIdx = (param.args.length >= 2) ? 1 : 0;
                                 if (boolIdx < param.args.length) {
                                     param.args[boolIdx] = Boolean.FALSE;
-                                    Logger.d("Forced setCachedAppsFreezerEnabled arg to false on "
+                                    Logger.d("已强制 setCachedAppsFreezerEnabled 参数为 false on "
                                         + clazz.getName());
                                 }
                             } catch (Throwable t) {
-                                Logger.e("setCachedAppsFreezerEnabled hook error", t);
+                                Logger.e("setCachedAppsFreezerEnabled Hook 出错", t);
                             }
                         }
                     });
-                    Logger.i("Hooked setCachedAppsFreezerEnabled on " + className
-                        + " (" + params.length + " params)");
+                    Logger.i("已 Hook setCachedAppsFreezerEnabled on " + className
+                        + "（" + params.length + " 个参数）");
                 } catch (Throwable e) {
-                    Logger.d("setCachedAppsFreezerEnabled variant failed on "
+                    Logger.d("setCachedAppsFreezerEnabled 变体失败 on "
                         + className + ": " + e.getMessage());
                 }
             }
@@ -118,7 +118,7 @@ public class SystemFreezerDisableHook {
         try {
             clazz = XposedHelpers.findClass(CACHED_APP_OPTIMIZER_CLASS, classLoader);
         } catch (Throwable t) {
-            Logger.w("CachedAppOptimizer class not found: " + t.getMessage());
+            Logger.w("未找到 CachedAppOptimizer 类: " + t.getMessage());
             return;
         }
 
@@ -138,7 +138,7 @@ public class SystemFreezerDisableHook {
         } catch (Throwable ignored) {}
 
         if (candidates.isEmpty()) {
-            Logger.w("Could not find CachedAppOptimizer.enableFreezer with known signatures");
+            Logger.w("未找到已知签名的 CachedAppOptimizer.enableFreezer");
             return;
         }
 
@@ -155,16 +155,16 @@ public class SystemFreezerDisableHook {
                                     break;
                                 }
                             }
-                            Logger.d("Forced CachedAppOptimizer.enableFreezer to disabled");
+                            Logger.d("已强制 CachedAppOptimizer.enableFreezer 为禁用状态");
                         } catch (Throwable t) {
-                            Logger.e("enableFreezer hook error", t);
+                            Logger.e("enableFreezer Hook 出错", t);
                         }
                     }
                 });
-                Logger.i("Hooked CachedAppOptimizer.enableFreezer ("
-                    + method.getParameterCount() + " params)");
+                Logger.i("已 Hook CachedAppOptimizer.enableFreezer（"
+                    + method.getParameterCount() + " 个参数）");
             } catch (Throwable e) {
-                Logger.d("enableFreezer hook variant failed: " + e.getMessage());
+                Logger.d("enableFreezer Hook 变体失败: " + e.getMessage());
             }
         }
     }
@@ -200,22 +200,22 @@ public class SystemFreezerDisableHook {
                         try {
                             // 强制返回 false，表示系统 freezer 未启用
                             param.setResult(Boolean.FALSE);
-                            Logger.d("Forced getCachedAppsFreezerEnabled to false on " + clazz.getName());
+                            Logger.d("已强制 getCachedAppsFreezerEnabled 返回 false on " + clazz.getName());
                         } catch (Throwable t) {
-                            Logger.e("getCachedAppsFreezerEnabled hook error", t);
+                            Logger.e("getCachedAppsFreezerEnabled Hook 出错", t);
                         }
                     }
                 });
-                Logger.i("Hooked getCachedAppsFreezerEnabled on " + className);
+                Logger.i("已 Hook getCachedAppsFreezerEnabled on " + className);
                 hooked = true;
             } catch (Throwable e) {
-                Logger.d("getCachedAppsFreezerEnabled variant failed on "
+                Logger.d("getCachedAppsFreezerEnabled 变体失败 on "
                     + className + ": " + e.getMessage());
             }
         }
         if (!hooked) {
             // 该方法在多数 AOSP 版本不存在，未命中属正常情况，仅记录 debug 日志
-            Logger.d("getCachedAppsFreezerEnabled not found on candidate classes (expected on most AOSP)");
+            Logger.d("在候选类上未找到 getCachedAppsFreezerEnabled（在多数 AOSP 上属正常）");
         }
     }
 
@@ -229,7 +229,7 @@ public class SystemFreezerDisableHook {
         try {
             clazz = XposedHelpers.findClass(AMC_CLASS, classLoader);
         } catch (Throwable t) {
-            Logger.w("ActivityManagerConstants class not found: " + t.getMessage());
+            Logger.w("未找到 ActivityManagerConstants 类: " + t.getMessage());
             return;
         }
 
@@ -243,11 +243,11 @@ public class SystemFreezerDisableHook {
                 }
             }
         } catch (Throwable t) {
-            Logger.d("Failed to enumerate ActivityManagerConstants freezer methods: " + t.getMessage());
+            Logger.d("枚举 ActivityManagerConstants freezer 方法失败: " + t.getMessage());
         }
 
         if (freezerMethods.isEmpty()) {
-            Logger.w("No freezer-related methods found on ActivityManagerConstants");
+            Logger.w("未在 ActivityManagerConstants 上找到 freezer 相关方法");
             return;
         }
 
@@ -259,14 +259,14 @@ public class SystemFreezerDisableHook {
                         try {
                             forceFreezerFieldFalse(param.thisObject);
                         } catch (Throwable t) {
-                            Logger.e("ActivityManagerConstants freezer after-hook error", t);
+                            Logger.e("ActivityManagerConstants freezer Hook 出错", t);
                         }
                     }
                 });
-                Logger.i("Hooked ActivityManagerConstants." + method.getName());
+                Logger.i("已 Hook ActivityManagerConstants." + method.getName());
             } catch (Throwable e) {
                 Logger.d("Hook ActivityManagerConstants." + method.getName()
-                    + " failed: " + e.getMessage());
+                    + " 失败: " + e.getMessage());
             }
         }
     }
@@ -281,7 +281,7 @@ public class SystemFreezerDisableHook {
         try {
             amsClass = XposedHelpers.findClass(AMS_CLASS, classLoader);
         } catch (Throwable t) {
-            Logger.w("AMS class not found for systemReady hook: " + t.getMessage());
+            Logger.w("未找到 AMS 类用于 systemReady Hook: " + t.getMessage());
             return;
         }
 
@@ -291,7 +291,7 @@ public class SystemFreezerDisableHook {
             timingsTraceLogClass = Class.forName("com.android.server.utils.TimingsTraceLog",
                 false, classLoader);
         } catch (Throwable t) {
-            Logger.d("TimingsTraceLog class not found, will skip (Runnable, TimingsTraceLog) variant");
+            Logger.d("未找到 TimingsTraceLog 类，将跳过 (Runnable, TimingsTraceLog) 变体");
         }
 
         // systemReady 跨版本签名变体（动态构建以避免 checked 异常外泄）
@@ -312,24 +312,23 @@ public class SystemFreezerDisableHook {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
                         try {
-                            Logger.i("AMS systemReady detected, disabling system freezer");
+                            Logger.i("检测到 AMS systemReady，正在禁用系统 freezer");
                             disableSystemFreezerOnAms(param.thisObject);
                         } catch (Throwable t) {
-                            Logger.e("Failed to disable system freezer on systemReady", t);
+                            Logger.e("在 systemReady 时禁用系统 freezer 失败", t);
                         }
                     }
                 });
-                Logger.i("Hooked AMS.systemReady (" + params.length + " params) for proactive freezer disable");
+                Logger.i("已 Hook AMS.systemReady（" + params.length + " 个参数）用于主动禁用 freezer");
                 hooked = true;
                 break;
             } catch (Throwable e) {
-                Logger.d("systemReady hook variant failed: " + e.getMessage());
+                Logger.d("systemReady Hook 变体失败: " + e.getMessage());
             }
         }
 
         if (!hooked) {
-            Logger.w("Could not find AMS.systemReady with known signatures; "
-                + "proactive disable will rely on method-level hooks only");
+            Logger.w("未找到已知签名的 AMS.systemReady；主动禁用将仅依赖方法级 Hook");
         }
     }
 
@@ -349,10 +348,10 @@ public class SystemFreezerDisableHook {
                 ams.getClass(), "setCachedAppsFreezerEnabled", boolean.class);
             if (m != null) {
                 m.invoke(ams, false);
-                Logger.i("Disabled system freezer via AMS.setCachedAppsFreezerEnabled(false)");
+                Logger.i("已通过 AMS.setCachedAppsFreezerEnabled(false) 禁用系统 freezer");
             }
         } catch (Throwable t) {
-            Logger.d("AMS.setCachedAppsFreezerEnabled invoke failed: " + t.getMessage());
+            Logger.d("AMS.setCachedAppsFreezerEnabled 调用失败: " + t.getMessage());
         }
 
         // 2. ActivityManagerConstants 上禁用
@@ -364,13 +363,13 @@ public class SystemFreezerDisableHook {
                     constants.getClass(), "setCachedAppsFreezerEnabled", boolean.class);
                 if (m != null) {
                     m.invoke(constants, false);
-                    Logger.i("Disabled freezer via ActivityManagerConstants.setCachedAppsFreezerEnabled(false)");
+                    Logger.i("已通过 ActivityManagerConstants.setCachedAppsFreezerEnabled(false) 禁用 freezer");
                 }
                 // 同时直接强制字段为 false（兜底）
                 forceFreezerFieldFalse(constants);
             }
         } catch (Throwable t) {
-            Logger.d("ActivityManagerConstants freezer disable failed: " + t.getMessage());
+            Logger.d("ActivityManagerConstants freezer 禁用失败: " + t.getMessage());
         }
 
         // 3. CachedAppOptimizer.enableFreezer(false)
@@ -387,14 +386,14 @@ public class SystemFreezerDisableHook {
                     optimizer.getClass(), "enableFreezer", boolean.class);
                 if (m != null) {
                     m.invoke(optimizer, false);
-                    Logger.i("Disabled freezer via CachedAppOptimizer.enableFreezer(false)");
+                    Logger.i("已通过 CachedAppOptimizer.enableFreezer(false) 禁用 freezer");
                 }
             }
         } catch (Throwable t) {
-            Logger.d("CachedAppOptimizer.enableFreezer invoke failed: " + t.getMessage());
+            Logger.d("CachedAppOptimizer.enableFreezer 调用失败: " + t.getMessage());
         }
 
-        Logger.i("System CachedAppsFreezer disable attempt completed");
+        Logger.i("系统 CachedAppsFreezer 禁用尝试已完成");
     }
 
     // ==================== 辅助方法 ====================
@@ -406,11 +405,11 @@ public class SystemFreezerDisableHook {
             Field f = ReflectionUtils.findFieldRecursive(constants.getClass(), FREEZER_ENABLED_FIELD);
             if (f != null) {
                 f.set(constants, false);
-                Logger.d("Forced " + FREEZER_ENABLED_FIELD + " = false on "
+                Logger.d("已强制 " + FREEZER_ENABLED_FIELD + " = false on "
                     + constants.getClass().getName());
             }
         } catch (Throwable t) {
-            Logger.d("forceFreezerFieldFalse failed: " + t.getMessage());
+            Logger.d("forceFreezerFieldFalse 失败: " + t.getMessage());
         }
     }
 

@@ -52,7 +52,7 @@ public class ReflectionUtils {
         try {
             return Class.forName(className, false, classLoader);
         } catch (ClassNotFoundException e) {
-            Logger.e("Class not found: " + className, e);
+            Logger.e("未找到类: " + className, e);
             return null;
         }
     }
@@ -82,7 +82,7 @@ public class ReflectionUtils {
             // 尝试基本类型与包装类自动匹配
             Method fallback = findMethodWithWrapperMatch(clazz, methodName, paramTypes);
             if (fallback != null) return fallback;
-            Logger.e("Method not found: " + methodName + " in " + clazz.getName(), e);
+            Logger.e("未找到方法: " + methodName + " in " + clazz.getName(), e);
             return null;
         }
     }
@@ -131,7 +131,7 @@ public class ReflectionUtils {
                 current = current.getSuperclass();
             }
         }
-        Logger.e("Method not found recursively: " + methodName + " in " + clazz.getName());
+        Logger.e("递归查找方法失败: " + methodName + " in " + clazz.getName());
         return null; // 不缓存负面结果
     }
 
@@ -165,7 +165,7 @@ public class ReflectionUtils {
             field.setAccessible(true);
             return field;
         } catch (NoSuchFieldException e) {
-            Logger.e("Field not found: " + fieldName + " in " + clazz.getName(), e);
+            Logger.e("未找到字段: " + fieldName + " in " + clazz.getName(), e);
             return null;
         }
     }
@@ -191,7 +191,7 @@ public class ReflectionUtils {
                 current = current.getSuperclass();
             }
         }
-        Logger.e("Field not found recursively: " + fieldName + " in " + clazz.getName());
+        Logger.e("递归查找字段失败: " + fieldName + " in " + clazz.getName());
         return null;
     }
 
@@ -201,7 +201,7 @@ public class ReflectionUtils {
         try {
             return (T) field.get(obj);
         } catch (IllegalAccessException | IllegalArgumentException e) {
-            Logger.e("Failed to get field value: " + field.getName(), e);
+            Logger.e("获取字段值失败: " + field.getName(), e);
             return null;
         }
     }
@@ -211,7 +211,7 @@ public class ReflectionUtils {
         try {
             field.set(obj, value);
         } catch (IllegalAccessException | IllegalArgumentException e) {
-            Logger.e("Failed to set field value: " + field.getName(), e);
+            Logger.e("设置字段值失败: " + field.getName(), e);
         }
     }
 }

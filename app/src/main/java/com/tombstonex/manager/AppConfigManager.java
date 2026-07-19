@@ -68,7 +68,7 @@ public class AppConfigManager {
             File dir = new File(CONFIG_DIR);
             if (!dir.exists()) dir.mkdirs();
         } catch (Throwable t) {
-            Logger.e("AppConfigManager: failed to create config dir: " + t.getMessage());
+            Logger.e("AppConfigManager: 创建配置目录失败: " + t.getMessage());
         }
     }
 
@@ -165,8 +165,8 @@ public class AppConfigManager {
             }
             return (T) val;
         } catch (JSONException e) {
-            Logger.w("AppConfigManager: failed to get key " + key
-                + " for " + packageName + ": " + e.getMessage());
+            Logger.w("AppConfigManager: 获取键 " + key
+                + " 失败（" + packageName + "）: " + e.getMessage());
             return defaultValue;
         }
     }
@@ -184,8 +184,8 @@ public class AppConfigManager {
         try {
             config.put(key, value);
         } catch (JSONException e) {
-            Logger.e("AppConfigManager: failed to set key " + key
-                + " for " + packageName, e);
+            Logger.e("AppConfigManager: 设置键 " + key
+                + " 失败（" + packageName + "）", e);
             return;
         }
         setAppConfig(packageName, config);
@@ -259,7 +259,7 @@ public class AppConfigManager {
             config.put(KEY_KEEP_CONNECTION, DEFAULT_KEEP_CONNECTION);
             config.put(KEY_PRIORITY, DEFAULT_PRIORITY);
         } catch (JSONException e) {
-            Logger.e("AppConfigManager: failed to build default config", e);
+            Logger.e("AppConfigManager: 构建默认配置失败", e);
         }
         return config;
     }
@@ -275,7 +275,7 @@ public class AppConfigManager {
             try {
                 result.put(key, config.get(key));
             } catch (JSONException e) {
-                Logger.d("AppConfigManager: skip key " + key + ": " + e.getMessage());
+                Logger.d("AppConfigManager: 跳过键 " + key + ": " + e.getMessage());
             }
         }
         return result;
@@ -289,7 +289,7 @@ public class AppConfigManager {
         try {
             return new JSONObject(src.toString());
         } catch (JSONException e) {
-            Logger.e("AppConfigManager: failed to copy config", e);
+            Logger.e("AppConfigManager: 复制配置失败", e);
             return defaultConfig();
         }
     }
@@ -306,10 +306,10 @@ public class AppConfigManager {
             if (content.isEmpty()) return null;
             return new JSONObject(content);
         } catch (IOException e) {
-            Logger.e("AppConfigManager: failed to read config for " + packageName, e);
+            Logger.e("AppConfigManager: 读取配置失败（" + packageName + "）", e);
             return null;
         } catch (JSONException e) {
-            Logger.e("AppConfigManager: malformed JSON for " + packageName, e);
+            Logger.e("AppConfigManager: JSON 格式错误（" + packageName + "）", e);
             return null;
         }
     }
@@ -329,7 +329,7 @@ public class AppConfigManager {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
-            Logger.e("AppConfigManager: failed to save config for " + packageName, e);
+            Logger.e("AppConfigManager: 保存配置失败（" + packageName + "）", e);
             tmpFile.delete();
         }
     }

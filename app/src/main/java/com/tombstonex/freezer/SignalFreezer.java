@@ -16,10 +16,10 @@ public class SignalFreezer implements IFreezer {
     public boolean freeze(int pid, int uid) {
         try {
             Process.sendSignal(pid, stopSignal);
-            Logger.d("Signal freeze: pid=" + pid + " signal=" + stopSignal);
+            Logger.d("Signal 冻结: pid=" + pid + " signal=" + stopSignal);
             return true;
         } catch (Exception e) {
-            Logger.e("Signal freeze failed for pid=" + pid, e);
+            Logger.e("Signal 冻结失败 pid=" + pid, e);
             return false;
         }
     }
@@ -28,10 +28,10 @@ public class SignalFreezer implements IFreezer {
     public boolean unfreeze(int pid, int uid) {
         try {
             Process.sendSignal(pid, CONT_SIGNAL);
-            Logger.d("Signal unfreeze: pid=" + pid);
+            Logger.d("Signal 解冻: pid=" + pid);
             return true;
         } catch (Exception e) {
-            Logger.e("Signal unfreeze failed for pid=" + pid, e);
+            Logger.e("Signal 解冻失败 pid=" + pid, e);
             return false;
         }
     }

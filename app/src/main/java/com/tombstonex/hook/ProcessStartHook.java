@@ -91,15 +91,15 @@ public class ProcessStartHook {
                             try {
                                 handleProcessStartFromArgs(param.args);
                             } catch (Throwable t) {
-                                Logger.e("startProcess hook error", t);
+                                Logger.e("startProcess Hook 出错", t);
                             }
                         }
                     });
-                    Logger.i("Hooked startProcess (" + paramTypes.length + " params)");
+                    Logger.i("已 Hook startProcess (" + paramTypes.length + " 个参数)");
                     hooked = true;
                     break;
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
 
@@ -111,21 +111,21 @@ public class ProcessStartHook {
                         try {
                             handleProcessStartFromArgs(param.args);
                         } catch (Throwable t) {
-                            Logger.e("startProcess (enum) hook error", t);
+                            Logger.e("startProcess (枚举) Hook 出错", t);
                         }
                     }
                 });
                 if (n > 0) {
-                    Logger.i("Hooked startProcess via method enumeration (" + n + " overloads)");
+                    Logger.i("通过方法枚举已 Hook startProcess (" + n + " 个重载)");
                     hooked = true;
                 }
             }
 
             if (!hooked) {
-                Logger.w("Could not find startProcess with known signatures");
+                Logger.w("未找到已知签名的 startProcess");
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook startProcess", t);
+            Logger.e("Hook startProcess 失败", t);
         }
     }
 
@@ -143,17 +143,17 @@ public class ProcessStartHook {
                     try {
                         handleProcessStartResult(param.args, param.getResult());
                     } catch (Throwable t) {
-                        Logger.e("Process.start hook error", t);
+                        Logger.e("Process.start Hook 出错", t);
                     }
                 }
             });
             if (n > 0) {
-                Logger.i("Hooked Process.start (" + n + " overloads)");
+                Logger.i("已 Hook Process.start (" + n + " 个重载)");
             } else {
-                Logger.w("Process.start not found");
+                Logger.w("未找到 Process.start");
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook Process.start", t);
+            Logger.e("Hook Process.start 失败", t);
         }
     }
 
@@ -174,17 +174,17 @@ public class ProcessStartHook {
                     try {
                         handleZygoteForkResult(param.args, param.getResult());
                     } catch (Throwable t) {
-                        Logger.e("Zygote.forkAndSpecialize hook error", t);
+                        Logger.e("Zygote.forkAndSpecialize Hook 出错", t);
                     }
                 }
             });
             if (n > 0) {
-                Logger.i("Hooked Zygote.forkAndSpecialize (" + n + " overloads)");
+                Logger.i("已 Hook Zygote.forkAndSpecialize (" + n + " 个重载)");
             } else {
-                Logger.w("Zygote.forkAndSpecialize not found");
+                Logger.w("未找到 Zygote.forkAndSpecialize");
             }
         } catch (Throwable t) {
-            Logger.w("Failed to hook Zygote.forkAndSpecialize: " + t.getMessage());
+            Logger.w("Hook Zygote.forkAndSpecialize 失败: " + t.getMessage());
         }
     }
 
@@ -219,7 +219,7 @@ public class ProcessStartHook {
         if (hasFrozen) {
             boolean isMainProcess = processName.equals(packageName);
             if (!isMainProcess) {
-                Logger.i("Discovered frozen app starting new process: " + packageName
+                Logger.i("发现已冻结应用启动新进程: " + packageName
                     + " proc=" + processName + " uid=" + uid);
             }
         }
@@ -293,12 +293,12 @@ public class ProcessStartHook {
 
         if (hasFrozen && !isMainProcess) {
             // 已冻结应用启动新进程（非主进程）— 延迟 3 秒冻结
-            Logger.i("Frozen app starting new process, will freeze in " + FREEZE_DELAY_SEC + "s: "
+            Logger.i("已冻结应用启动新进程，将在 " + FREEZE_DELAY_SEC + " 秒后冻结: "
                 + packageName + " proc=" + processName + " pid=" + pid);
             scheduleFreeze(pid, uid, FREEZE_DELAY_SEC);
         } else if (existingBefore.isEmpty()) {
             // 该应用此前无运行进程（从未被手动打开）— 直接冻结
-            Logger.i("App never manually opened, freezing directly: " + packageName
+            Logger.i("应用从未被手动打开，直接冻结: " + packageName
                 + " proc=" + processName + " pid=" + pid);
             scheduleFreeze(pid, uid, FREEZE_DELAY_SEC);
         }
@@ -316,13 +316,13 @@ public class ProcessStartHook {
                     if (info == null) return;
                     // 前台进程不冻结，防止竞态条件下冻结前台应用
                     if (info.state == AppState.FOREGROUND) {
-                        Logger.d("New process became foreground, cancel freeze: pid=" + pid);
+                        Logger.d("新进程已变为前台，取消冻结: pid=" + pid);
                         return;
                     }
                     if (info.state == AppState.FROZEN) return;
                     FreezeManager.getInstance().freezeProcess(pid, uid);
                 } catch (Throwable t) {
-                    Logger.e("Delayed freeze error for new process pid=" + pid, t);
+                    Logger.e("新进程延迟冻结出错 pid=" + pid, t);
                 }
             }, delaySec, TimeUnit.SECONDS);
         });
@@ -335,7 +335,7 @@ public class ProcessStartHook {
         ScheduledFuture<?> future = pendingFreezes.remove(pid);
         if (future != null) {
             future.cancel(false);
-            Logger.d("Cancelled pending freeze for new process pid=" + pid);
+            Logger.d("已取消新进程的待冻结任务 pid=" + pid);
         }
     }
 
@@ -364,7 +364,7 @@ public class ProcessStartHook {
         try {
             return XposedHelpers.getIntField(obj, fieldName);
         } catch (Throwable t) {
-            Logger.d("getIntField failed: " + fieldName + " - " + t.getMessage());
+            Logger.d("getIntField 失败: " + fieldName + " - " + t.getMessage());
             return -1;
         }
     }
@@ -375,7 +375,7 @@ public class ProcessStartHook {
         try {
             return XposedHelpers.getIntField(result, "pid");
         } catch (Throwable t) {
-            Logger.d("getPidFromResult failed: " + t.getMessage());
+            Logger.d("getPidFromResult 失败: " + t.getMessage());
             return -1;
         }
     }
@@ -393,7 +393,7 @@ public class ProcessStartHook {
                     XposedBridge.hookMethod(method, callback);
                     count++;
                 } catch (Throwable t) {
-                    Logger.d("hookMethod failed for " + methodName + ": " + t.getMessage());
+                    Logger.d("hookMethod 失败 " + methodName + ": " + t.getMessage());
                 }
             }
         }

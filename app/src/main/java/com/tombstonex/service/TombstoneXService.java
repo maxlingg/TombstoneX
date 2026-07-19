@@ -89,7 +89,7 @@ public class TombstoneXService extends Binder {
                 java.lang.reflect.Method getPackagesForUid = pm.getClass().getMethod("getPackagesForUid", int.class);
                 packages = (String[]) getPackagesForUid.invoke(pm, callingUid);
             } catch (Throwable t) {
-                Logger.e("Failed to get packages for uid", t);
+                Logger.e("获取 uid 的包名失败", t);
             }
             boolean isModuleCaller = false;
             if (packages != null) {
@@ -508,7 +508,7 @@ public class TombstoneXService extends Binder {
                     return super.onTransact(code, data, reply, flags);
             }
         } catch (Exception e) {
-            Logger.e("TombstoneXService transaction error: " + code, e);
+            Logger.e("TombstoneXService 事务出错: " + code, e);
             // P2-02: 仅在 reply 尚未被写入（writeNoException 未调用）时才写入异常，
             // 避免在 writeNoException 之后再 writeException 导致 reply 数据错位
             if (!replied) {
@@ -524,18 +524,18 @@ public class TombstoneXService extends Binder {
      * 尝试多种方法签名以兼容不同 Android 版本。
      */
     public static void register() {
-        Logger.i("TombstoneXService.register() starting...");
+        Logger.i("TombstoneXService.register() 开始...");
         try {
             Class<?> smClass = Class.forName("android.os.ServiceManager");
-            Logger.i("ServiceManager class loaded: " + smClass.getName());
+            Logger.i("ServiceManager 类已加载: " + smClass.getName());
 
             java.lang.reflect.Method getService = smClass.getMethod("getService", String.class);
-            Logger.i("ServiceManager.getService resolved");
+            Logger.i("ServiceManager.getService 已解析");
 
             // P3-04: 防止重复注册。若服务已注册则跳过
             Object existing = getService.invoke(null, SERVICE_NAME);
             if (existing != null) {
-                Logger.i("TombstoneXService already registered, skip");
+                Logger.i("TombstoneXService 已注册，跳过");
                 setRegStatus("already_registered");
                 return;
             }
@@ -551,17 +551,17 @@ public class TombstoneXService extends Binder {
                 java.lang.reflect.Method addService = smClass.getMethod("addService", String.class, IBinder.class);
                 addService.invoke(null, SERVICE_NAME, serviceInstance);
                 registered = true;
-                Logger.i("addService(String, IBinder) succeeded");
+                Logger.i("addService(String, IBinder) 成功");
             } catch (NoSuchMethodException e) {
-                Logger.i("addService(String, IBinder) not found, trying alternative signatures");
+                Logger.i("未找到 addService(String, IBinder)，尝试其他签名");
                 lastError = "NoSuchMethod: addService(String,IBinder)";
             } catch (java.lang.reflect.InvocationTargetException e) {
                 Throwable cause = e.getCause();
                 lastError = (cause != null ? cause.getClass().getSimpleName() : "ITE") + ": " + (cause != null ? cause.getMessage() : "null");
-                Logger.e("addService(String, IBinder) InvocationTargetException, cause: " + lastError, cause != null ? cause : e);
+                Logger.e("addService(String, IBinder) InvocationTargetException 异常，原因: " + lastError, cause != null ? cause : e);
             } catch (Throwable e) {
                 lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
-                Logger.e("addService(String, IBinder) failed: " + lastError, e);
+                Logger.e("addService(String, IBinder) 失败: " + lastError, e);
             }
 
             // 尝试 2: addService(String, IBinder, boolean allowIsolated)
@@ -570,21 +570,21 @@ public class TombstoneXService extends Binder {
                     java.lang.reflect.Method addService = smClass.getMethod("addService", String.class, IBinder.class, boolean.class);
                     addService.invoke(null, SERVICE_NAME, serviceInstance, false);
                     registered = true;
-                    Logger.i("addService(String, IBinder, boolean) succeeded");
+                    Logger.i("addService(String, IBinder, boolean) 成功");
                 } catch (NoSuchMethodException e) {
-                    Logger.i("addService(String, IBinder, boolean) not found");
+                    Logger.i("未找到 addService(String, IBinder, boolean)");
                     if (lastError.isEmpty()) lastError = "NoSuchMethod: addService(String,IBinder,boolean)";
                 } catch (java.lang.reflect.InvocationTargetException e) {
                     Throwable cause = e.getCause();
                     String causeStr = (cause != null ? cause.getClass().getSimpleName() : "ITE") + ": " + (cause != null ? cause.getMessage() : "null");
-                    Logger.e("addService(String, IBinder, boolean) InvocationTargetException, cause: " + causeStr, cause != null ? cause : e);
+                    Logger.e("addService(String, IBinder, boolean) InvocationTargetException 异常，原因: " + causeStr, cause != null ? cause : e);
                     // 如果是相同错误则不覆盖第一次的错误信息
                     if (lastError.isEmpty() || lastError.startsWith("ITE") || lastError.startsWith("InvocationTargetException")) {
                         lastError = causeStr;
                     }
                 } catch (Throwable e) {
                     String errStr = e.getClass().getSimpleName() + ": " + e.getMessage();
-                    Logger.e("addService(String, IBinder, boolean) failed: " + errStr, e);
+                    Logger.e("addService(String, IBinder, boolean) 失败: " + errStr, e);
                     if (lastError.isEmpty()) lastError = errStr;
                 }
             }
@@ -596,19 +596,19 @@ public class TombstoneXService extends Binder {
                     addService.setAccessible(true);
                     addService.invoke(null, SERVICE_NAME, serviceInstance);
                     registered = true;
-                    Logger.i("getDeclaredMethod addService(String, IBinder) succeeded");
+                    Logger.i("getDeclaredMethod addService(String, IBinder) 成功");
                 } catch (NoSuchMethodException e) {
                     if (lastError.isEmpty()) lastError = "NoSuchMethod (declared): addService(String,IBinder)";
                 } catch (java.lang.reflect.InvocationTargetException e) {
                     Throwable cause = e.getCause();
                     String causeStr = (cause != null ? cause.getClass().getSimpleName() : "ITE") + ": " + (cause != null ? cause.getMessage() : "null");
-                    Logger.e("getDeclaredMethod addService InvocationTargetException, cause: " + causeStr, cause != null ? cause : e);
+                    Logger.e("getDeclaredMethod addService InvocationTargetException 异常，原因: " + causeStr, cause != null ? cause : e);
                     if (lastError.isEmpty() || lastError.startsWith("ITE") || lastError.startsWith("InvocationTargetException")) {
                         lastError = causeStr;
                     }
                 } catch (Throwable e) {
                     String errStr = e.getClass().getSimpleName() + ": " + e.getMessage();
-                    Logger.e("getDeclaredMethod addService failed: " + errStr, e);
+                    Logger.e("getDeclaredMethod addService 失败: " + errStr, e);
                     if (lastError.isEmpty()) lastError = errStr;
                 }
             }
@@ -617,18 +617,18 @@ public class TombstoneXService extends Binder {
             if (registered) {
                 Object verify = getService.invoke(null, SERVICE_NAME);
                 if (verify != null) {
-                    Logger.i("TombstoneXService registration verified OK");
+                    Logger.i("TombstoneXService 注册已验证通过");
                     setRegStatus("ok");
                 } else {
-                    Logger.e("TombstoneXService registration verification FAILED - getService returned null after addService");
+                    Logger.e("TombstoneXService 注册验证失败 - addService 后 getService 返回 null");
                     setRegStatus("verify_failed_null");
                 }
             } else {
-                Logger.e("All addService attempts failed. Last error: " + lastError);
+                Logger.e("所有 addService 尝试均失败。最后错误: " + lastError);
                 setRegStatus("failed:" + lastError);
             }
         } catch (Throwable t) {
-            Logger.e("Failed to register TombstoneXService", t);
+            Logger.e("TombstoneXService 注册失败", t);
             setRegStatus("exception:" + t.getClass().getSimpleName());
         }
     }
@@ -644,7 +644,7 @@ public class TombstoneXService extends Binder {
             String truncated = status.length() > 91 ? status.substring(0, 91) : status;
             setMethod.invoke(null, "persist.sys.tombstonex.regstatus", truncated);
         } catch (Throwable t) {
-            Logger.e("Failed to set reg status property", t);
+            Logger.e("设置注册状态属性失败", t);
         }
     }
 

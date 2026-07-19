@@ -60,7 +60,7 @@ public class FileIPC {
         try {
             Files.write(new File(READY_FILE).toPath(), "1".getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
-            Logger.e("FileIPC: failed to write ready file", e);
+            Logger.e("FileIPC: 写入就绪文件失败", e);
         }
 
         // 创建命令文件和响应文件
@@ -70,7 +70,7 @@ public class FileIPC {
             if (!cmdFile.exists()) cmdFile.createNewFile();
             if (!respFile.exists()) respFile.createNewFile();
         } catch (IOException e) {
-            Logger.e("FileIPC: failed to create IPC files", e);
+            Logger.e("FileIPC: 创建 IPC 文件失败", e);
         }
 
         // 设置文件权限，确保 App 通过 su 可读写
@@ -84,7 +84,7 @@ public class FileIPC {
             respFile.setWritable(true, false);
             new File(READY_FILE).setReadable(true, false);
         } catch (Exception e) {
-            Logger.e("FileIPC: failed to set permissions", e);
+            Logger.e("FileIPC: 设置权限失败", e);
         }
 
         // 使用 FileObserver 监控命令文件修改
@@ -102,7 +102,7 @@ public class FileIPC {
         };
         cmdObserver.startWatching();
 
-        Logger.i("FileIPC started, monitoring " + CMD_FILE);
+        Logger.i("FileIPC 已启动，正在监控 " + CMD_FILE);
     }
 
     /**
@@ -119,7 +119,7 @@ public class FileIPC {
             JSONObject args = cmd.optJSONObject("args");
             if (args == null) args = new JSONObject();
 
-            Logger.d("FileIPC: handling command code=" + code);
+            Logger.d("FileIPC: 正在处理命令 code=" + code);
 
             JSONObject resp = new JSONObject();
             try {
@@ -131,14 +131,14 @@ public class FileIPC {
             } catch (Exception e) {
                 resp.put("ok", false);
                 resp.put("error", e.getMessage() != null ? e.getMessage() : e.toString());
-                Logger.e("FileIPC: command " + code + " failed", e);
+                Logger.e("FileIPC: 命令 " + code + " 失败", e);
             }
 
             // 写入响应
             writeFile(new File(RESP_FILE), resp.toString());
 
         } catch (Exception e) {
-            Logger.e("FileIPC: handleCommand error", e);
+            Logger.e("FileIPC: 处理命令出错", e);
         }
     }
 
@@ -420,7 +420,7 @@ public class FileIPC {
             writer.write(content);
             writer.flush();
         } catch (IOException e) {
-            Logger.e("FileIPC: writeFile error", e);
+            Logger.e("FileIPC: 写入文件出错", e);
         }
     }
 }

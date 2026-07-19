@@ -80,18 +80,18 @@ public class OomAdjManager {
             try {
                 int priority = Integer.parseInt(valStr);
                 if (priority < PRIORITY_HIGH || priority > PRIORITY_LOW) {
-                    Logger.w("OomAdjManager: invalid priority " + priority
-                        + " for " + pkg + ", skip");
+                    Logger.w("OomAdjManager: 无效优先级 " + priority
+                        + "（" + pkg + "），跳过");
                     continue;
                 }
                 map.put(pkg, priority);
             } catch (NumberFormatException e) {
-                Logger.w("OomAdjManager: failed to parse priority for "
-                    + pkg + ": " + valStr);
+                Logger.w("OomAdjManager: 解析优先级失败（"
+                    + pkg + "）: " + valStr);
             }
         }
         priorityMap = map;
-        Logger.d("OomAdjManager loaded: " + map.size() + " entries");
+        Logger.d("OomAdjManager 已加载: " + map.size() + " 条记录");
     }
 
     /**
@@ -117,8 +117,8 @@ public class OomAdjManager {
             }
             if (FileUtils.writeLines(CONFIG_FILE, lines)) {
                 priorityMap = new ConcurrentHashMap<>(copy);
-                Logger.i("OomAdjManager: set priority " + priorityName(priority)
-                    + " for " + packageName);
+                Logger.i("OomAdjManager: 已设置优先级 " + priorityName(priority)
+                    + "（" + packageName + "）");
             }
         }
     }

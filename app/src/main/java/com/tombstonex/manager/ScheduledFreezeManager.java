@@ -57,7 +57,7 @@ public class ScheduledFreezeManager {
      */
     public synchronized void start() {
         if (executor != null && !executor.isShutdown()) {
-            Logger.d("ScheduledFreezeManager already running");
+            Logger.d("ScheduledFreezeManager 已在运行");
             return;
         }
         executor = new ScheduledThreadPoolExecutor(1);
@@ -65,7 +65,7 @@ public class ScheduledFreezeManager {
         executor.setRemoveOnCancelPolicy(true);
         executor.scheduleAtFixedRate(this::scanAndFreeze,
             SCAN_INTERVAL_SECONDS, SCAN_INTERVAL_SECONDS, TimeUnit.SECONDS);
-        Logger.i("ScheduledFreezeManager started, interval=" + SCAN_INTERVAL_SECONDS + "s");
+        Logger.i("ScheduledFreezeManager 已启动，间隔=" + SCAN_INTERVAL_SECONDS + "s");
     }
 
     /**
@@ -75,7 +75,7 @@ public class ScheduledFreezeManager {
         if (executor != null) {
             executor.shutdownNow();
             executor = null;
-            Logger.i("ScheduledFreezeManager stopped");
+            Logger.i("ScheduledFreezeManager 已停止");
         }
         lastFreezeTime.clear();
     }
@@ -87,7 +87,7 @@ public class ScheduledFreezeManager {
         try {
             // 全局暂停时不执行新的冻结
             if (ConfigManager.getInstance().isGlobalPaused()) {
-                Logger.d("ScheduledFreezeManager: global paused, skip scan");
+                Logger.d("ScheduledFreezeManager: 全局已暂停，跳过扫描");
                 return;
             }
 
@@ -114,7 +114,7 @@ public class ScheduledFreezeManager {
 
                 // 智能状态检查（如果 SmartStateHook 可用）
                 if (info.packageName != null && isAppActive(info.uid, info.packageName)) {
-                    Logger.d("ScheduledFreezeManager: app active, skip: " + info.packageName);
+                    Logger.d("ScheduledFreezeManager: 应用活跃，跳过: " + info.packageName);
                     continue;
                 }
 
@@ -130,10 +130,10 @@ public class ScheduledFreezeManager {
                 }
             }
 
-            Logger.d("ScheduledFreezeManager scan done: scanned=" + scanned
+            Logger.d("ScheduledFreezeManager 扫描完成: scanned=" + scanned
                 + " frozen=" + frozen);
         } catch (Throwable t) {
-            Logger.e("ScheduledFreezeManager scan error", t);
+            Logger.e("ScheduledFreezeManager 扫描出错", t);
         }
     }
 
@@ -154,7 +154,7 @@ public class ScheduledFreezeManager {
         } catch (ClassNotFoundException e) {
             // SmartStateHook 未实现，降级为不活跃 —— 不记录日志避免刷屏
         } catch (Throwable t) {
-            Logger.d("SmartStateHook.isAppActive reflect failed: " + t.getMessage());
+            Logger.d("SmartStateHook.isAppActive 反射调用失败: " + t.getMessage());
         }
         return false;
     }

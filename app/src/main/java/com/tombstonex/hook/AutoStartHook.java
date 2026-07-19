@@ -63,7 +63,7 @@ public class AutoStartHook {
                         // 发送方被冻结 → 拦截（setResult(null) 使调用方收到 null）
                         if (callerUid >= 10000 && isUidFrozen(callerUid)
                             && !isAutoStartAllowed(callerUid)) {
-                            Logger.i("Blocking startService from frozen caller uid=" + callerUid);
+                            Logger.i("拦截来自已冻结调用方的 startService uid=" + callerUid);
                             param.setResult(null);
                             return;
                         }
@@ -74,15 +74,15 @@ public class AutoStartHook {
                             handleTargetPackage(intent);
                         }
                     } catch (Throwable t) {
-                        Logger.e("AMS.startService hook error", t);
+                        Logger.e("AMS.startService Hook 出错", t);
                     }
                 }
             };
 
             int n = hookAllMethodsByName(amsClass, "startService", callback);
-            Logger.i("Hooked AMS startService (" + n + " overloads)");
+            Logger.i("已 Hook AMS startService (" + n + " 个重载)");
         } catch (Throwable t) {
-            Logger.e("Failed to hook AMS.startService", t);
+            Logger.e("Hook AMS.startService 失败", t);
         }
     }
 
@@ -106,7 +106,7 @@ public class AutoStartHook {
 
                         // 检查发送方是否被冻结
                         if (isUidFrozen(callerUid) && !isAutoStartAllowed(callerUid)) {
-                            Logger.i("Blocking startService from frozen app uid=" + callerUid);
+                            Logger.i("拦截来自已冻结应用的 startService uid=" + callerUid);
                             param.setResult(null);
                             return;
                         }
@@ -117,17 +117,17 @@ public class AutoStartHook {
                             handleTargetPackage(intent);
                         }
                     } catch (Throwable t) {
-                        Logger.e("ContextImpl.startService hook error", t);
+                        Logger.e("ContextImpl.startService Hook 出错", t);
                     }
                 }
             };
 
             int n1 = hookAllMethodsByName(contextImplClass, "startService", callback);
             int n2 = hookAllMethodsByName(contextImplClass, "startForegroundService", callback);
-            Logger.i("Hooked ContextImpl (startService=" + n1
+            Logger.i("已 Hook ContextImpl (startService=" + n1
                 + " startForegroundService=" + n2 + ")");
         } catch (Throwable t) {
-            Logger.w("Failed to hook ContextImpl.startService: " + t.getMessage());
+            Logger.w("Hook ContextImpl.startService 失败: " + t.getMessage());
         }
     }
 
@@ -149,19 +149,19 @@ public class AutoStartHook {
                         int uid = Binder.getCallingUid();
                         if (uid < 10000) return;
                         if (isUidFrozen(uid) && !isAutoStartAllowed(uid)) {
-                            Logger.d("Skipping BroadcastReceiver.onReceive for frozen uid=" + uid);
+                            Logger.d("跳过已冻结 uid 的 BroadcastReceiver.onReceive uid=" + uid);
                             param.setResult(null);
                         }
                     } catch (Throwable t) {
-                        Logger.e("BroadcastReceiver.onReceive hook error", t);
+                        Logger.e("BroadcastReceiver.onReceive Hook 出错", t);
                     }
                 }
             };
 
             int n = hookAllMethodsByName(receiverClass, "onReceive", callback);
-            Logger.i("Hooked BroadcastReceiver.onReceive (" + n + " overloads)");
+            Logger.i("已 Hook BroadcastReceiver.onReceive (" + n + " 个重载)");
         } catch (Throwable t) {
-            Logger.w("Failed to hook BroadcastReceiver.onReceive: " + t.getMessage());
+            Logger.w("Hook BroadcastReceiver.onReceive 失败: " + t.getMessage());
         }
     }
 
@@ -189,7 +189,7 @@ public class AutoStartHook {
         }
 
         if (targetFrozen) {
-            Logger.i("Target app frozen, temporarily unfreezing for start: " + targetPkg);
+            Logger.i("目标应用已冻结，临时解冻以启动: " + targetPkg);
             // 解冻目标应用所有进程
             FreezeManager.getInstance().unfreezePackage(targetPkg);
             // 3 秒后重新冻结
@@ -197,9 +197,9 @@ public class AutoStartHook {
             scheduler.schedule(() -> {
                 try {
                     FreezeManager.getInstance().freezePackage(pkg);
-                    Logger.d("Re-frozen target app after temp unfreeze: " + pkg);
+                    Logger.d("临时解冻后已重新冻结目标应用: " + pkg);
                 } catch (Throwable t) {
-                    Logger.e("Re-freeze error for target " + pkg, t);
+                    Logger.e("重新冻结目标应用出错: " + pkg, t);
                 }
             }, UNFREEZE_TEMP_SEC, TimeUnit.SECONDS);
         }
@@ -235,7 +235,7 @@ public class AutoStartHook {
                 return (String) pkg;
             }
         } catch (Throwable t) {
-            Logger.d("getTargetPackage failed: " + t.getMessage());
+            Logger.d("getTargetPackage 失败: " + t.getMessage());
         }
         return null;
     }
@@ -250,7 +250,7 @@ public class AutoStartHook {
                 if (info.state == AppState.FROZEN) return true;
             }
         } catch (Throwable t) {
-            Logger.d("isUidFrozen failed uid=" + uid + ": " + t.getMessage());
+            Logger.d("isUidFrozen 失败 uid=" + uid + ": " + t.getMessage());
         }
         return false;
     }
@@ -286,9 +286,9 @@ public class AutoStartHook {
             }
         } catch (ClassNotFoundException e) {
             // AppConfigManager 不存在，默认 false（即拦截被冻结应用的自启）
-            Logger.d("AppConfigManager not found, autoStartAllowed defaults to false");
+            Logger.d("未找到 AppConfigManager，autoStartAllowed 默认为 false");
         } catch (Throwable t) {
-            Logger.d("isAutoStartAllowed check failed: " + t.getMessage());
+            Logger.d("isAutoStartAllowed 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -303,7 +303,7 @@ public class AutoStartHook {
                 if (info.packageName != null) return info.packageName;
             }
         } catch (Throwable t) {
-            Logger.d("getPackageNameForUid failed uid=" + uid + ": " + t.getMessage());
+            Logger.d("getPackageNameForUid 失败 uid=" + uid + ": " + t.getMessage());
         }
         return null;
     }
@@ -321,7 +321,7 @@ public class AutoStartHook {
                     XposedBridge.hookMethod(method, callback);
                     count++;
                 } catch (Throwable t) {
-                    Logger.d("hookMethod failed for " + methodName + ": " + t.getMessage());
+                    Logger.d("hookMethod 失败 " + methodName + ": " + t.getMessage());
                 }
             }
         }

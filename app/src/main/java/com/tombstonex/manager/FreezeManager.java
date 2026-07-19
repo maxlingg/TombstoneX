@@ -34,21 +34,21 @@ public class FreezeManager {
 
     private void selectFreezer() {
         FreezeMode mode = ConfigManager.getInstance().getFreezeMode();
-        Logger.i("Selecting freezer: " + mode);
+        Logger.i("正在选择 freezer: " + mode);
 
         switch (mode) {
             case SYSTEM_API:
                 currentFreezer = new SystemApiFreezer();
                 if (currentFreezer.isAvailable()) break;
-                Logger.w("SystemApi freezer not available, falling back to CgroupV2");
+                Logger.w("SystemApi freezer 不可用，回退到 CgroupV2");
             case CGROUP_V2:
                 currentFreezer = new CgroupFreezerV2();
                 if (currentFreezer.isAvailable()) break;
-                Logger.w("CgroupV2 not available, falling back to CgroupV1");
+                Logger.w("CgroupV2 不可用，回退到 CgroupV1");
             case CGROUP_V1:
                 currentFreezer = new CgroupFreezerV1();
                 if (currentFreezer.isAvailable()) break;
-                Logger.w("CgroupV1 not available, falling back to Signal");
+                Logger.w("CgroupV1 不可用，回退到 Signal");
             case SIGNAL_20:
                 currentFreezer = new SignalFreezer(true);  // SIGTSTP=20
                 if (currentFreezer.isAvailable()) break;
@@ -58,15 +58,15 @@ public class FreezeManager {
                 if (currentFreezer.isAvailable()) break;
                 // 最终回退
             default:
-                Logger.w("No freezer available");
+                Logger.w("无可用 freezer");
                 currentFreezer = null;
                 break;
         }
         if (currentFreezer != null) {
-            Logger.i("Selected freezer: " + currentFreezer.getName()
+            Logger.i("已选择 freezer: " + currentFreezer.getName()
                 + " available=" + currentFreezer.isAvailable());
         } else {
-            Logger.w("No freezer selected");
+            Logger.w("未选择 freezer");
         }
     }
 
@@ -75,7 +75,7 @@ public class FreezeManager {
         synchronized (freezeLock) {
             // 通过文件标记检查全局暂停状态（跨进程同步）
             if (ConfigManager.getInstance().isGlobalPaused()) {
-                Logger.d("Global paused, skip freeze: pid=" + pid);
+                Logger.d("全局已暂停，跳过冻结: pid=" + pid);
                 return false;
             }
 
@@ -84,24 +84,24 @@ public class FreezeManager {
             if (info != null) {
                 if (!WhitelistManager.getInstance().shouldFreeze(
                         info.packageName, info.processName, info.isSystemApp)) {
-                    Logger.d("App in whitelist, skip freeze (defensive): " + info.packageName);
+                    Logger.d("应用在白名单中，跳过冻结（防御性）: " + info.packageName);
                     return false;
                 }
                 // 冻结去重：检查是否已冻结
                 if (info.state == AppState.FROZEN) {
-                    Logger.d("Process already frozen, skip: pid=" + pid);
+                    Logger.d("进程已冻结，跳过: pid=" + pid);
                     return true;
                 }
                 // P1-N1: 前台进程不冻结，防止竞态条件下冻结前台应用导致 ANR。
                 // 延迟冻结任务在调度时检查过 FOREGROUND，但进入 freezeLock 前进程可能已切回前台。
                 if (info.state == AppState.FOREGROUND) {
-                    Logger.d("Process is foreground, skip freeze: pid=" + pid);
+                    Logger.d("进程为前台，跳过冻结: pid=" + pid);
                     return false;
                 }
             }
 
             if (currentFreezer == null) {
-                Logger.w("No freezer available, cannot freeze: pid=" + pid);
+                Logger.w("无可用 freezer，无法冻结: pid=" + pid);
                 return false;
             }
             boolean result = currentFreezer.freeze(pid, uid);
@@ -143,7 +143,7 @@ public class FreezeManager {
                 return true;
             }
             if (currentFreezer == null) {
-                Logger.w("No freezer available, cannot unfreeze: pid=" + pid);
+                Logger.w("无可用 freezer，无法解冻: pid=" + pid);
                 return false;
             }
             boolean result = currentFreezer.unfreeze(pid, uid);
@@ -182,7 +182,7 @@ public class FreezeManager {
     public void pauseAll() {
         ConfigManager.getInstance().setGlobalPaused(true);
         ProcessTracker.getInstance().unfreezeAll(this);
-        Logger.i("Global paused, all processes unfrozen");
+        Logger.i("全局已暂停，所有进程已解冻");
     }
 
     /**
@@ -190,7 +190,7 @@ public class FreezeManager {
      */
     public void resumeAll() {
         ConfigManager.getInstance().setGlobalPaused(false);
-        Logger.i("Global resumed, freeze will continue normally");
+        Logger.i("全局已恢复，冻结将继续正常运行");
     }
 
     public boolean isGlobalPaused() {
@@ -219,9 +219,9 @@ public class FreezeManager {
             if (currentFreezer != null && currentFreezer.unfreeze(info.pid, info.uid)) {
                 ProcessTracker.getInstance().updateState(info.pid, AppState.BACKGROUND);
             } else {
-                Logger.w("Failed to unfreeze pid=" + info.pid + " during reselect");
+                Logger.w("重新选择期间解冻 pid=" + info.pid + " 失败");
             }
         }
-        Logger.i("Unfroze all frozen processes before reselect: " + frozenList.size());
+        Logger.i("重新选择前已解冻所有冻结进程: " + frozenList.size());
     }
 }

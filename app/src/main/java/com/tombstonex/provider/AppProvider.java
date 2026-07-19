@@ -85,18 +85,18 @@ public class AppProvider {
                     ));
                 } catch (Exception e) {
                     // 逐应用捕获异常，不影响其他应用的加载
-                    Logger.w("Failed to load app info: " + pkg.packageName + " - " + e.getMessage());
+                    Logger.w("加载应用信息失败: " + pkg.packageName + " - " + e.getMessage());
                 }
             }
 
             // 按名称排序
             result.sort(Comparator.comparing(a -> a.label.toLowerCase(java.util.Locale.ROOT)));
 
-            Logger.i("AppProvider: loaded " + result.size() + " apps"
-                + (includeSystem ? " (including system)" : " (user only)")
-                + (loadIcon ? "" : " (no icons)"));
+            Logger.i("AppProvider: 已加载 " + result.size() + " 个应用"
+                + (includeSystem ? "（含系统应用）" : "（仅用户应用）")
+                + (loadIcon ? "" : "（无图标）"));
         } catch (Exception e) {
-            Logger.e("AppProvider: failed to load apps", e);
+            Logger.e("AppProvider: 加载应用列表失败", e);
         }
         return result;
     }

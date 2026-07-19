@@ -60,24 +60,24 @@ public class ANRHook {
 
                                 AppInfo appInfo = ProcessTracker.getInstance().getByPid(pid);
                                 if (appInfo != null && appInfo.state == AppState.FROZEN) {
-                                    Logger.d("Blocking ANR for frozen app: "
+                                    Logger.d("拦截已冻结应用的 ANR: "
                                         + appInfo.packageName + " pid=" + pid);
                                     param.setResult(null);
                                 }
                             } catch (Throwable t) {
-                                Logger.e("appNotResponding hook error", t);
+                                Logger.e("appNotResponding Hook 出错", t);
                             }
                         }
                     });
-                    Logger.i("Hooked appNotResponding on ProcessRecord");
+                    Logger.i("已在 ProcessRecord 上 Hook appNotResponding");
                     hooked = true;
                     break;
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
         } catch (Throwable t) {
-            Logger.w("ProcessRecord.appNotResponding not found, trying AnrHelper: " + t.getMessage());
+            Logger.w("未找到 ProcessRecord.appNotResponding，尝试 AnrHelper: " + t.getMessage());
         }
 
         // Android 14+：尝试在 AnrHelper 上 hook
@@ -112,29 +112,29 @@ public class ANRHook {
 
                                     AppInfo appInfo = ProcessTracker.getInstance().getByPid(pid);
                                     if (appInfo != null && appInfo.state == AppState.FROZEN) {
-                                        Logger.d("Blocking ANR (AnrHelper) for frozen app: "
+                                        Logger.d("拦截已冻结应用的 ANR (AnrHelper): "
                                             + appInfo.packageName + " pid=" + pid);
                                         param.setResult(null);
                                     }
                                 } catch (Throwable t) {
-                                    Logger.e("AnrHelper.appNotResponding hook error", t);
+                                    Logger.e("AnrHelper.appNotResponding Hook 出错", t);
                                 }
                             }
                         });
-                        Logger.i("Hooked appNotResponding on AnrHelper");
+                        Logger.i("已在 AnrHelper 上 Hook appNotResponding");
                         hooked = true;
                         break;
                     } catch (Throwable e) {
-                        Logger.d("Hook variant failed: " + e.getMessage());
+                        Logger.d("Hook 变体失败: " + e.getMessage());
                     }
                 }
             } catch (Throwable t) {
-                Logger.w("AnrHelper.appNotResponding not found: " + t.getMessage());
+                Logger.w("未找到 AnrHelper.appNotResponding: " + t.getMessage());
             }
         }
 
         if (!hooked) {
-            Logger.w("Failed to hook appNotResponding on any known class");
+            Logger.w("未能在任何已知类上 Hook appNotResponding");
         }
     }
 
@@ -178,28 +178,28 @@ public class ANRHook {
                                 AppInfo appInfo = ProcessTracker.getInstance().getByPid(pid);
 
                                 if (appInfo != null && appInfo.state == AppState.FROZEN) {
-                                    Logger.d("Blocking input ANR for frozen app: "
+                                    Logger.d("拦截已冻结应用的输入 ANR: "
                                         + appInfo.packageName);
                                     param.setResult(null);
                                 }
                             } catch (Throwable t) {
-                                Logger.e("inputDispatchingTimedOut hook error", t);
+                                Logger.e("inputDispatchingTimedOut Hook 出错", t);
                             }
                         }
                     });
-                    Logger.i("Hooked inputDispatchingTimedOut");
+                    Logger.i("已 Hook inputDispatchingTimedOut");
                     hooked = true;
                     break;
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
 
             if (!hooked) {
-                Logger.w("Could not find inputDispatchingTimedOut with known signatures");
+                Logger.w("未找到已知签名的 inputDispatchingTimedOut");
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook inputDispatchingTimedOut", t);
+            Logger.e("Hook inputDispatchingTimedOut 失败", t);
         }
     }
 
@@ -233,18 +233,18 @@ public class ANRHook {
 
                         if (appInfo != null && appInfo.state == AppState.FROZEN
                             && reason != null && reason.contains("ANR")) {
-                            Logger.d("Blocking killAppWithReason (ANR) for frozen app: "
+                            Logger.d("拦截已冻结应用的 killAppWithReason (ANR): "
                                 + appInfo.packageName + " pid=" + pid);
                             param.setResult(null);
                         }
                     } catch (Throwable t) {
-                        Logger.e("killAppWithReason hook error", t);
+                        Logger.e("killAppWithReason Hook 出错", t);
                     }
                 }
             });
-            Logger.i("Hooked killAppWithReason (fallback)");
+            Logger.i("已 Hook killAppWithReason (降级)");
         } catch (Throwable t) {
-            Logger.w("killAppWithReason not available: " + t.getMessage());
+            Logger.w("killAppWithReason 不可用: " + t.getMessage());
         }
     }
 
@@ -262,7 +262,7 @@ public class ANRHook {
                 }
             }
         } catch (Throwable t) {
-            Logger.e("Failed to get pid from ProcessRecord", t);
+            Logger.e("从 ProcessRecord 获取 pid 失败", t);
         }
         return -1;
     }

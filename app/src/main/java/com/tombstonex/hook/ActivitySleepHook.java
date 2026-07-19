@@ -81,26 +81,26 @@ public class ActivitySleepHook {
                             try {
                                 String pkg = extractPackageFromArgs(param.args);
                                 if (pkg != null && isPackageFrozen(pkg)) {
-                                    Logger.d("Skip sleepPackage for frozen app: " + pkg);
+                                    Logger.d("跳过已冻结应用的 sleepPackage: " + pkg);
                                     param.setResult(null);
                                 }
                             } catch (Throwable t) {
-                                Logger.e("sleepPackage hook error", t);
+                                Logger.e("sleepPackage Hook 出错", t);
                             }
                         }
                     });
-                    Logger.i("Hooked sleepPackage on " + className + " (" + params.length + " params)");
+                    Logger.i("已 Hook sleepPackage 于 " + className + " (" + params.length + " 个参数)");
                     hooked = true;
                     break;
                 } catch (Throwable e) {
-                    Logger.d("sleepPackage hook variant failed: " + e.getMessage());
+                    Logger.d("sleepPackage Hook 变体失败: " + e.getMessage());
                 }
             }
             if (hooked) break;
         }
 
         if (!hooked) {
-            Logger.w("Could not find sleepPackage with known signatures on AMS/ATMS");
+            Logger.w("在 AMS/ATMS 上未找到已知签名的 sleepPackage");
         }
     }
 
@@ -133,7 +133,7 @@ public class ActivitySleepHook {
         try {
             clazz = XposedHelpers.findClass(className, classLoader);
         } catch (Throwable t) {
-            Logger.d("Class not found for finishDisabledPackageActivities: " + className);
+            Logger.d("未找到 finishDisabledPackageActivities 的类: " + className);
             return;
         }
 
@@ -171,24 +171,24 @@ public class ActivitySleepHook {
                         try {
                             String pkg = extractPackageFromArgs(param.args);
                             if (pkg != null && isPackageFrozen(pkg)) {
-                                Logger.d("Skip finishDisabledPackageActivities for frozen app: " + pkg
-                                    + " on " + clazz.getName());
+                                Logger.d("跳过已冻结应用的 finishDisabledPackageActivities: " + pkg
+                                    + " 于 " + clazz.getName());
                                 param.setResult(null);
                             }
                         } catch (Throwable t) {
-                            Logger.e("finishDisabledPackageActivities hook error", t);
+                            Logger.e("finishDisabledPackageActivities Hook 出错", t);
                         }
                     }
                 });
-                Logger.i("Hooked finishDisabledPackageActivities on " + className
-                    + " (" + params.length + " params)");
+                Logger.i("已 Hook finishDisabledPackageActivities 于 " + className
+                    + " (" + params.length + " 个参数)");
                 return; // 命中一个签名即止
             } catch (Throwable e) {
-                Logger.d("finishDisabledPackageActivities variant failed on "
+                Logger.d("finishDisabledPackageActivities 变体失败 于 "
                     + className + ": " + e.getMessage());
             }
         }
-        Logger.w("Could not find finishDisabledPackageActivities with known signatures on " + className);
+        Logger.w("在 " + className + " 上未找到已知签名的 finishDisabledPackageActivities");
     }
 
     /**
@@ -200,7 +200,7 @@ public class ActivitySleepHook {
         try {
             clazz = XposedHelpers.findClass(ACTIVITY_RECORD_CLASS, classLoader);
         } catch (Throwable t) {
-            Logger.w("ActivityRecord class not found: " + t.getMessage());
+            Logger.w("未找到 ActivityRecord 类: " + t.getMessage());
             return;
         }
 
@@ -224,24 +224,24 @@ public class ActivitySleepHook {
                         try {
                             String pkg = getPackageFromActivityRecord(param.thisObject);
                             if (pkg != null && isPackageFrozen(pkg)) {
-                                Logger.d("Skip ActivityRecord.goToSleep for frozen app: " + pkg);
+                                Logger.d("跳过已冻结应用的 ActivityRecord.goToSleep: " + pkg);
                                 param.setResult(null);
                             }
                         } catch (Throwable t) {
-                            Logger.e("ActivityRecord.goToSleep hook error", t);
+                            Logger.e("ActivityRecord.goToSleep Hook 出错", t);
                         }
                     }
                 });
-                Logger.i("Hooked ActivityRecord.goToSleep (" + params.length + " params)");
+                Logger.i("已 Hook ActivityRecord.goToSleep (" + params.length + " 个参数)");
                 hooked = true;
                 break;
             } catch (Throwable e) {
-                Logger.d("goToSleep hook variant failed: " + e.getMessage());
+                Logger.d("goToSleep Hook 变体失败: " + e.getMessage());
             }
         }
 
         if (!hooked) {
-            Logger.w("Could not find ActivityRecord.goToSleep with known signatures");
+            Logger.w("未找到已知签名的 ActivityRecord.goToSleep");
         }
     }
 
@@ -300,7 +300,7 @@ public class ActivitySleepHook {
                 if (info.state == AppState.FROZEN) return true;
             }
         } catch (Throwable t) {
-            Logger.d("isPackageFrozen check failed: " + pkg + " - " + t.getMessage());
+            Logger.d("isPackageFrozen 检查失败: " + pkg + " - " + t.getMessage());
         }
         return false;
     }

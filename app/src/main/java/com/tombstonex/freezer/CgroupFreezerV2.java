@@ -39,10 +39,10 @@ public class CgroupFreezerV2 implements IFreezer {
         try (FileWriter writer = new FileWriter(path)) {
             writer.write(value);
             writer.flush();
-            Logger.d("CgroupV2 write " + value + " to " + path);
+            Logger.d("CgroupV2 写入 " + value + " 到 " + path);
             return true;
         } catch (IOException e) {
-            Logger.e("CgroupV2 write failed: " + path, e);
+            Logger.e("CgroupV2 写入失败: " + path, e);
             return false;
         }
     }

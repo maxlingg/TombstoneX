@@ -75,7 +75,7 @@ public class SmartStateHook {
     private static final ConcurrentHashMap<String, CacheEntry> activeCache = new ConcurrentHashMap<>();
 
     public static void init(ClassLoader classLoader) {
-        Logger.i("SmartStateHook initialized (queryable API: isAppActive, cacheTTL=" + CACHE_TTL_MS + "ms)");
+        Logger.i("SmartStateHook 已初始化（可查询 API: isAppActive，缓存 TTL=" + CACHE_TTL_MS + "ms）");
         // 预加载系统服务引用，单次失败不影响后续懒加载兜底
         preloadServices();
     }
@@ -188,7 +188,7 @@ public class SmartStateHook {
             Object r = m.invoke(ts);
             if (r instanceof Integer) return ((Integer) r) != CALL_STATE_IDLE;
         } catch (Throwable t) {
-            Logger.d("isInCall check failed: " + t.getMessage());
+            Logger.d("isInCall 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -220,7 +220,7 @@ public class SmartStateHook {
             }
             return Boolean.TRUE.equals(r);
         } catch (Throwable t) {
-            Logger.d("isLocating check failed: " + t.getMessage());
+            Logger.d("isLocating 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -233,7 +233,7 @@ public class SmartStateHook {
             int op = getOpCode("OP_RECORD_AUDIO", OP_RECORD_AUDIO_DEFAULT);
             return Boolean.TRUE.equals(callIsOperationActive(appOps, op, uid, packageName));
         } catch (Throwable t) {
-            Logger.d("isRecordingAudio check failed: " + t.getMessage());
+            Logger.d("isRecordingAudio 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -246,7 +246,7 @@ public class SmartStateHook {
             int op = getOpCode("OP_CAMERA", OP_CAMERA_DEFAULT);
             return Boolean.TRUE.equals(callIsOperationActive(appOps, op, uid, packageName));
         } catch (Throwable t) {
-            Logger.d("isCameraInUse check failed: " + t.getMessage());
+            Logger.d("isCameraInUse 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -262,7 +262,7 @@ public class SmartStateHook {
                 if (r instanceof Integer) return ((Integer) r) == MODE_IN_COMMUNICATION;
             }
         } catch (Throwable t) {
-            Logger.d("isAudioInCommunication check failed: " + t.getMessage());
+            Logger.d("isAudioInCommunication 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -278,7 +278,7 @@ public class SmartStateHook {
                 return Boolean.TRUE.equals(r);
             }
         } catch (Throwable t) {
-            Logger.d("isMusicActive check failed: " + t.getMessage());
+            Logger.d("isMusicActive 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -311,7 +311,7 @@ public class SmartStateHook {
                 return false;
             }
         } catch (Throwable t) {
-            Logger.d("hasAudioFocus check failed: " + t.getMessage());
+            Logger.d("hasAudioFocus 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -332,7 +332,7 @@ public class SmartStateHook {
             Integer vpnUid = getPackageUid(vpnPkg);
             return vpnUid != null && vpnUid == uid;
         } catch (Throwable t) {
-            Logger.d("isVpnConnectedForUid check failed: " + t.getMessage());
+            Logger.d("isVpnConnectedForUid 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -361,7 +361,7 @@ public class SmartStateHook {
                 }
             }
         } catch (Throwable t) {
-            Logger.d("isAccessibilityServiceActive check failed: " + t.getMessage());
+            Logger.d("isAccessibilityServiceActive 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -390,7 +390,7 @@ public class SmartStateHook {
                 }
             }
         } catch (Throwable t) {
-            Logger.d("isInputMethodActive check failed: " + t.getMessage());
+            Logger.d("isInputMethodActive 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -423,7 +423,7 @@ public class SmartStateHook {
                 return packageName.equals(pkg);
             }
         } catch (Throwable t) {
-            Logger.d("isAutofillServiceActive check failed: " + t.getMessage());
+            Logger.d("isAutofillServiceActive 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -453,7 +453,7 @@ public class SmartStateHook {
                 }
             }
         } catch (Throwable t) {
-            Logger.d("hasVisibleWindow check failed: " + t.getMessage());
+            Logger.d("hasVisibleWindow 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -481,7 +481,7 @@ public class SmartStateHook {
                 if (isOngoingNotification(n)) return true;
             }
         } catch (Throwable t) {
-            Logger.d("hasOngoingNotification check failed: " + t.getMessage());
+            Logger.d("hasOngoingNotification 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -567,7 +567,7 @@ public class SmartStateHook {
             Method asInterface = stubClass.getMethod("asInterface", IBinder.class);
             return asInterface.invoke(null, binder);
         } catch (Throwable t) {
-            Logger.d("getService failed: " + name + " via " + stubClassName + " - " + t.getMessage());
+            Logger.d("getService 失败: " + name + " via " + stubClassName + " - " + t.getMessage());
             return null;
         }
     }
@@ -592,7 +592,7 @@ public class SmartStateHook {
             Object r = m.invoke(appOps, op, uid, packageName);
             return (r instanceof Boolean) ? (Boolean) r : null;
         } catch (Throwable t) {
-            Logger.d("isOperationActive invoke failed: op=" + op + " - " + t.getMessage());
+            Logger.d("isOperationActive 调用失败: op=" + op + " - " + t.getMessage());
             return null;
         }
     }
@@ -653,7 +653,7 @@ public class SmartStateHook {
                 if (caps != null && capabilitiesHasTransport(caps, TRANSPORT_VPN)) return true;
             }
         } catch (Throwable t) {
-            Logger.d("hasAnyVpnNetwork check failed: " + t.getMessage());
+            Logger.d("hasAnyVpnNetwork 检查失败: " + t.getMessage());
         }
         return false;
     }
@@ -719,7 +719,7 @@ public class SmartStateHook {
                 if (r instanceof Integer) return (Integer) r;
             }
         } catch (Throwable t) {
-            Logger.d("getPackageUid failed: " + packageName + " - " + t.getMessage());
+            Logger.d("getPackageUid 失败: " + packageName + " - " + t.getMessage());
         }
         return null;
     }
@@ -791,7 +791,7 @@ public class SmartStateHook {
             Object value = getString.invoke(null, cr, key);
             return value != null ? value.toString() : null;
         } catch (Throwable t) {
-            Logger.d("getSettingSecureString failed: " + key + " - " + t.getMessage());
+            Logger.d("getSettingSecureString 失败: " + key + " - " + t.getMessage());
             return null;
         }
     }

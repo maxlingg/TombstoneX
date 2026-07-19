@@ -39,16 +39,16 @@ public class ProcessDeathHook {
                             if (pid > 0) {
                                 ActivitySwitchHook.cancelPendingFreeze(pid);
                                 ProcessTracker.getInstance().removeProcess(pid);
-                                Logger.i("Process died, cleaned up: pid=" + pid);
+                                Logger.i("进程已死亡，已清理: pid=" + pid);
                             }
                         } catch (Throwable t) {
-                            Logger.w("onCleanupApplicationRecord hook error: " + t.getMessage());
+                            Logger.w("onCleanupApplicationRecord Hook 出错: " + t.getMessage());
                         }
                     }
                 });
-            Logger.i("Hooked onCleanupApplicationRecord");
+            Logger.i("已 Hook onCleanupApplicationRecord");
         } catch (Throwable t) {
-            Logger.w("onCleanupApplicationRecord not found, trying handleAppDied: " + t.getMessage());
+            Logger.w("未找到 onCleanupApplicationRecord，尝试 handleAppDied: " + t.getMessage());
             // 尝试备用方法名
             try {
                 Class<?> processRecordClass = XposedHelpers.findClass(
@@ -64,16 +64,16 @@ public class ProcessDeathHook {
                                 if (pid > 0) {
                                     ActivitySwitchHook.cancelPendingFreeze(pid);
                                     ProcessTracker.getInstance().removeProcess(pid);
-                                    Logger.i("Process died (handleAppDied), cleaned up: pid=" + pid);
+                                    Logger.i("进程已死亡 (handleAppDied)，已清理: pid=" + pid);
                                 }
                             } catch (Throwable t2) {
-                                Logger.w("handleAppDied hook error: " + t2.getMessage());
+                                Logger.w("handleAppDied Hook 出错: " + t2.getMessage());
                             }
                         }
                     });
-                Logger.i("Hooked handleAppDied (fallback)");
+                Logger.i("已 Hook handleAppDied (降级)");
             } catch (Throwable t2) {
-                Logger.w("Failed to hook process death: " + t2.getMessage());
+                Logger.w("Hook 进程死亡失败: " + t2.getMessage());
             }
         }
     }
@@ -115,21 +115,21 @@ public class ProcessDeathHook {
                                     if (pid > 0) {
                                         ActivitySwitchHook.cancelPendingFreeze(pid);
                                         ProcessTracker.getInstance().removeProcess(pid);
-                                        Logger.i("cleanUpApplicationRecord: cleaned up pid=" + pid);
+                                        Logger.i("cleanUpApplicationRecord: 已清理 pid=" + pid);
                                     }
                                 } catch (Throwable t) {
-                                    Logger.w("cleanUpApplicationRecord hook error: " + t.getMessage());
+                                    Logger.w("cleanUpApplicationRecord Hook 出错: " + t.getMessage());
                                 }
                             }
                         });
-                        Logger.i("Hooked cleanUpApplicationRecord");
+                        Logger.i("已 Hook cleanUpApplicationRecord");
                         break;
                     } catch (Throwable e) {
-                        Logger.d("Hook variant failed: " + e.getMessage());
+                        Logger.d("Hook 变体失败: " + e.getMessage());
                     }
                 }
             } catch (Throwable t) {
-                Logger.w("Failed to hook cleanUpApplicationRecord: " + t.getMessage());
+                Logger.w("Hook cleanUpApplicationRecord 失败: " + t.getMessage());
             }
 
             // Hook handleAppCrashLocked — 支持带 String 参数的签名
@@ -156,26 +156,26 @@ public class ProcessDeathHook {
                                 if (pid > 0) {
                                     ActivitySwitchHook.cancelPendingFreeze(pid);
                                     ProcessTracker.getInstance().removeProcess(pid);
-                                    Logger.w("App crashed, cleaned up: pid=" + pid);
+                                    Logger.w("应用崩溃，已清理: pid=" + pid);
                                 }
                             } catch (Throwable t) {
-                                Logger.w("handleAppCrashLocked hook error: " + t.getMessage());
+                                Logger.w("handleAppCrashLocked Hook 出错: " + t.getMessage());
                             }
                         }
                     });
-                    Logger.i("Hooked handleAppCrashLocked (" + paramTypes.length + " params)");
+                    Logger.i("已 Hook handleAppCrashLocked (" + paramTypes.length + " 个参数)");
                     crashHooked = true;
                     break;
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
 
             if (!crashHooked) {
-                Logger.w("Could not find handleAppCrashLocked with known signatures");
+                Logger.w("未找到已知签名的 handleAppCrashLocked");
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook crash cleanup", t);
+            Logger.e("Hook 崩溃清理失败", t);
         }
     }
 
@@ -193,7 +193,7 @@ public class ProcessDeathHook {
                 }
             }
         } catch (Throwable t) {
-            Logger.w("Failed to get pid from ProcessRecord: " + t.getMessage());
+            Logger.w("从 ProcessRecord 获取 pid 失败: " + t.getMessage());
         }
         return -1;
     }

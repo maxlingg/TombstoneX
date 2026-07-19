@@ -312,8 +312,12 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         }
     }
 
-    val runningCount = remember(items) { items.count { it.pid > 0 } }
-    val frozenCount = remember(items) { items.count { it.state == AppState.FROZEN } }
+    // 运行中：有进程在运行（pid > 0）且未冻结
+    val runningCount = remember(items) { items.count { it.pid > 0 && it.state != AppState.FROZEN } }
+    // 已冻结：进程被冻结（state=FROZEN）或开关打开但进程未运行（配置为参与冻结）
+    val frozenCount = remember(items) {
+        items.count { it.state == AppState.FROZEN || (!it.isWhiteListed && it.pid <= 0) }
+    }
     val whiteCount = remember(items) { items.count { it.isWhiteListed } }
 
     Scaffold(

@@ -95,30 +95,30 @@ public class WakeLockHook {
                                 // 使用 getByUid 查找冻结进程
                                 for (AppInfo info : ProcessTracker.getInstance().getByUid(uid)) {
                                     if (info.state == AppState.FROZEN) {
-                                        Logger.d("Blocking wakelock acquire for frozen app: "
+                                        Logger.d("已拦截已冻结应用的 WakeLock 获取: "
                                             + info.packageName + " uid=" + uid);
                                         param.setResult(null);
                                         return;
                                     }
                                 }
                             } catch (Throwable t) {
-                                Logger.e("acquireWakeLockInternal hook error", t);
+                                Logger.e("acquireWakeLockInternal Hook 出错", t);
                             }
                         }
                     });
-                    Logger.i("Hooked acquireWakeLockInternal (" + paramTypes.length + " params, uidIdx=" + uidIndex + ")");
+                    Logger.i("已 Hook acquireWakeLockInternal（" + paramTypes.length + " 个参数，uidIdx=" + uidIndex + "）");
                     hooked = true;
                     break;
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
 
             if (!hooked) {
-                Logger.w("Could not find acquireWakeLockInternal with known signatures");
+                Logger.w("未找到已知签名的 acquireWakeLockInternal");
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook acquireWakeLockInternal", t);
+            Logger.e("Hook acquireWakeLockInternal 失败", t);
         }
     }
 
@@ -154,26 +154,26 @@ public class WakeLockHook {
                                 // 释放 WakeLock 时不需要阻止（即使进程被冻结也应允许释放）
                                 // 仅记录日志用于调试
                                 if (param.args.length >= 1 && param.args[0] != null) {
-                                    Logger.d("releaseWakeLockInternal called");
+                                    Logger.d("releaseWakeLockInternal 已调用");
                                 }
                             } catch (Throwable t) {
-                                Logger.e("releaseWakeLockInternal hook error", t);
+                                Logger.e("releaseWakeLockInternal Hook 出错", t);
                             }
                         }
                     });
-                    Logger.i("Hooked releaseWakeLockInternal (" + paramTypes.length + " params)");
+                    Logger.i("已 Hook releaseWakeLockInternal（" + paramTypes.length + " 个参数）");
                     hooked = true;
                     break;
                 } catch (Throwable e) {
-                    Logger.d("Hook variant failed: " + e.getMessage());
+                    Logger.d("Hook 变体失败: " + e.getMessage());
                 }
             }
 
             if (!hooked) {
-                Logger.w("Could not find releaseWakeLockInternal with known signatures");
+                Logger.w("未找到已知签名的 releaseWakeLockInternal");
             }
         } catch (Throwable t) {
-            Logger.e("Failed to hook releaseWakeLockInternal", t);
+            Logger.e("Hook releaseWakeLockInternal 失败", t);
         }
     }
 }
