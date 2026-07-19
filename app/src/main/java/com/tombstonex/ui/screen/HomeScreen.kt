@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -366,8 +367,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // 模块未激活 或 处于 FileIPC 降级模式时显示状态卡片
-                if (!moduleAvailable || currentIpcMode == "fileipc") {
+                // 模块未激活 或 处于 FileIPC 降级模式 或 模块已安装但 Binder 不可用时显示状态卡片
+                if (!moduleAvailable || currentIpcMode == "fileipc" || currentIpcMode == "error_binder_required") {
                     item {
                         ModuleNotActiveCard(
                             moduleEnabled = moduleEnabled,
@@ -529,9 +530,11 @@ private fun ModuleNotActiveCard(
     var showInstallDialog by remember { mutableStateOf(false) }
     var installResult by remember { mutableStateOf<com.tombstonex.util.RootModuleInstaller.InstallResult?>(null) }
     var isInstalling by remember { mutableStateOf(false) }
+    var showRebootDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // 根据状态决定卡片颜色：FileIPC 用警告色，未激活用错误色
+    // 根据状态决定卡片颜色：error_binder_required 用错误色，FileIPC 用警告色，未激活用错误色
+    val isErrorBinderMode = ipcMode == "error_binder_required"
     val isFileIpcMode = ipcMode == "fileipc"
     val containerColor = if (isFileIpcMode) {
         MaterialTheme.colorScheme.tertiaryContainer
@@ -556,13 +559,21 @@ private fun ModuleNotActiveCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    if (isFileIpcMode) Icons.Filled.Bolt else Icons.Filled.Warning,
+                    when {
+                        isErrorBinderMode -> Icons.Filled.Error
+                        isFileIpcMode -> Icons.Filled.Bolt
+                        else -> Icons.Filled.Warning
+                    },
                     contentDescription = null,
                     tint = contentColor,
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = if (isFileIpcMode) "FileIPC 降级模式" else "模块未激活",
+                    text = when {
+                        isErrorBinderMode -> "Binder 注册失败"
+                        isFileIpcMode -> "FileIPC 降级模式"
+                        else -> "模块未激活"
+                    },
                     fontWeight = FontWeight.SemiBold,
                     color = contentColor,
                 )
@@ -570,6 +581,14 @@ private fun ModuleNotActiveCard(
             val statusText = when {
                 !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块"
                 !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」"
+                isErrorBinderMode -> {
+                    val base = "SELinux 策略模块已安装，但 Binder 服务注册失败。\n请重启设备后再试。\n如重启后仍失败，请检查 SELinux 规则是否生效。"
+                    if (regStatus.isNotEmpty() && !regStatus.startsWith("ok") && !regStatus.startsWith("already")) {
+                        "$base\n\n注册诊断: $regStatus"
+                    } else {
+                        base
+                    }
+                }
                 isFileIpcMode -> {
                     val base = "当前使用文件 IPC 通信，速度较慢\n可一键启用 Binder 高性能模式（需 root）"
                     if (regStatus.isNotEmpty() && !regStatus.startsWith("ok") && !regStatus.startsWith("already")) {
@@ -586,7 +605,8 @@ private fun ModuleNotActiveCard(
                 color = contentColor.copy(alpha = 0.8f),
             )
 
-            // FileIPC 模式下显示一键安装按钮
+            // FileIPC 模式下显示一键安装按钮（模块未安装时）
+            // error_binder_required 模式下不显示按钮（模块已安装，需重启）
             if (isFileIpcMode) {
                 Button(
                     onClick = {
@@ -601,6 +621,20 @@ private fun ModuleNotActiveCard(
                     Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("一键启用 Binder 高性能模式")
+                }
+            } else if (isErrorBinderMode) {
+                // 模块已安装但 Binder 失败，显示重启提示按钮
+                Button(
+                    onClick = { showRebootDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = contentColor,
+                        contentColor = containerColor,
+                    ),
+                ) {
+                    Icon(Icons.Filled.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("重启设备")
                 }
             }
         }
@@ -651,6 +685,30 @@ private fun ModuleNotActiveCard(
                 if (installResult == null && !isInstalling) {
                     TextButton(onClick = { showInstallDialog = false }) { Text("取消") }
                 }
+            },
+        )
+    }
+
+    // 重启确认对话框
+    if (showRebootDialog) {
+        AlertDialog(
+            onDismissRequest = { showRebootDialog = false },
+            title = { Text("重启设备") },
+            text = {
+                Text("SELinux 策略模块已安装，但需要重启设备才能加载新的 SELinux 规则。\n\n重启后 Binder 服务将自动注册成功。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRebootDialog = false
+                    try {
+                        Runtime.getRuntime().exec(arrayOf("su", "-c", "setprop sys.powerctl reboot"))
+                    } catch (e: Exception) {
+                        // 忽略
+                    }
+                }) { Text("重启") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRebootDialog = false }) { Text("取消") }
             },
         )
     }

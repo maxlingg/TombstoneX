@@ -76,19 +76,52 @@ object ServiceClient {
     @Volatile
     private var fileIpcReadyCache: Boolean? = null
 
-    /**
-     * 模块是否已激活（Binder 或 FileIPC 任一可用即视为激活）
-     */
-    val isAvailable: Boolean
-        get() = getBinder() != null || isFileIPCReady()
+    /** 缓存 SELinux 模块是否已安装（通过 root 检查一次即可） */
+    @Volatile
+    private var selinuxModuleInstalled: Boolean? = null
 
     /**
-     * 当前 IPC 模式："binder" / "fileipc" / "none"
+     * 检测 SELinux 策略模块是否已安装。
+     * 模块安装后强制使用 Binder，不允许降级到 FileIPC。
+     * 通过 root 检查 /data/adb/modules/tombstonex/module.prop 是否存在。
+     */
+    private fun isSelinuxModuleInstalled(): Boolean {
+        selinuxModuleInstalled?.let { return it }
+        val result = try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "test -f /data/adb/modules/tombstonex/module.prop && echo 1 || echo 0"))
+            val output = process.inputStream.bufferedReader().use { it.readLine() ?: "0" }
+            process.waitFor()
+            output.trim() == "1"
+        } catch (e: Exception) {
+            false
+        }
+        selinuxModuleInstalled = result
+        return result
+    }
+
+    /**
+     * 模块是否已激活。
+     * - 如果 SELinux 策略模块已安装：仅 Binder 可用才算激活（强制 Binder）
+     * - 如果未安装：Binder 或 FileIPC 任一可用即视为激活
+     */
+    val isAvailable: Boolean
+        get() {
+            if (isSelinuxModuleInstalled()) {
+                // 模块已安装，强制 Binder
+                return getBinder() != null
+            }
+            return getBinder() != null || isFileIPCReady()
+        }
+
+    /**
+     * 当前 IPC 模式："binder" / "fileipc" / "none" / "error_binder_required"
      * 用于 UI 显示当前通信通道
      */
     val currentIpcMode: String
         get() {
             if (useBinder && getBinder() != null) return "binder"
+            // 模块已安装但 Binder 不可用 → 报错，不降级
+            if (isSelinuxModuleInstalled()) return "error_binder_required"
             if (isFileIPCReady()) return "fileipc"
             return "none"
         }
@@ -259,8 +292,9 @@ object ServiceClient {
     private val BINDER_RETRY_INTERVAL_MS = 10000L // 10 秒重试一次
 
     /**
-     * 统一调用：优先使用 Binder，失败时降级到 FileIPC
-     * 当 useBinder=false 时，每隔 10 秒重试 Binder（因为 MainHook 重试线程可能稍后注册成功）
+     * 统一调用：优先使用 Binder。
+     * - SELinux 模块已安装：强制 Binder，失败时返回 null（不降级到 FileIPC）
+     * - 未安装模块：Binder 失败时降级到 FileIPC，并定期重试 Binder
      */
     private fun <T> call(
         code: Int,
@@ -269,15 +303,22 @@ object ServiceClient {
         fileArgs: JSONObject = JSONObject(),
         fileParse: (JSONObject) -> T?
     ): T? {
+        val moduleInstalled = isSelinuxModuleInstalled()
+
         // 优先使用 Binder
         if (useBinder) {
             val result = transact(code, binderPrepare, binderParse)
             if (result != null) return result
-            // Binder 失败，切换到 FileIPC
+            // Binder 失败
             useBinder = false
             lastBinderRetryTime = System.currentTimeMillis()
+            // 模块已安装 → 不降级，直接返回 null
+            if (moduleInstalled) {
+                Logger.w("Binder failed but SELinux module installed, refusing to degrade to FileIPC")
+                return null
+            }
         } else {
-            // 定期重试 Binder（MainHook 重试线程可能已注册成功）
+            // 定期重试 Binder
             val now = System.currentTimeMillis()
             if (now - lastBinderRetryTime > BINDER_RETRY_INTERVAL_MS) {
                 lastBinderRetryTime = now
@@ -287,11 +328,16 @@ object ServiceClient {
                     val result = transact(code, binderPrepare, binderParse)
                     if (result != null) return result
                     useBinder = false
+                    // 模块已安装 → 不降级
+                    if (moduleInstalled) return null
                 }
+            } else if (moduleInstalled) {
+                // 模块已安装，在重试间隔内直接返回 null，不降级
+                return null
             }
         }
 
-        // 降级到 FileIPC
+        // 降级到 FileIPC（仅当模块未安装时）
         val resp = fileTransact(code, fileArgs) ?: return null
         return fileParse(resp)
     }
