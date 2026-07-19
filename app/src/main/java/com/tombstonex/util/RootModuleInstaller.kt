@@ -21,17 +21,13 @@ object RootModuleInstaller {
     private val SEPOLICY_RULE = """
         allow system_server servicemanager binder call
         allow system_server servicemanager binder transfer
-        allow system_server service_manager_type service_manager add
-        allow system_server service_manager_type service_manager find
-        allow system_server default_android_service service_manager add
-        allow system_server default_android_service service_manager find
+        allow system_server * service_manager add
+        allow system_server * service_manager find
         allow untrusted_app servicemanager binder call
-        allow untrusted_app service_manager_type service_manager find
-        allow untrusted_app default_android_service service_manager find
+        allow untrusted_app * service_manager find
         allow untrusted_app system_server binder call
         allow untrusted_app system_server binder transfer
-        allow priv_app service_manager_type service_manager find
-        allow priv_app default_android_service service_manager find
+        allow priv_app * service_manager find
         allow priv_app system_server binder call
         allow priv_app system_server binder transfer
     """.trimIndent()
