@@ -570,7 +570,14 @@ private fun ModuleNotActiveCard(
             val statusText = when {
                 !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块"
                 !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」"
-                isFileIpcMode -> "当前使用文件 IPC 通信，速度较慢\n可一键启用 Binder 高性能模式（需 root）"
+                isFileIpcMode -> {
+                    val base = "当前使用文件 IPC 通信，速度较慢\n可一键启用 Binder 高性能模式（需 root）"
+                    if (regStatus.isNotEmpty() && !regStatus.startsWith("ok") && !regStatus.startsWith("already")) {
+                        "$base\n\n注册诊断: $regStatus"
+                    } else {
+                        base
+                    }
+                }
                 else -> "模块已加载，通信通道未就绪，正在等待..."
             }
             Text(

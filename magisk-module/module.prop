@@ -1,6 +1,6 @@
 id=tombstonex
 name=TombstoneX Helper
-version=v2.1.0
-versionCode=7
+version=v2.2.0
+versionCode=8
 author=TombstoneX
 description=SELinux policy helper for TombstoneX
