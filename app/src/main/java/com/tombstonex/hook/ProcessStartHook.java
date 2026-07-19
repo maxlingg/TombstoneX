@@ -131,8 +131,10 @@ public class ProcessStartHook {
 
     /**
      * Hook android.os.Process.start — 静态方法，在 afterHookedMethod 中获取返回的 pid
-     * niceName 在 arg[0]（String），uid 在 arg[1]（int，现代签名）；
-     * 旧签名 arg[1] 可能为 String（entryPoint），此时通过类型检查跳过 uid 提取。
+     * AOSP 签名: start(String processClass, String niceName, int uid, int gid, ...)
+     *   args[0] = processClass (如 "android.app.ActivityThread")
+     *   args[1] = niceName (如 "com.example.app" — 进程名/包名)
+     *   args[2] = uid
      */
     private static void hookProcessStart(ClassLoader classLoader) {
         try {
@@ -227,21 +229,54 @@ public class ProcessStartHook {
 
     /**
      * 处理 Process.start 的返回结果，获取 pid 后执行冻结决策
+     *
+     * AOSP Process.start 签名（所有版本一致）：
+     *   start(String processClass, String niceName, int uid, int gid, int[] gids, ...)
+     *   args[0] = processClass (如 "android.app.ActivityThread")
+     *   args[1] = niceName (如 "com.example.app" — 这才是进程名/包名)
+     *   args[2] = uid
+     *
+     * 旧代码错误地将 args[0] 当作进程名、args[1] 当作 uid，
+     * 导致 args[1] instanceof Integer 永远为 false，进程从未被注册。
      */
     private static void handleProcessStartResult(Object[] args, Object result) {
-        if (args == null || args.length < 2) return;
-        if (!(args[0] instanceof String)) return;
+        if (args == null || args.length < 3) return;
 
-        String processName = (String) args[0];
+        // 扫描参数，稳健提取 niceName（第二个 String）和 uid（第一个正 int）
+        String processName = null;
         int uid = -1;
-        if (args[1] instanceof Integer) {
-            uid = (int) args[1];
+        int stringCount = 0;
+        for (Object arg : args) {
+            if (arg instanceof String) {
+                stringCount++;
+                // niceName 是第二个 String（第一个是 processClass）
+                if (stringCount == 2) {
+                    processName = (String) arg;
+                }
+            } else if (arg instanceof Integer && uid < 0) {
+                int v = (int) arg;
+                // uid 通常是 10000+ 的正整数（应用 uid）
+                // system uid 也在 1000-9999 范围
+                if (v > 0) {
+                    uid = v;
+                }
+            }
+            if (processName != null && uid > 0) break;
         }
-        if (uid < 0) return;
+
+        if (processName == null || uid < 0) {
+            Logger.d("Process.start 参数解析失败: args.length=" + args.length
+                + " processName=" + processName + " uid=" + uid);
+            return;
+        }
 
         int pid = getPidFromResult(result);
-        if (pid <= 0) return;
+        if (pid <= 0) {
+            Logger.d("Process.start 未获取到有效 pid: processName=" + processName);
+            return;
+        }
 
+        Logger.i("检测到进程启动: " + processName + " uid=" + uid + " pid=" + pid);
         performFreezeDecision(pid, uid, processName);
     }
 

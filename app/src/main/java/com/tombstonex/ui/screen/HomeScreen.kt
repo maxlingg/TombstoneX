@@ -159,7 +159,11 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
             val procByPkg = procList.associateBy { it.packageName }
             items = items.map { item ->
                 val info = procByPkg[item.packageName]
-                item.copy(state = info?.state?.toAppState())
+                item.copy(
+                    pid = info?.pid ?: -1,
+                    uid = info?.uid ?: -1,
+                    state = info?.state?.toAppState(),
+                )
             }
         }
     }
