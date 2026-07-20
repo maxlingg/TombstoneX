@@ -75,29 +75,41 @@ public class ActivitySwitchHook {
     }
 
     /**
-     * Hook ActivityManagerService.activityPaused()
-     * 延迟冻结，带取消机制避免竞态
+     * Hook activityPaused()
+     * Android 11+ 该方法已从 AMS 迁移到 ActivityTaskManagerService (ATMS)
+     * 依次尝试 ATMS 和 AMS 两个类，兼容不同版本
      */
     private static void hookActivityPaused(ClassLoader classLoader) {
-        try {
-            Class<?> amsClass = XposedHelpers.findClass(
-                "com.android.server.am.ActivityManagerService", classLoader);
-
-            XposedHelpers.findAndHookMethod(amsClass,
-                "activityPaused", "android.os.IBinder",
-                new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        try {
-                            handleActivityPaused(param);
-                        } catch (Throwable t) {
-                            Logger.e("activityPaused Hook 出错", t);
+        // Android 11+ 的目标类
+        String[] targetClasses = {
+            "com.android.server.wm.ActivityTaskManagerService",  // Android 11+
+            "com.android.server.am.ActivityManagerService",       // Android 10 及以下
+        };
+        boolean hooked = false;
+        for (String className : targetClasses) {
+            try {
+                Class<?> targetClass = XposedHelpers.findClass(className, classLoader);
+                XposedHelpers.findAndHookMethod(targetClass,
+                    "activityPaused", "android.os.IBinder",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                handleActivityPaused(param);
+                            } catch (Throwable t) {
+                                Logger.e("activityPaused Hook 出错", t);
+                            }
                         }
-                    }
-                });
-            Logger.i("已 Hook activityPaused");
-        } catch (Throwable t) {
-            Logger.e("Hook activityPaused 失败", t);
+                    });
+                Logger.i("已 Hook activityPaused (类=" + className + ")");
+                hooked = true;
+                break;
+            } catch (Throwable t) {
+                // 此类上没有该方法，尝试下一个
+            }
+        }
+        if (!hooked) {
+            Logger.w("Hook activityPaused 失败: ATMS 和 AMS 上均未找到该方法");
         }
     }
 
@@ -401,6 +413,9 @@ public class ActivitySwitchHook {
     /**
      * Hook OOM adj 变化
      * setOomAdj 会被系统为所有进程调用，是自动发现已运行进程的理想入口。
+     * 注意：OOM adj 调优必须在 beforeHookedMethod 中修改 param.args 才能生效，
+     *       在 afterHookedMethod 中修改 args 对已执行的方法无效。
+     * 自动注册逻辑放在 afterHookedMethod（不需要修改参数）。
      */
     private static void hookSetOomAdj(ClassLoader classLoader) {
         try {
@@ -410,6 +425,27 @@ public class ActivitySwitchHook {
             XposedHelpers.findAndHookMethod(amsClass,
                 "setOomAdj", int.class, int.class, int.class,
                 new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        try {
+                            int pid = (int) param.args[0];
+                            int uid = (int) param.args[1];
+                            int oomAdj = (int) param.args[2];
+
+                            // OOM adj 调优：必须在方法执行前修改参数才能生效
+                            try {
+                                int adjusted = com.tombstonex.manager.OomAdjManager.getInstance().applyOomAdj(uid, pid, oomAdj);
+                                if (adjusted != oomAdj) {
+                                    param.args[2] = adjusted;
+                                }
+                            } catch (Throwable t) {
+                                // OomAdjManager 可能未初始化，忽略
+                            }
+                        } catch (Throwable t) {
+                            Logger.w("setOomAdj beforeHook 出错: " + t.getMessage());
+                        }
+                    }
+
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
                         try {
@@ -425,17 +461,8 @@ public class ActivitySwitchHook {
 
                             // oomAdj >= 900 通常是缓存进程
                             ProcessTracker.getInstance().updateOomAdj(pid, oomAdj);
-                            // OOM adj 调优：根据应用优先级调整 oomAdj
-                            try {
-                                int adjusted = com.tombstonex.manager.OomAdjManager.getInstance().applyOomAdj(uid, pid, oomAdj);
-                                if (adjusted != oomAdj) {
-                                    param.args[2] = adjusted;
-                                }
-                            } catch (Throwable t) {
-                                // OomAdjManager 可能未初始化，忽略
-                            }
                         } catch (Throwable t) {
-                            Logger.w("setOomAdj Hook 出错: " + t.getMessage());
+                            Logger.w("setOomAdj afterHook 出错: " + t.getMessage());
                         }
                     }
                 });
@@ -527,28 +554,30 @@ public class ActivitySwitchHook {
 
     /**
      * 检查是否有前台服务
-     * 尝试 hasForeground 和 hasForegroundServices 两种方法名
+     *
+     * AOSP 中 hasForegroundServices() 方法直接在 ProcessRecord 上，
+     * 而非在 mServices 字段值上。旧代码先取 mServices 字段再到字段值上找方法，
+     * 导致找不到方法而返回 true（过度保守，几乎所有进程都被跳过冻结）。
+     *
+     * 修复：直接在 processRecord 上调用 hasForegroundServices() 方法。
      * public 供 ScreenStateHook 复用
      */
     public static boolean hasForegroundService(Object processRecord) {
         try {
-            Field servicesField = ReflectionUtils.findFieldRecursive(
-                processRecord.getClass(), "mServices");
-            if (servicesField == null) return true;
-            Object services = ReflectionUtils.getFieldValue(processRecord, servicesField);
-            if (services == null) return false;
-
-            // 尝试 hasForeground 和 hasForegroundServices 两种方法名
-            String[] methodNames = {"hasForeground", "hasForegroundServices"};
+            // 直接在 ProcessRecord 上查找 hasForegroundServices / hasForeground 方法
+            String[] methodNames = {"hasForegroundServices", "hasForeground"};
             for (String name : methodNames) {
                 Method hasForeground = ReflectionUtils.findMethodRecursive(
-                    services.getClass(), name);
+                    processRecord.getClass(), name);
                 if (hasForeground != null) {
-                    return (boolean) hasForeground.invoke(services);
+                    hasForeground.setAccessible(true);
+                    return (boolean) hasForeground.invoke(processRecord);
                 }
             }
+            // 方法不存在时 fail-safe 返回 true（不冻结）
+            Logger.d("ProcessRecord 上未找到 hasForegroundServices 方法");
         } catch (Throwable e) {
-            Logger.d("Hook 变体失败: " + e.getMessage());
+            Logger.d("hasForegroundService 检查失败: " + e.getMessage());
         }
         return true;
     }

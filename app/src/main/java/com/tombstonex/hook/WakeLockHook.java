@@ -123,57 +123,14 @@ public class WakeLockHook {
     }
 
     /**
-     * Hook releaseWakeLockInternal — 释放唤醒锁时也检查
+     * hookReleaseWakeLock 已移除
+     *
+     * 旧代码 hook 了 releaseWakeLockInternal 但只在 beforeHookedMethod 中打 debug 日志，
+     * 没有任何拦截或修改。releaseWakeLockInternal 是高频调用路径，
+     * 每次 Hook 都额外走 Xposed 回调链 + 反射 + Logger.d 判断，纯性能开销无收益。
+     * 释放 WakeLock 时不应阻止（即使进程被冻结也应允许释放），所以此 Hook 无存在必要。
      */
     private static void hookReleaseWakeLock(ClassLoader classLoader) {
-        try {
-            Class<?> pmsClass = XposedHelpers.findClass(
-                "com.android.server.power.PowerManagerService", classLoader);
-
-            Class<?> iBinderClass = XposedHelpers.findClass("android.os.IBinder", classLoader);
-
-            // 多版本 releaseWakeLockInternal 签名兼容
-            Class<?>[][] paramTypeVariants = {
-                // (IBinder, int)
-                {iBinderClass, int.class},
-                // (IBinder, int, int)
-                {iBinderClass, int.class, int.class},
-            };
-
-            boolean hooked = false;
-            for (Class<?>[] paramTypes : paramTypeVariants) {
-                try {
-                    Method method = XposedHelpers.findMethodExact(
-                        pmsClass, "releaseWakeLockInternal", paramTypes);
-                    if (method == null) continue;
-
-                    XposedBridge.hookMethod(method, new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) {
-                            try {
-                                // 释放 WakeLock 时不需要阻止（即使进程被冻结也应允许释放）
-                                // 仅记录日志用于调试
-                                if (param.args.length >= 1 && param.args[0] != null) {
-                                    Logger.d("releaseWakeLockInternal 已调用");
-                                }
-                            } catch (Throwable t) {
-                                Logger.e("releaseWakeLockInternal Hook 出错", t);
-                            }
-                        }
-                    });
-                    Logger.i("已 Hook releaseWakeLockInternal（" + paramTypes.length + " 个参数）");
-                    hooked = true;
-                    break;
-                } catch (Throwable e) {
-                    Logger.d("Hook 变体失败: " + e.getMessage());
-                }
-            }
-
-            if (!hooked) {
-                Logger.w("未找到已知签名的 releaseWakeLockInternal");
-            }
-        } catch (Throwable t) {
-            Logger.e("Hook releaseWakeLockInternal 失败", t);
-        }
+        // 已移除：无实际作用的 Hook
     }
 }

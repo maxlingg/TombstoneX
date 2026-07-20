@@ -8,8 +8,8 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -144,17 +144,15 @@ public class BroadcastHook {
     }
 
     /**
-     * 检查广播队列中的接收器，如果目标进程被冻结则通过 setResult 跳过
-     * 不直接修改 receiverList，而是在检测到冻结接收器时记录并跳过
+     * 检查广播队列中的接收器，移除目标进程已冻结的接收器以避免 ANR
+     * 使用 Iterator.remove() 安全地从 receiverList 中移除冻结接收器
      */
     private static void checkAndSkipFrozenReceivers(Object queue, String fieldName) {
         try {
             List<?> rawBroadcastList = (List<?>) XposedHelpers.getObjectField(queue, fieldName);
             if (rawBroadcastList == null || rawBroadcastList.isEmpty()) return;
 
-            // P1-03: 创建快照副本，避免遍历 AMS 内部 List 时发生
-            // ConcurrentModificationException（AMS 可能在遍历过程中修改该 List）
-            // P3-R8: 使用 toArray() 再包装，避免 new ArrayList<>(src) 构造函数本身迭代 src 时 CME
+            // 创建快照副本，避免遍历 AMS 内部 List 时发生 ConcurrentModificationException
             List<?> broadcastList = Arrays.asList(rawBroadcastList.toArray());
 
             for (Object record : broadcastList) {
@@ -162,16 +160,18 @@ public class BroadcastHook {
                 if (receivers == null) continue;
                 @SuppressWarnings("unchecked")
                 List<Object> rawReceiverList = (List<Object>) receivers;
-                // P1-03: receiverList 同样创建快照副本
-                List<Object> receiverList = new ArrayList<>(rawReceiverList);
 
-                for (Object receiver : receiverList) {
+                // 使用 Iterator 安全地从原始列表中移除冻结接收器
+                Iterator<Object> it = rawReceiverList.iterator();
+                while (it.hasNext()) {
+                    Object receiver = it.next();
                     int pid = getReceiverPid(receiver);
                     if (pid > 0) {
                         AppInfo appInfo = ProcessTracker.getInstance().getByPid(pid);
                         if (appInfo != null && appInfo.state == AppState.FROZEN) {
-                            Logger.d("检测到已冻结的接收器（将被分发 Hook 跳过）: "
+                            Logger.i("跳过已冻结的接收器: "
                                 + appInfo.packageName + " pid=" + pid);
+                            it.remove();
                         }
                     }
                 }

@@ -242,7 +242,7 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
      * 因此需要定期重试 addService，直到成功或超过最大重试次数。
      */
     private static void startBinderRetryThread() {
-        new Thread(() -> {
+        Thread retryThread = new Thread(() -> {
             for (int i = 0; i < 30; i++) {  // 最多重试 30 次，每次间隔 5 秒（共 150 秒）
                 try {
                     Thread.sleep(5000);
@@ -275,6 +275,8 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
                 }
             }
             Logger.w("Binder 重试：已达到最大重试次数，继续使用 FileIPC");
-        }, "TombstoneX-BinderRetry").start();
+        }, "TombstoneX-BinderRetry");
+        retryThread.setDaemon(true);
+        retryThread.start();
     }
 }

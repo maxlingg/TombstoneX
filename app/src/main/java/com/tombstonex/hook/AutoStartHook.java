@@ -2,6 +2,7 @@ package com.tombstonex.hook;
 
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Process;
 import com.tombstonex.manager.FreezeManager;
 import com.tombstonex.manager.ProcessTracker;
 import com.tombstonex.manager.WhitelistManager;
@@ -132,9 +133,15 @@ public class AutoStartHook {
     }
 
     /**
-     * Hook BroadcastReceiver.onReceive — 检查发送方是否被冻结
-     * 注意：onReceive 在接收方进程执行，这里检查接收方进程是否被冻结，
-     * 若被冻结则跳过处理以避免触发 ANR。
+     * Hook BroadcastReceiver.onReceive — 此方法在接收方进程执行
+     *
+     * 已知限制：MainHook 只在 system_server (android 包) 中加载此 Hook，
+     * 但 onReceive 在接收方应用进程中执行。因此此 Hook 在 system_server 中
+     * 几乎不会触发（system_server 极少有 BroadcastReceiver 子类）。
+     *
+     * 广播拦截的真正实现在 BroadcastHook 中（通过 hook BroadcastQueue.processNextBroadcast）。
+     * 此处保留 Hook 以兼容未来可能的应用进程注入场景，
+     * 并修正 uid 获取逻辑：使用 Process.myUid() 而非 Binder.getCallingUid()。
      */
     private static void hookBroadcastReceiverOnReceive(ClassLoader classLoader) {
         try {
@@ -145,11 +152,12 @@ public class AutoStartHook {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) {
                     try {
-                        // 检查接收方进程是否被冻结（通过当前调用 uid）
-                        int uid = Binder.getCallingUid();
-                        if (uid < 10000) return;
+                        // Process.myUid() 返回当前进程（接收方）的 uid
+                        // 旧代码用 Binder.getCallingUid() 获取的是发送方 uid，逻辑错误
+                        int uid = Process.myUid();
+                        if (uid < 10000) return; // 跳过系统进程
                         if (isUidFrozen(uid) && !isAutoStartAllowed(uid)) {
-                            Logger.d("跳过已冻结 uid 的 BroadcastReceiver.onReceive uid=" + uid);
+                            Logger.i("跳过已冻结 uid 的 BroadcastReceiver.onReceive uid=" + uid);
                             param.setResult(null);
                         }
                     } catch (Throwable t) {

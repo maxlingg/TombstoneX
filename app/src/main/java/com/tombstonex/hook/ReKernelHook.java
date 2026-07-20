@@ -124,6 +124,9 @@ public class ReKernelHook {
         }
 
         // 2) 后台线程阻塞读取字符设备（/dev/rekernel 场景）
+        // 注意：对于常规文件（如 /proc/rekernel），readLine() 立即返回 null（EOF），
+        // 必须在 EOF 后 sleep 避免 CPU 100% 空转。
+        // 对于字符设备（如 /dev/rekernel），readLine() 会阻塞直到有数据。
         readerThread = new Thread(() -> {
             int consecutiveErrors = 0;
             while (running) {
@@ -134,6 +137,16 @@ public class ReKernelHook {
                     while (running && (line = reader.readLine()) != null) {
                         consecutiveErrors = 0; // 成功读取，重置错误计数
                         handleNotification(line);
+                    }
+                    // readLine 返回 null（EOF）：常规文件已读完
+                    // sleep 后重试，避免忙等待
+                    if (running) {
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
                     }
                 } catch (Throwable t) {
                     if (!running) break;

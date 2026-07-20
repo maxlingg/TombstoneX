@@ -111,11 +111,15 @@ public class TimerHook {
      * 完整生效需通过 IPC 查询 system_server 的冻结状态。
      */
     private static void hookHandler(ClassLoader classLoader) {
-        // 仅在应用进程中注册，避免 system_server 热路径开销
+        // MainHook 只在 system_server 中加载此模块，system_server uid=1000 < 10000，
+        // 因此此 Hook 永远不会在应用进程中注册（死代码）。
+        // 保留方法签名但跳过执行，避免无意义的 Hook 尝试。
+        // 未来若 MainHook 支持应用进程注入，可移除此守卫。
         if (Process.myUid() < 10000) {
-            Logger.d("跳过系统进程中的 Handler Hook（uid=" + Process.myUid() + "）");
+            // system_server 中不注册 Handler Hook
             return;
         }
+        // 以下代码仅在应用进程中执行（当前不可达）
         try {
             Class<?> handlerClass = XposedHelpers.findClass("android.os.Handler", classLoader);
 

@@ -38,6 +38,7 @@ public class ProcessDeathHook {
                             // P2-06: pid <= 0 时无法定位进程，跳过清理避免无意义的全量遍历
                             if (pid > 0) {
                                 ActivitySwitchHook.cancelPendingFreeze(pid);
+                                ProcessStartHook.cancelPendingFreeze(pid);
                                 ProcessTracker.getInstance().removeProcess(pid);
                                 Logger.i("进程已死亡，已清理: pid=" + pid);
                             }
@@ -63,6 +64,7 @@ public class ProcessDeathHook {
                                 // P2-06: pid <= 0 时无法定位进程，跳过清理避免无意义的全量遍历
                                 if (pid > 0) {
                                     ActivitySwitchHook.cancelPendingFreeze(pid);
+                                ProcessStartHook.cancelPendingFreeze(pid);
                                     ProcessTracker.getInstance().removeProcess(pid);
                                     Logger.i("进程已死亡 (handleAppDied)，已清理: pid=" + pid);
                                 }
@@ -114,6 +116,7 @@ public class ProcessDeathHook {
                                     // P2-06: pid <= 0 时无法定位进程，跳过清理避免无意义的全量遍历
                                     if (pid > 0) {
                                         ActivitySwitchHook.cancelPendingFreeze(pid);
+                                ProcessStartHook.cancelPendingFreeze(pid);
                                         ProcessTracker.getInstance().removeProcess(pid);
                                         Logger.i("cleanUpApplicationRecord: 已清理 pid=" + pid);
                                     }
@@ -155,6 +158,7 @@ public class ProcessDeathHook {
                                 // P2-06: pid <= 0 时无法定位进程，跳过清理避免无意义的全量遍历
                                 if (pid > 0) {
                                     ActivitySwitchHook.cancelPendingFreeze(pid);
+                                ProcessStartHook.cancelPendingFreeze(pid);
                                     ProcessTracker.getInstance().removeProcess(pid);
                                     Logger.w("应用崩溃，已清理: pid=" + pid);
                                 }

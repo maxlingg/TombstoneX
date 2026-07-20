@@ -144,10 +144,18 @@ public class SystemFreezerDisableHook {
 
         for (Method method : candidates) {
             try {
+                final boolean hasBooleanParam = java.util.Arrays.stream(method.getParameterTypes())
+                    .anyMatch(t -> t == boolean.class);
                 XposedBridge.hookMethod(method, new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) {
                         try {
+                            if (param.args.length == 0) {
+                                // 无参变体 enableFreezer()：直接跳过执行（不启用 freezer）
+                                Logger.i("已跳过无参 enableFreezer 调用");
+                                param.setResult(null);
+                                return;
+                            }
                             // 将最后一个 boolean 参数强制为 false
                             for (int i = param.args.length - 1; i >= 0; i--) {
                                 if (param.args[i] instanceof Boolean) {
@@ -162,7 +170,7 @@ public class SystemFreezerDisableHook {
                     }
                 });
                 Logger.i("已 Hook CachedAppOptimizer.enableFreezer（"
-                    + method.getParameterCount() + " 个参数）");
+                    + method.getParameterCount() + " 个参数，hasBool=" + hasBooleanParam + "）");
             } catch (Throwable e) {
                 Logger.d("enableFreezer Hook 变体失败: " + e.getMessage());
             }
@@ -234,10 +242,18 @@ public class SystemFreezerDisableHook {
         }
 
         // 收集名称包含 "Freezer"（忽略大小写）的声明方法
+        // 排除 getter 方法（以 get/is 开头），避免误 hook 只读方法
+        // 对 getter 的 afterHook 只强制字段为 false 但不修改返回值，无实际效果
         List<Method> freezerMethods = new ArrayList<>();
         try {
             for (Method m : clazz.getDeclaredMethods()) {
-                if (m.getName().toLowerCase().contains("freezer")) {
+                String nameLower = m.getName().toLowerCase();
+                if (nameLower.contains("freezer")) {
+                    // 排除 getter 方法
+                    if (nameLower.startsWith("get") || nameLower.startsWith("is")) {
+                        Logger.d("跳过 getter 方法: " + m.getName());
+                        continue;
+                    }
                     m.setAccessible(true);
                     freezerMethods.add(m);
                 }
