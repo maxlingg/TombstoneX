@@ -9,7 +9,6 @@ import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import java.lang.reflect.Method;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -145,7 +144,7 @@ public class BroadcastHook {
 
     /**
      * 检查广播队列中的接收器，移除目标进程已冻结的接收器以避免 ANR
-     * 使用 Iterator.remove() 安全地从 receiverList 中移除冻结接收器
+     * 兼容 ArrayList 和 CopyOnWriteArrayList 等不同 List 实现
      */
     private static void checkAndSkipFrozenReceivers(Object queue, String fieldName) {
         try {
@@ -161,17 +160,32 @@ public class BroadcastHook {
                 @SuppressWarnings("unchecked")
                 List<Object> rawReceiverList = (List<Object>) receivers;
 
-                // 使用 Iterator 安全地从原始列表中移除冻结接收器
-                Iterator<Object> it = rawReceiverList.iterator();
-                while (it.hasNext()) {
-                    Object receiver = it.next();
+                // 收集需要移除的接收器（先收集再批量移除，兼容所有 List 实现）
+                List<Object> toRemove = new java.util.ArrayList<>();
+                for (Object receiver : rawReceiverList) {
                     int pid = getReceiverPid(receiver);
                     if (pid > 0) {
                         AppInfo appInfo = ProcessTracker.getInstance().getByPid(pid);
                         if (appInfo != null && appInfo.state == AppState.FROZEN) {
                             Logger.i("跳过已冻结的接收器: "
                                 + appInfo.packageName + " pid=" + pid);
-                            it.remove();
+                            toRemove.add(receiver);
+                        }
+                    }
+                }
+                // 批量移除，兼容 ArrayList / CopyOnWriteArrayList / unmodifiableList
+                if (!toRemove.isEmpty()) {
+                    try {
+                        rawReceiverList.removeAll(toRemove);
+                    } catch (UnsupportedOperationException e) {
+                        // List 不支持 remove（如 unmodifiableList），降级为逐个尝试
+                        Logger.w("接收器列表不支持批量移除，尝试逐个移除");
+                        for (Object r : toRemove) {
+                            try {
+                                rawReceiverList.remove(r);
+                            } catch (Throwable t2) {
+                                Logger.d("无法移除冻结接收器: " + t2.getMessage());
+                            }
                         }
                     }
                 }

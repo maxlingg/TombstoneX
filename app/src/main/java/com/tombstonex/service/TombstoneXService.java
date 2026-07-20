@@ -399,8 +399,8 @@ public class TombstoneXService extends Binder {
                     String pkg = data.readString();
                     org.json.JSONObject config = com.tombstonex.manager.AppConfigManager.getInstance().getAppConfig(pkg);
                     reply.writeNoException();
-                    reply.writeString(config.toString());
                     replied = true;
+                    reply.writeString(config.toString());
                     return true;
                 }
                 case TX_SET_APP_CONFIG_ITEM: {
@@ -413,31 +413,31 @@ public class TombstoneXService extends Binder {
                         case 2: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readString()); break;
                     }
                     reply.writeNoException();
-                    reply.writeBoolean(true);
                     replied = true;
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_GET_ROTATION_INTERVAL: {
                     int interval = ConfigManager.getInstance().getRotationInterval();
                     reply.writeNoException();
-                    reply.writeInt(interval);
                     replied = true;
+                    reply.writeInt(interval);
                     return true;
                 }
                 case TX_SET_ROTATION_INTERVAL: {
                     int interval = data.readInt();
                     ConfigManager.getInstance().setRotationInterval(interval);
                     reply.writeNoException();
-                    reply.writeBoolean(true);
                     replied = true;
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_GET_APP_PRIORITY: {
                     String pkg = data.readString();
                     int priority = com.tombstonex.manager.OomAdjManager.getInstance().getAppPriority(pkg);
                     reply.writeNoException();
-                    reply.writeInt(priority);
                     replied = true;
+                    reply.writeInt(priority);
                     return true;
                 }
                 case TX_SET_APP_PRIORITY: {
@@ -445,8 +445,8 @@ public class TombstoneXService extends Binder {
                     int priority = data.readInt();
                     com.tombstonex.manager.OomAdjManager.getInstance().setAppPriority(pkg, priority);
                     reply.writeNoException();
-                    reply.writeBoolean(true);
                     replied = true;
+                    reply.writeBoolean(true);
                     return true;
                 }
                 case TX_GET_INIT_DATA: {
@@ -487,8 +487,8 @@ public class TombstoneXService extends Binder {
                     }
                     result.put("processes", procArr);
                     reply.writeNoException();
-                    reply.writeString(result.toString());
                     replied = true;
+                    reply.writeString(result.toString());
                     return true;
                 }
                 case TX_GET_APP_CONFIG_FULL: {
@@ -500,8 +500,8 @@ public class TombstoneXService extends Binder {
                     result.put("priority", com.tombstonex.manager.OomAdjManager.getInstance()
                         .getAppPriority(pkg));
                     reply.writeNoException();
-                    reply.writeString(result.toString());
                     replied = true;
+                    reply.writeString(result.toString());
                     return true;
                 }
                 default:

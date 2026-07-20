@@ -432,6 +432,12 @@ public class ActivitySwitchHook {
                             int uid = (int) param.args[1];
                             int oomAdj = (int) param.args[2];
 
+                            // 若进程尚未注册（模块加载前已运行的进程），先注册
+                            // 这样首次 setOomAdj 也能被 OomAdjManager 调整
+                            if (ProcessTracker.getInstance().getByPid(pid) == null) {
+                                tryAutoRegisterProcess(pid, uid);
+                            }
+
                             // OOM adj 调优：必须在方法执行前修改参数才能生效
                             try {
                                 int adjusted = com.tombstonex.manager.OomAdjManager.getInstance().applyOomAdj(uid, pid, oomAdj);
@@ -660,10 +666,20 @@ public class ActivitySwitchHook {
         return -1;
     }
 
-    private static Object getProcessRecordFromActivity(Object ams, Object token) {
+    /**
+     * 从 Activity token 获取 ProcessRecord
+     * 兼容 AMS 和 ATMS 两种入参：
+     * - 若传入的是 AMS，从其 mAtmService 字段取出 ATMS
+     * - 若传入的已是 ATMS，直接使用
+     */
+    private static Object getProcessRecordFromActivity(Object amsOrAtms, Object token) {
         try {
-            Object atms = getFieldValue(ams, "mAtmService");
-            if (atms == null) return null;
+            Object atms = amsOrAtms;
+            // 尝试从 mAtmService 字段获取 ATMS（AMS 入参时）
+            Object maybeAtms = getFieldValue(amsOrAtms, "mAtmService");
+            if (maybeAtms != null) {
+                atms = maybeAtms;
+            }
 
             Method getActivityRecord = ReflectionUtils.findMethodRecursive(
                 atms.getClass(), "getActivityRecord", android.os.IBinder.class);

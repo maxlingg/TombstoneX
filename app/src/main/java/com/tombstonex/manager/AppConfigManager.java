@@ -163,7 +163,11 @@ public class AppConfigManager {
             if (defaultValue instanceof String && val instanceof String) {
                 return (T) val;
             }
-            return (T) val;
+            // 类型不匹配时返回默认值，而非强转（避免 ClassCastException）
+            Logger.w("AppConfigManager: 配置 " + key + " 类型不匹配"
+                + "（期望 " + defaultValue.getClass().getSimpleName()
+                + "，实际 " + val.getClass().getSimpleName() + "）");
+            return defaultValue;
         } catch (JSONException e) {
             Logger.w("AppConfigManager: 获取键 " + key
                 + " 失败（" + packageName + "）: " + e.getMessage());

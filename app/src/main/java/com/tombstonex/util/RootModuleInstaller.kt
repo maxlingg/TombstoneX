@@ -143,6 +143,7 @@ object RootModuleInstaller {
             execRoot("resetprop persist.sys.cached_apps_freezer disabled 2>/dev/null || setprop persist.sys.cached_apps_freezer disabled 2>/dev/null")
 
             if (liveInjected) {
+                com.tombstonex.service.ServiceClient.refreshModuleStatus()
                 InstallResult(
                     true,
                     "SELinux 策略已安装并立即生效！\n" +
@@ -150,6 +151,7 @@ object RootModuleInstaller {
                         "（如果仍显示 FileIPC，请重启设备后再试）",
                 )
             } else {
+                com.tombstonex.service.ServiceClient.refreshModuleStatus()
                 InstallResult(
                     true,
                     "SELinux 策略模块安装成功！\n" +

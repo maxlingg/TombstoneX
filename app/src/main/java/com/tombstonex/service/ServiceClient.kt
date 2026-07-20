@@ -77,17 +77,27 @@ object ServiceClient {
     @Volatile
     private var fileIpcReadyCache: Boolean? = null
 
-    /** 缓存 SELinux 模块是否已安装（通过 root 检查一次即可） */
+    /** 缓存 SELinux 模块是否已安装 */
     @Volatile
     private var selinuxModuleInstalled: Boolean? = null
+    /** 缓存时间戳，30 秒 TTL */
+    @Volatile
+    private var selinuxModuleCheckTime: Long = 0L
+    private val SELINUX_MODULE_CACHE_TTL_MS = 30_000L
 
     /**
      * 检测 SELinux 策略模块是否已安装。
      * 模块安装后强制使用 Binder，不允许降级到 FileIPC。
      * 通过 root 检查 /data/adb/modules/tombstonex/module.prop 是否存在。
+     * 缓存 30 秒，避免频繁 spawn su；安装/卸载后可调用 refreshModuleStatus() 刷新。
      */
     private fun isSelinuxModuleInstalled(): Boolean {
-        selinuxModuleInstalled?.let { return it }
+        val now = System.currentTimeMillis()
+        selinuxModuleInstalled?.let { cached ->
+            if (now - selinuxModuleCheckTime < SELINUX_MODULE_CACHE_TTL_MS) {
+                return cached
+            }
+        }
         val result = try {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "test -f /data/adb/modules/tombstonex/module.prop && echo 1 || echo 0"))
             val output = process.inputStream.bufferedReader().use { it.readLine() ?: "0" }
@@ -97,7 +107,14 @@ object ServiceClient {
             false
         }
         selinuxModuleInstalled = result
+        selinuxModuleCheckTime = now
         return result
+    }
+
+    /** 刷新模块状态缓存（安装/卸载后调用） */
+    fun refreshModuleStatus() {
+        selinuxModuleInstalled = null
+        selinuxModuleCheckTime = 0L
     }
 
     /**
@@ -239,6 +256,7 @@ object ServiceClient {
      * 
      * 性能优化：用单个 su 命令完成"等待+读取"，避免轮询时反复 spawn su 进程
      */
+    @Synchronized
     private fun fileTransact(code: Int, args: JSONObject = JSONObject()): JSONObject? {
         if (!isFileIPCReady()) return null
 
