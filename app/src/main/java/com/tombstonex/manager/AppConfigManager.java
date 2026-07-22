@@ -339,7 +339,7 @@ public class AppConfigManager {
             try {
                 config.put(key, defaultValue);
             } catch (JSONException ignored) {
-                Logger.d("AppConfigManager: 确保默认键 " + key + " 失败", ignored);
+                Logger.d("AppConfigManager: 确保默认键 " + key + " 失败: " + ignored.getMessage());
             }
         }
     }

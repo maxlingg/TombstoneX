@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets;
 
 public class SystemApiFreezer implements IFreezer {
 
-    private final Method setProcessFrozenMethod;
+    private Method setProcessFrozenMethod;
 
     public SystemApiFreezer() {
         // Android 版本检查: setProcessFrozen 仅 Android 11+ (API 30) 可用

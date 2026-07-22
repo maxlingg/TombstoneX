@@ -320,6 +320,7 @@ public class ReKernelHook {
                 try { reader.close(); } catch (Throwable ignore) {
                     Logger.d("readAndHandle 关闭 reader 出错: " + ignore.getMessage());
                 }
+            }
         }
     }
 

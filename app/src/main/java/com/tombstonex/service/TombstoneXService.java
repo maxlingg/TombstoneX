@@ -134,16 +134,22 @@ public class TombstoneXService extends Binder {
             switch (code) {
                 case TX_GET_CONFIG: {
                     JSONObject config = new JSONObject();
-                    ConfigManager cm = ConfigManager.getInstance();
-                    config.put("freezeMode", cm.getFreezeMode().getId());
-                    config.put("freezeDelay", cm.getFreezeDelay());
-                    config.put("debugEnabled", cm.isDebugEnabled());
-                    config.put("globalPaused", cm.isGlobalPaused());
-                    config.put("hookANR", cm.isHookANREnabled());
-                    config.put("hookBroadcast", cm.isHookBroadcastEnabled());
-                    config.put("hookWakeLock", cm.isHookWakeLockEnabled());
-                    config.put("hookActivitySwitch", cm.isHookActivitySwitchEnabled());
-                    config.put("hookScreenState", cm.isHookScreenStateEnabled());
+                    try {
+                        ConfigManager cm = ConfigManager.getInstance();
+                        config.put("freezeMode", cm.getFreezeMode().getId());
+                        config.put("freezeDelay", cm.getFreezeDelay());
+                        config.put("debugEnabled", cm.isDebugEnabled());
+                        config.put("globalPaused", cm.isGlobalPaused());
+                        config.put("hookANR", cm.isHookANREnabled());
+                        config.put("hookBroadcast", cm.isHookBroadcastEnabled());
+                        config.put("hookWakeLock", cm.isHookWakeLockEnabled());
+                        config.put("hookActivitySwitch", cm.isHookActivitySwitchEnabled());
+                        config.put("hookScreenState", cm.isHookScreenStateEnabled());
+                    } catch (org.json.JSONException e) {
+                        Logger.e("TX_GET_CONFIG JSON 构建失败", e);
+                        reply.writeException(e);
+                        return true;
+                    }
                     reply.writeNoException();
                     replied = true;
                     reply.writeString(config.toString());
@@ -349,22 +355,28 @@ public class TombstoneXService extends Binder {
                 }
                 case TX_GET_ALL_PROCESSES: {
                     JSONArray arr = new JSONArray();
-                    for (Map.Entry<Integer, AppInfo> entry :
-                            ProcessTracker.getInstance().getAllProcesses().entrySet()) {
-                        AppInfo info = entry.getValue();
-                        JSONObject obj = new JSONObject();
-                        obj.put("pid", info.pid);
-                        obj.put("uid", info.uid);
-                        obj.put("packageName", info.packageName);
-                        obj.put("processName", info.processName);
-                        obj.put("state", info.getState().ordinal());
-                        obj.put("isSystemApp", info.isSystemApp());
-                        // 轻微-2: 实时查询 WhitelistManager 而非使用 info.isWhiteListed()，
-                        // 后者在注册时设置一次且不再刷新，可能因白名单变更而过时。
-                        obj.put("isWhiteListed", !WhitelistManager.getInstance().shouldFreeze(
-                            info.packageName, info.processName, info.isSystemApp()));
-                        obj.put("oomAdj", info.getOomAdj());
-                        arr.put(obj);
+                    try {
+                        for (Map.Entry<Integer, AppInfo> entry :
+                                ProcessTracker.getInstance().getAllProcesses().entrySet()) {
+                            AppInfo info = entry.getValue();
+                            JSONObject obj = new JSONObject();
+                            obj.put("pid", info.pid);
+                            obj.put("uid", info.uid);
+                            obj.put("packageName", info.packageName);
+                            obj.put("processName", info.processName);
+                            obj.put("state", info.getState().ordinal());
+                            obj.put("isSystemApp", info.isSystemApp());
+                            // 轻微-2: 实时查询 WhitelistManager 而非使用 info.isWhiteListed()，
+                            // 后者在注册时设置一次且不再刷新，可能因白名单变更而过时。
+                            obj.put("isWhiteListed", !WhitelistManager.getInstance().shouldFreeze(
+                                info.packageName, info.processName, info.isSystemApp()));
+                            obj.put("oomAdj", info.getOomAdj());
+                            arr.put(obj);
+                        }
+                    } catch (org.json.JSONException e) {
+                        Logger.e("TX_GET_ALL_PROCESSES JSON 构建失败", e);
+                        reply.writeException(e);
+                        return true;
                     }
                     reply.writeNoException();
                     replied = true;
@@ -483,43 +495,47 @@ public class TombstoneXService extends Binder {
                 case TX_GET_INIT_DATA: {
                     // 批量返回首页所需全部数据：配置 + 白名单 + 进程列表
                     JSONObject result = new JSONObject();
-                    // 配置
-                    ConfigManager cm = ConfigManager.getInstance();
-                    JSONObject config = new JSONObject();
-                    config.put("freezeMode", cm.getFreezeMode().getId());
-                    config.put("freezeDelay", cm.getFreezeDelay());
-                    config.put("debugEnabled", cm.isDebugEnabled());
-                    config.put("globalPaused", cm.isGlobalPaused());
-                    config.put("hookANR", cm.isHookANREnabled());
-                    config.put("hookBroadcast", cm.isHookBroadcastEnabled());
-                    config.put("hookWakeLock", cm.isHookWakeLockEnabled());
-                    config.put("hookActivitySwitch", cm.isHookActivitySwitchEnabled());
-                    config.put("hookScreenState", cm.isHookScreenStateEnabled());
-                    result.put("config", config);
-                    // 白名单
-                    JSONArray whiteArr = new JSONArray();
-                    for (String pkg : WhitelistManager.getInstance().getWhiteApps()) whiteArr.put(pkg);
-                    result.put("whiteApps", whiteArr);
-                    // 进程列表
-                    JSONArray procArr = new JSONArray();
-                    for (Map.Entry<Integer, AppInfo> entry :
-                            ProcessTracker.getInstance().getAllProcesses().entrySet()) {
-                        AppInfo info = entry.getValue();
-                        JSONObject obj = new JSONObject();
-                        obj.put("pid", info.pid);
-                        obj.put("uid", info.uid);
-                        obj.put("packageName", info.packageName);
-                        obj.put("processName", info.processName);
-                        obj.put("state", info.getState().ordinal());
-                        obj.put("isSystemApp", info.isSystemApp());
-                        // 轻微-2: 实时查询 WhitelistManager 而非使用 info.isWhiteListed()，
-                        // 后者在注册时设置一次且不再刷新，可能因白名单变更而过时。
-                        obj.put("isWhiteListed", !WhitelistManager.getInstance().shouldFreeze(
-                            info.packageName, info.processName, info.isSystemApp()));
-                        obj.put("oomAdj", info.getOomAdj());
-                        procArr.put(obj);
+                    try {
+                        // 配置
+                        ConfigManager cm = ConfigManager.getInstance();
+                        JSONObject config = new JSONObject();
+                        config.put("freezeMode", cm.getFreezeMode().getId());
+                        config.put("freezeDelay", cm.getFreezeDelay());
+                        config.put("debugEnabled", cm.isDebugEnabled());
+                        config.put("globalPaused", cm.isGlobalPaused());
+                        config.put("hookANR", cm.isHookANREnabled());
+                        config.put("hookBroadcast", cm.isHookBroadcastEnabled());
+                        config.put("hookWakeLock", cm.isHookWakeLockEnabled());
+                        config.put("hookActivitySwitch", cm.isHookActivitySwitchEnabled());
+                        config.put("hookScreenState", cm.isHookScreenStateEnabled());
+                        result.put("config", config);
+                        // 白名单
+                        JSONArray whiteArr = new JSONArray();
+                        for (String pkg : WhitelistManager.getInstance().getWhiteApps()) whiteArr.put(pkg);
+                        result.put("whiteApps", whiteArr);
+                        // 进程列表
+                        JSONArray procArr = new JSONArray();
+                        for (Map.Entry<Integer, AppInfo> entry :
+                                ProcessTracker.getInstance().getAllProcesses().entrySet()) {
+                            AppInfo info = entry.getValue();
+                            JSONObject obj = new JSONObject();
+                            obj.put("pid", info.pid);
+                            obj.put("uid", info.uid);
+                            obj.put("packageName", info.packageName);
+                            obj.put("processName", info.processName);
+                            obj.put("state", info.getState().ordinal());
+                            obj.put("isSystemApp", info.isSystemApp());
+                            obj.put("isWhiteListed", !WhitelistManager.getInstance().shouldFreeze(
+                                info.packageName, info.processName, info.isSystemApp()));
+                            obj.put("oomAdj", info.getOomAdj());
+                            procArr.put(obj);
+                        }
+                        result.put("processes", procArr);
+                    } catch (org.json.JSONException e) {
+                        Logger.e("TX_GET_INIT_DATA JSON 构建失败", e);
+                        reply.writeException(e);
+                        return true;
                     }
-                    result.put("processes", procArr);
                     reply.writeNoException();
                     replied = true;
                     reply.writeString(result.toString());
@@ -529,12 +545,18 @@ public class TombstoneXService extends Binder {
                     // 批量返回应用配置 + 优先级，避免两次 IPC 往返
                     String pkg = data.readString();
                     JSONObject result = new JSONObject();
-                    // M5: getAppConfig 可能返回 null，需 null-safe 处理
-                    JSONObject appConfig = com.tombstonex.manager.AppConfigManager.getInstance()
-                        .getAppConfig(pkg);
-                    result.put("config", (appConfig != null) ? appConfig.toString() : "{}");
-                    result.put("priority", com.tombstonex.manager.OomAdjManager.getInstance()
-                        .getAppPriority(pkg));
+                    try {
+                        // M5: getAppConfig 可能返回 null，需 null-safe 处理
+                        JSONObject appConfig = com.tombstonex.manager.AppConfigManager.getInstance()
+                            .getAppConfig(pkg);
+                        result.put("config", (appConfig != null) ? appConfig.toString() : "{}");
+                        result.put("priority", com.tombstonex.manager.OomAdjManager.getInstance()
+                            .getAppPriority(pkg));
+                    } catch (org.json.JSONException e) {
+                        Logger.e("TX_GET_APP_CONFIG_FULL JSON 构建失败", e);
+                        reply.writeException(e);
+                        return true;
+                    }
                     reply.writeNoException();
                     replied = true;
                     reply.writeString(result.toString());

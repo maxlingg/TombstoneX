@@ -39,7 +39,7 @@ public class TombstoneXApp extends Application {
             return name != null ? name.trim() : null;
         } catch (Exception e) {
             // m-8: 记录 cmdline 读取异常，便于排查进程名检测失败的原因
-            Logger.w("无法读取进程名称: " + cmdlinePath, e);
+            Logger.e("无法读取进程名称: " + cmdlinePath, e);
             return null;
         }
     }
