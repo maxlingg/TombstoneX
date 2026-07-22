@@ -61,6 +61,18 @@ public class AppConfigManager {
     private static volatile AppConfigManager instance;
 
     private final ConcurrentHashMap<String, JSONObject> cache = new ConcurrentHashMap<>();
+    // S9: per-package 锁，保护 setConfig 的读-改-写原子性
+    //
+    // P7-R7 设计决策：packageLocks 随应用数量增长但永不清理。
+    // 每个 Entry 的 key 为包名（约 30 字节 String + Entry 节点开销），
+    // value 为一个 Object（约 16 字节）。200 个应用约 3.2KB + 包名字符串开销，
+    // 总量 < 10KB，远小于配置 JSON 缓存与文件本身。清理逻辑（如 reload 时
+    // 比对当前配置包名并 evict）会引入额外复杂度与并发竞态（删除某 package 的
+    // 锁时该 package 可能正被另一线程持有），收益甚微。故保留当前实现不做清理。
+    private final ConcurrentHashMap<String, Object> packageLocks = new ConcurrentHashMap<>();
+    // M-17 锁顺序: packageLock → AppConfigManager 实例锁（saveToFile 的 synchronized）。
+    // setConfig / setAppConfig 先获取 packageLock，再调用 setAppConfig → saveToFile
+    // （synchronized 方法）。不得反向获取，否则死锁。
 
     private AppConfigManager() {
         // 确保配置目录存在
@@ -98,20 +110,16 @@ public class AppConfigManager {
      */
     public JSONObject getAppConfig(String packageName) {
         if (packageName == null) return defaultConfig();
-
-        JSONObject cached = cache.get(packageName);
-        if (cached != null) {
-            return copy(cached);
+        // M-18: 改用 get() + putIfAbsent 替代 computeIfAbsent，避免在
+        // ConcurrentHashMap 内部锁持有期间执行文件 IO。
+        JSONObject existing = cache.get(packageName);
+        if (existing != null) {
+            return copy(existing);
         }
-
         JSONObject loaded = loadFromFile(packageName);
-        if (loaded == null) {
-            loaded = defaultConfig();
-        } else {
-            loaded = applyDefaults(loaded);
-        }
-        cache.put(packageName, loaded);
-        return copy(loaded);
+        JSONObject result = (loaded != null) ? applyDefaults(loaded) : defaultConfig();
+        JSONObject winner = cache.putIfAbsent(packageName, result);
+        return copy(winner != null ? winner : result);
     }
 
     /**
@@ -122,9 +130,18 @@ public class AppConfigManager {
      */
     public void setAppConfig(String packageName, JSONObject config) {
         if (packageName == null || config == null) return;
-        JSONObject toSave = applyDefaults(config);
-        cache.put(packageName, toSave);
-        saveToFile(packageName, toSave);
+        // 轻微-5: 与 setConfig 一样获取 per-package 锁，保证 setAppConfig 的
+        // "applyDefaults→写缓存→写文件"序列与 getAppConfig/setConfig 之间的原子性。
+        Object lock = packageLocks.computeIfAbsent(packageName, k -> new Object());
+        synchronized (lock) {
+            JSONObject toSave = applyDefaults(config);
+            // M1: 先写文件，仅写入成功后才更新缓存，避免文件写入失败导致缓存与文件不一致。
+            if (saveToFile(packageName, toSave)) {
+                cache.put(packageName, toSave);
+            } else {
+                Logger.w("配置文件写入失败，缓存未更新: " + packageName);
+            }
+        }
     }
 
     /**
@@ -178,21 +195,27 @@ public class AppConfigManager {
     /**
      * 修改单个配置项。内部读取当前完整配置 -> 更新单个键 -> 整体保存。
      *
+     * <p>S9: 使用 per-package 锁保证读-改-写原子性，避免并发 setConfig
+     * 互相覆盖。
+     *
      * @param packageName 包名
      * @param key         配置键
      * @param value       新值
      */
     public void setConfig(String packageName, String key, Object value) {
         if (packageName == null || key == null || value == null) return;
-        JSONObject config = getAppConfig(packageName);
-        try {
-            config.put(key, value);
-        } catch (JSONException e) {
-            Logger.e("AppConfigManager: 设置键 " + key
-                + " 失败（" + packageName + "）", e);
-            return;
+        Object lock = packageLocks.computeIfAbsent(packageName, k -> new Object());
+        synchronized (lock) {
+            JSONObject config = getAppConfig(packageName);
+            try {
+                config.put(key, value);
+            } catch (JSONException e) {
+                Logger.e("AppConfigManager: 设置键 " + key
+                    + " 失败（" + packageName + "）", e);
+                return;
+            }
+            setAppConfig(packageName, config);
         }
-        setAppConfig(packageName, config);
     }
 
     // ---- 便捷访问方法 ----
@@ -264,6 +287,15 @@ public class AppConfigManager {
             config.put(KEY_PRIORITY, DEFAULT_PRIORITY);
         } catch (JSONException e) {
             Logger.e("AppConfigManager: 构建默认配置失败", e);
+            // 兜底：确保所有键都存在，即使 JSONException 发生于部分键写入后
+            ensureDefaultKey(config, KEY_FREEZE_ENABLED, DEFAULT_FREEZE_ENABLED);
+            ensureDefaultKey(config, KEY_BACKGROUND_LEVEL, DEFAULT_BACKGROUND_LEVEL);
+            ensureDefaultKey(config, KEY_PLAY_ALLOWED, DEFAULT_PLAY_ALLOWED);
+            ensureDefaultKey(config, KEY_ONGOING_NOTIFICATION, DEFAULT_ONGOING_NOTIFICATION);
+            ensureDefaultKey(config, KEY_NET_TRANSFER, DEFAULT_NET_TRANSFER);
+            ensureDefaultKey(config, KEY_AUTO_START_ALLOWED, DEFAULT_AUTO_START_ALLOWED);
+            ensureDefaultKey(config, KEY_KEEP_CONNECTION, DEFAULT_KEEP_CONNECTION);
+            ensureDefaultKey(config, KEY_PRIORITY, DEFAULT_PRIORITY);
         }
         return config;
     }
@@ -298,6 +330,20 @@ public class AppConfigManager {
         }
     }
 
+    /**
+     * 确保 JSONObject 中存在指定键，若不存在则写入默认值。
+     * 用于 defaultConfig() 的 JSONException 兜底，保证所有键最终都存在。
+     */
+    private void ensureDefaultKey(JSONObject config, String key, Object defaultValue) {
+        if (!config.has(key)) {
+            try {
+                config.put(key, defaultValue);
+            } catch (JSONException ignored) {
+                Logger.d("AppConfigManager: 确保默认键 " + key + " 失败", ignored);
+            }
+        }
+    }
+
     private File configFile(String packageName) {
         return new File(CONFIG_DIR, packageName + ".json");
     }
@@ -320,8 +366,14 @@ public class AppConfigManager {
 
     /**
      * 原子写入配置文件：先写 &lt;包名&gt;.json.tmp，再 ATOMIC_MOVE 替换原文件。
+     * M9: 加 synchronized 保证并发写文件的线程安全。
+     *
+     * <p>M1: 返回值改为 boolean，写入成功返回 true，失败返回 false。
+     * 调用方（setAppConfig）据此决定是否更新内存缓存，避免缓存与文件不一致。
+     *
+     * @return true 表示写入成功；false 表示写入失败（已记录日志并清理临时文件）
      */
-    private void saveToFile(String packageName, JSONObject config) {
+    private synchronized boolean saveToFile(String packageName, JSONObject config) {
         File dir = new File(CONFIG_DIR);
         if (!dir.exists()) dir.mkdirs();
         File file = configFile(packageName);
@@ -332,9 +384,13 @@ public class AppConfigManager {
             Files.move(tmpFile.toPath(), file.toPath(),
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
+            return true;
         } catch (IOException e) {
             Logger.e("AppConfigManager: 保存配置失败（" + packageName + "）", e);
-            tmpFile.delete();
+            if (!tmpFile.delete()) {
+                Logger.w("清理临时文件失败: " + tmpFile.getPath());
+            }
+            return false;
         }
     }
 }

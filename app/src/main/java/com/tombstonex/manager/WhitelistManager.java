@@ -70,9 +70,13 @@ public class WhitelistManager {
 
     public void reload() {
         synchronized (lock) {
-            whiteApps = FileUtils.readLines("whiteApp.conf");
-            whiteProcesses = FileUtils.readLines("whiteProcess.conf");
-            blackSystemApps = FileUtils.readLines("blackSystemApp.conf");
+            // S-6: FileUtils.readLines() 可能返回 null，回退到空集合防止 NPE。
+            Set<String> apps = FileUtils.readLines("whiteApp.conf");
+            Set<String> procs = FileUtils.readLines("whiteProcess.conf");
+            Set<String> blackApps = FileUtils.readLines("blackSystemApp.conf");
+            whiteApps = (apps != null) ? apps : Collections.<String>emptySet();
+            whiteProcesses = (procs != null) ? procs : Collections.<String>emptySet();
+            blackSystemApps = (blackApps != null) ? blackApps : Collections.<String>emptySet();
         }
         Logger.d("白名单已重载: whiteApps=" + whiteApps.size()
             + " whiteProcesses=" + whiteProcesses.size()
@@ -82,12 +86,20 @@ public class WhitelistManager {
     /**
      * 判断一个应用/进程是否应该被冻结
      *
+     * M-19: 本方法读取三个 volatile 字段（whiteApps / whiteProcesses / blackSystemApps）
+     * 之间没有原子性保证，理论上可能读到混合状态（部分字段来自旧版本，部分来自新版本）。
+     * 这是已知的设计权衡：三个字段由 reload() 在 synchronized(lock) 内同步替换，
+     * 混合状态仅在 reload() 与 shouldFreeze() 并发时出现，概率极低且不影响正确性
+     * （最坏情况是白名单/黑名单短暂不一致，但下次 reload 后会恢复一致）。
+     *
      * @param packageName 包名
      * @param processName 进程名（可能与包名不同，如 :pushservice 子进程）
      * @param isSystemApp 是否是系统应用
      * @return true 表示应该冻结
      */
     public boolean shouldFreeze(String packageName, String processName, boolean isSystemApp) {
+        // M6-修复: 防御性 null 检查，避免 NPE。调用方已保证非 null，但作为公共 API 应有防御。
+        if (packageName == null) return false;
         // 系统应用：默认不冻结
         if (isSystemApp) {
             // 默认白名单的系统应用永不可冻结
@@ -118,12 +130,20 @@ public class WhitelistManager {
 
     // ---- 应用白名单 ----
 
+    // 重构建议: addWhiteApp / removeWhiteApp / addWhiteProcess / removeWhiteProcess /
+    // addBlackSystemApp / removeBlackSystemApp 六个方法共享相同的"复制→修改→写文件→替换引用"模式，
+    // 可抽取为泛型方法 updateWhitelist(String configFile, Consumer<Set<String>> modifier, Supplier<Set<String>> getter, Consumer<Set<String>> setter)，
+    // 减少重复代码同时保持原子性保证。
+
     public void addWhiteApp(String packageName) {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(whiteApps);
             copy.add(packageName);
-            FileUtils.writeLines("whiteApp.conf", copy);
-            whiteApps = copy;
+            if (FileUtils.writeLines("whiteApp.conf", copy)) {
+                whiteApps = copy;
+            } else {
+                Logger.e("WhitelistManager: 写入 whiteApp.conf 失败，内存未更新");
+            }
         }
     }
 
@@ -131,8 +151,11 @@ public class WhitelistManager {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(whiteApps);
             copy.remove(packageName);
-            FileUtils.writeLines("whiteApp.conf", copy);
-            whiteApps = copy;
+            if (FileUtils.writeLines("whiteApp.conf", copy)) {
+                whiteApps = copy;
+            } else {
+                Logger.e("WhitelistManager: 写入 whiteApp.conf 失败，内存未更新");
+            }
         }
     }
 
@@ -146,8 +169,11 @@ public class WhitelistManager {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(whiteProcesses);
             copy.add(processName);
-            FileUtils.writeLines("whiteProcess.conf", copy);
-            whiteProcesses = copy;
+            if (FileUtils.writeLines("whiteProcess.conf", copy)) {
+                whiteProcesses = copy;
+            } else {
+                Logger.e("WhitelistManager: 写入 whiteProcess.conf 失败，内存未更新");
+            }
         }
     }
 
@@ -155,8 +181,11 @@ public class WhitelistManager {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(whiteProcesses);
             copy.remove(processName);
-            FileUtils.writeLines("whiteProcess.conf", copy);
-            whiteProcesses = copy;
+            if (FileUtils.writeLines("whiteProcess.conf", copy)) {
+                whiteProcesses = copy;
+            } else {
+                Logger.e("WhitelistManager: 写入 whiteProcess.conf 失败，内存未更新");
+            }
         }
     }
 
@@ -170,8 +199,11 @@ public class WhitelistManager {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(blackSystemApps);
             copy.add(packageName);
-            FileUtils.writeLines("blackSystemApp.conf", copy);
-            blackSystemApps = copy;
+            if (FileUtils.writeLines("blackSystemApp.conf", copy)) {
+                blackSystemApps = copy;
+            } else {
+                Logger.e("WhitelistManager: 写入 blackSystemApp.conf 失败，内存未更新");
+            }
         }
     }
 
@@ -179,8 +211,11 @@ public class WhitelistManager {
         synchronized (lock) {
             Set<String> copy = new HashSet<>(blackSystemApps);
             copy.remove(packageName);
-            FileUtils.writeLines("blackSystemApp.conf", copy);
-            blackSystemApps = copy;
+            if (FileUtils.writeLines("blackSystemApp.conf", copy)) {
+                blackSystemApps = copy;
+            } else {
+                Logger.e("WhitelistManager: 写入 blackSystemApp.conf 失败，内存未更新");
+            }
         }
     }
 

@@ -147,6 +147,15 @@ fun NavigationHost() {
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
+            // R7-7 设计决策说明：
+            // 使用 when(currentDest) 切换页面，每次切换都会销毁并重建对应 Composable，
+            // 导致页面内状态（如滚动位置、临时输入）丢失。这是有意为之的权衡：
+            // - 优势：每次进入页面都重新加载数据，确保用户看到最新的应用列表/进程状态/配置，
+            //   对本应用这类"状态查看+操作"类工具型页面更符合预期。
+            // - 劣势：重建有轻微性能开销，且无法保留页面内的临时状态。
+            // 替代方案（如使用 AnimatedContent 或控制可见性保留组合）会增加内存占用，
+            // 且需要在各页面内部自行处理数据刷新逻辑。当前实现优先保证数据新鲜度与内存占用最小。
+            // 如未来需要保留页面状态，可改为基于 visible 控制可见性的方案。
             when (currentDest) {
                 TxDestination.Home -> HomeScreen(showSnackbar = showSnackbar)
                 TxDestination.Whitelist -> WhitelistScreen(showSnackbar = showSnackbar)

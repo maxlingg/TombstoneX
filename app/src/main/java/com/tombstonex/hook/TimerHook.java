@@ -1,7 +1,6 @@
 package com.tombstonex.hook;
 
 import android.os.Binder;
-import android.os.Process;
 import com.tombstonex.manager.ProcessTracker;
 import com.tombstonex.model.AppInfo;
 import com.tombstonex.model.AppState;
@@ -10,23 +9,24 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import java.lang.reflect.Method;
-import java.util.List;
 
 /**
  * 定时器限制 Hook
  * 禁止被冻结应用设置定时器/闹钟：
  * - Hook AlarmManagerService.setImpl（系统服务端，多签名兼容）— 主拦截点
- * - Hook AlarmManager.set / setAndAllowWhileIdle / setExact / setExactAndAllowWhileIdle（应用端）
- * - Hook Handler.sendMessageDelayed / postDelayed（仅对冻结应用进程，通过 UID 判断）
  * 在 beforeHookedMethod 中检查调用方 UID 是否已冻结，若已冻结则 setResult(null) 阻止。
  * 注意：只拦截用户应用（uid >= 10000）的定时器，不拦截系统应用。
+ *
+ * R8-m1: 已删除死代码 hookAlarmManagerSet（应用端 AlarmManager，system_server 中无效）
+ * 和 hookHandler（system_server uid 守卫直接 return，恒为无效）。
+ * 真正的拦截在 hookAlarmManagerServiceSetImpl（system_server 端 AlarmManagerService）中完成。
  */
 public class TimerHook {
 
     public static void init(ClassLoader classLoader) {
         hookAlarmManagerServiceSetImpl(classLoader);
-        hookAlarmManagerSet(classLoader);
-        hookHandler(classLoader);
+        // R8-m1: hookAlarmManagerSet 与 hookHandler 已删除（死代码）。
+        // 真正的拦截在 hookAlarmManagerServiceSetImpl（system_server 端 AlarmManagerService）中完成。
     }
 
     /**
@@ -62,136 +62,42 @@ public class TimerHook {
     }
 
     /**
-     * Hook AlarmManager.set / setAndAllowWhileIdle / setExact / setExactAndAllowWhileIdle
-     * 这些方法在应用进程中执行，作为应用端补充拦截。
-     * 注意：system_server 中 hook 仅覆盖系统自身的调用；应用端需模块注入应用进程才生效。
-     */
-    private static void hookAlarmManagerSet(ClassLoader classLoader) {
-        try {
-            Class<?> alarmManagerClass = XposedHelpers.findClass(
-                "android.app.AlarmManager", classLoader);
-
-            XC_MethodHook callback = new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam param) {
-                    try {
-                        // 应用端：通过当前进程 uid 判断；system_server 端通过 Binder 调用方判断
-                        int uid = Binder.getCallingUid();
-                        if (uid < 10000) return; // 系统应用不拦截
-                        if (isUidFrozen(uid)) {
-                            Logger.d("已拦截已冻结 uid 的 " + param.method.getName()
-                                + " uid=" + uid);
-                            param.setResult(null);
-                        }
-                    } catch (Throwable t) {
-                        Logger.e("AlarmManager.set Hook 出错", t);
-                    }
-                }
-            };
-
-            String[] methodNames = {
-                "set", "setAndAllowWhileIdle", "setExact", "setExactAndAllowWhileIdle",
-                "setWindow", "setRepeating", "setAlarmClock"
-            };
-            int total = 0;
-            for (String name : methodNames) {
-                total += hookAllMethodsByName(alarmManagerClass, name, callback);
-            }
-            Logger.i("已 Hook AlarmManager 方法（" + total + " 个重载）");
-        } catch (Throwable t) {
-            Logger.e("Hook AlarmManager 失败", t);
-        }
-    }
-
-    /**
-     * Hook Handler.sendMessageDelayed / postDelayed — 仅对冻结应用进程生效
-     * 注意：Handler 是系统热路径，为避免在 system_server 上增加开销，
-     * 仅在应用进程（myUid >= 10000）中注册此 hook。system_server 中直接跳过。
-     * 已知限制：应用进程中 ProcessTracker 为独立实例（无冻结状态），
-     * 完整生效需通过 IPC 查询 system_server 的冻结状态。
-     */
-    private static void hookHandler(ClassLoader classLoader) {
-        // MainHook 只在 system_server 中加载此模块，system_server uid=1000 < 10000，
-        // 因此此 Hook 永远不会在应用进程中注册（死代码）。
-        // 保留方法签名但跳过执行，避免无意义的 Hook 尝试。
-        // 未来若 MainHook 支持应用进程注入，可移除此守卫。
-        if (Process.myUid() < 10000) {
-            // system_server 中不注册 Handler Hook
-            return;
-        }
-        // 以下代码仅在应用进程中执行（当前不可达）
-        try {
-            Class<?> handlerClass = XposedHelpers.findClass("android.os.Handler", classLoader);
-
-            XC_MethodHook callback = new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam param) {
-                    try {
-                        int uid = Process.myUid();
-                        if (uid < 10000) return;
-                        if (isUidFrozen(uid)) {
-                            Logger.d("已拦截已冻结进程的 " + param.method.getName()
-                                + " uid=" + uid);
-                            param.setResult(null);
-                        }
-                    } catch (Throwable t) {
-                        Logger.e("Handler Hook 出错", t);
-                    }
-                }
-            };
-
-            int n1 = hookAllMethodsByName(handlerClass, "sendMessageDelayed", callback);
-            int n2 = hookAllMethodsByName(handlerClass, "postDelayed", callback);
-            Logger.i("已 Hook Handler（sendMessageDelayed=" + n1
-                + " postDelayed=" + n2 + "）于应用进程中");
-        } catch (Throwable t) {
-            Logger.w("Hook Handler 失败: " + t.getMessage());
-        }
-    }
-
-    /**
-     * 检查 Binder 调用方是否已冻结，若已冻结则阻断（setResult(null)）
-     * 仅拦截用户应用（uid >= 10000），不拦截系统应用。
+     * 检查 Binder 调用方进程是否已冻结，若已冻结则阻断（setResult(null)）
+     *
+     * R10-m-5: 改为使用 Binder.getCallingPid() 精确判断调用方进程是否冻结，
+     * 避免多进程应用中任一进程冻结即拦截整个 UID 的过于激进行为。
      */
     private static void blockIfCallerFrozen(XC_MethodHook.MethodHookParam param) {
-        int callingUid = Binder.getCallingUid();
-        if (callingUid < 10000) return; // 系统应用不拦截
-        if (isUidFrozen(callingUid)) {
-            Logger.d("已拦截已冻结调用方的 " + param.method.getName()
-                + " uid=" + callingUid);
-            param.setResult(null);
-        }
-    }
-
-    /**
-     * 检查指定 UID 是否已被冻结
-     */
-    private static boolean isUidFrozen(int uid) {
         try {
-            List<AppInfo> processes = ProcessTracker.getInstance().getByUid(uid);
-            for (AppInfo info : processes) {
-                if (info.state == AppState.FROZEN) return true;
+            int callingPid = Binder.getCallingPid();
+            AppInfo info = ProcessTracker.getInstance().getByPid(callingPid);
+            if (info != null && info.getState() == AppState.FROZEN) {
+                Logger.d("拦截已冻结进程的闹钟: " + info.packageName + " pid=" + callingPid);
+                param.setResult(null);
             }
         } catch (Throwable t) {
-            Logger.d("isUidFrozen 失败 uid=" + uid + ": " + t.getMessage());
+            Logger.e("TimerHook 拦截出错", t);
         }
-        return false;
     }
 
     /**
      * 枚举类中所有指定名称的方法并逐一 hook（替代 hookAllMethods，stub 未提供该方法）
+     *
+     * M-5: 仅在当前类上 hook，不遍历 superclass，避免 hook 到父类中
+     * 同名但参数列表不同的非目标方法。
+     * m-6: 过滤 synthetic/bridge 方法，避免 hook 编译器生成的方法。
      */
     private static int hookAllMethodsByName(Class<?> clazz, String methodName, XC_MethodHook callback) {
         int count = 0;
         if (clazz == null) return 0;
         for (Method method : clazz.getDeclaredMethods()) {
-            if (method.getName().equals(methodName)) {
+            if (method.getName().equals(methodName) && !method.isSynthetic()) {
                 try {
                     method.setAccessible(true);
                     XposedBridge.hookMethod(method, callback);
                     count++;
                 } catch (Throwable t) {
-                    Logger.d("hookMethod 失败: " + methodName + ": " + t.getMessage());
+                    Logger.d("hookMethod 失败 " + methodName + ": " + t.getMessage());
                 }
             }
         }

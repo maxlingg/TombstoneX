@@ -19,8 +19,9 @@ public class TombstoneXApp extends Application {
         if (processName == null || processName.equals(getPackageName())) {
             // App 进程无权限访问 /data/system/ 配置目录，
             // 不在此初始化 ConfigManager（会因无权限失败），仅初始化 Logger。
+            // M28: 传入 App 私有目录作为日志目录，避免在主进程写入 /data/system/ 失败。
             // 调试开关默认关闭（false），配置写入由 system_server 侧的模块完成。
-            Logger.init(false);
+            Logger.init(false, getFilesDir().getAbsolutePath() + "/logs");
             Logger.i("TombstoneX Application 已创建");
         }
     }
@@ -37,6 +38,8 @@ public class TombstoneXApp extends Application {
             String name = reader.readLine();
             return name != null ? name.trim() : null;
         } catch (Exception e) {
+            // m-8: 记录 cmdline 读取异常，便于排查进程名检测失败的原因
+            Logger.w("无法读取进程名称: " + cmdlinePath, e);
             return null;
         }
     }

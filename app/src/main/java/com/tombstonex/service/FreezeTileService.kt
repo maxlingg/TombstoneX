@@ -20,7 +20,9 @@ import java.util.concurrent.TimeUnit
 class FreezeTileService : TileService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val serviceExecutor = Executors.newSingleThreadExecutor()
+    private val serviceExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "TombstoneX-TileService").apply { isDaemon = true }
+    }
 
     override fun onStartListening() {
         super.onStartListening()
@@ -29,23 +31,28 @@ class FreezeTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        serviceExecutor.execute {
-            // 检查模块是否激活
-            if (!ServiceClient.isAvailable) {
+        // P2-R1: executor 可能在 onDestroy 后已关闭，execute 会抛 RejectedExecutionException
+        try {
+            serviceExecutor.execute {
+                // 检查模块是否激活
+                if (!ServiceClient.isAvailable) {
+                    refreshTile()
+                    return@execute
+                }
+                // 读取当前暂停状态，切换
+                val paused = ServiceClient.isGlobalPaused()
+                // P3-R3: pauseAll/resumeAll 内部已调用 setGlobalPaused，无需冗余调用
+                if (paused) {
+                    // 恢复：清除暂停标记并恢复冻结
+                    ServiceClient.resumeAll()
+                } else {
+                    // 暂停：写入标记并暂停冻结（pauseAll 内部会 setGlobalPaused(true) + unfreezeAll）
+                    ServiceClient.pauseAll()
+                }
                 refreshTile()
-                return@execute
             }
-            // 读取当前暂停状态，切换
-            val paused = ServiceClient.isGlobalPaused()
-            // P3-R3: pauseAll/resumeAll 内部已调用 setGlobalPaused，无需冗余调用
-            if (paused) {
-                // 恢复：清除暂停标记并恢复冻结
-                ServiceClient.resumeAll()
-            } else {
-                // 暂停：写入标记并暂停冻结（pauseAll 内部会 setGlobalPaused(true) + unfreezeAll）
-                ServiceClient.pauseAll()
-            }
-            refreshTile()
+        } catch (e: java.util.concurrent.RejectedExecutionException) {
+            // Executor 已关闭（Service 销毁），忽略
         }
     }
 
@@ -66,41 +73,43 @@ class FreezeTileService : TileService() {
         if (serviceExecutor.isShutdown) return
         try {
             serviceExecutor.execute {
-            val available = ServiceClient.isAvailable
-            val paused = if (available) ServiceClient.isGlobalPaused() else false
-            val frozenCount = if (available) ServiceClient.getFrozenCount() else 0
+                val available = ServiceClient.isAvailable
+                val paused = if (available) ServiceClient.isGlobalPaused() else false
+                val frozenCount = if (available) ServiceClient.getFrozenCount() else 0
 
-            mainHandler.post {
-                val tile = qsTile ?: return@post
-                when {
-                    !available -> {
-                        tile.state = Tile.STATE_UNAVAILABLE
-                        tile.label = "未激活"
-                        tile.subtitle = "模块未启用"
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                            tile.contentDescription = "TombstoneX 模块未激活"
+                mainHandler.post {
+                    val tile = qsTile ?: return@post
+                    when {
+                        !available -> {
+                            tile.state = Tile.STATE_UNAVAILABLE
+                            tile.label = "未激活"
+                            tile.subtitle = "模块未启用"
+                            // m-9: 将 API 检查从 UPSIDE_DOWN_CAKE (34) 降为 R (30)，
+                            // 使 contentDescription 在更多设备上可用，提升无障碍体验
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                tile.contentDescription = "TombstoneX 模块未激活"
+                            }
+                        }
+                        paused -> {
+                            tile.state = Tile.STATE_INACTIVE
+                            tile.label = "已暂停"
+                            tile.subtitle = "点击恢复冻结"
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                tile.contentDescription = "TombstoneX 冻结已暂停"
+                            }
+                        }
+                        else -> {
+                            tile.state = Tile.STATE_ACTIVE
+                            tile.label = "冻结中"
+                            tile.subtitle = "已冻结 $frozenCount 个应用"
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                tile.contentDescription = "TombstoneX 冻结运行中，已冻结 $frozenCount 个应用"
+                            }
                         }
                     }
-                    paused -> {
-                        tile.state = Tile.STATE_INACTIVE
-                        tile.label = "已暂停"
-                        tile.subtitle = "点击恢复冻结"
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                            tile.contentDescription = "TombstoneX 冻结已暂停"
-                        }
-                    }
-                    else -> {
-                        tile.state = Tile.STATE_ACTIVE
-                        tile.label = "冻结中"
-                        tile.subtitle = "已冻结 $frozenCount 个应用"
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                            tile.contentDescription = "TombstoneX 冻结运行中，已冻结 $frozenCount 个应用"
-                        }
-                    }
+                    tile.updateTile()
                 }
-                tile.updateTile()
             }
-        }
         } catch (e: java.util.concurrent.RejectedExecutionException) {
             // Executor 已关闭（Service 销毁），跳过刷新
         }

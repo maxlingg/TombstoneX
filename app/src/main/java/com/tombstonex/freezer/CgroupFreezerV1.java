@@ -2,8 +2,10 @@ package com.tombstonex.freezer;
 
 import com.tombstonex.util.Logger;
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 
 public class CgroupFreezerV1 implements IFreezer {
 
@@ -23,19 +25,18 @@ public class CgroupFreezerV1 implements IFreezer {
         return writeCgroupFile(stateFile, "THAWED");
     }
 
+    /**
+     * 返回 freezer.state 路径。
+     * 直接返回第一个候选路径，移除 exists() 检查以消除 TOCTOU 竞态。
+     * 若 cgroup 路径不存在，由 writeCgroupFile() 的 IOException 处理。
+     */
     private String getFreezerStatePath(int pid, int uid) {
-        String[] paths = {
-            String.format("%s/uid_%d/pid_%d/freezer.state", CGROUP_V1_PATH, uid, pid),
-            String.format("/dev/freezer/uid_%d/pid_%d/freezer.state", uid, pid),
-        };
-        for (String path : paths) {
-            if (new File(path).exists()) return path;
-        }
-        return null;
+        return String.format("%s/uid_%d/pid_%d/freezer.state", CGROUP_V1_PATH, uid, pid);
     }
 
     private boolean writeCgroupFile(String path, String value) {
-        try (FileWriter writer = new FileWriter(path)) {
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(path), StandardCharsets.US_ASCII)) {
             writer.write(value);
             writer.flush();
             Logger.d("CgroupV1 写入 " + value + " 到 " + path);

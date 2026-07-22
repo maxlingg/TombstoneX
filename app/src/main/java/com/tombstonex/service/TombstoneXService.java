@@ -18,6 +18,7 @@ import com.tombstonex.util.Logger;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
 
@@ -63,7 +64,8 @@ public class TombstoneXService extends Binder {
     public static final int TX_RESELECT_FREEZER = 26;
     // 应用级配置
     public static final int TX_GET_APP_CONFIG = 27;
-    public static final int TX_SET_APP_CONFIG = 28;
+    // S4 修复：TX_SET_APP_CONFIG (28) 服务端无 onTransact 处理且客户端无调用方，
+    // 属于无用常量，已从服务端与 ServiceClient.kt 中删除。
     public static final int TX_SET_APP_CONFIG_ITEM = 29;
     // 轮番解冻间隔
     public static final int TX_GET_ROTATION_INTERVAL = 30;
@@ -75,18 +77,35 @@ public class TombstoneXService extends Binder {
     public static final int TX_GET_INIT_DATA = 34;
     public static final int TX_GET_APP_CONFIG_FULL = 35;
 
+    // M4-修复: 缓存反射 Method 对象，避免每次 onTransact 调用都执行 Class.forName + getMethod
+    private static volatile java.lang.reflect.Method cachedGetPackageManagerMethod;
+    private static volatile java.lang.reflect.Method cachedGetPackagesForUidMethod;
+    private static volatile Object cachedPackageManager;
+
     @Override
     protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
         // 安全：仅允许 system uid 或模块自身 UI 进程调用
         int callingUid = Binder.getCallingUid();
         if (callingUid != Process.SYSTEM_UID && callingUid != 0) {
-            // 允许模块自身 UI 进程调用（反射调用隐藏 API AppGlobals）
+            // 允许模块自身 UI 进程调用（反射调用隐藏 API AppGlobals，Method 对象已缓存）
             String[] packages = null;
             try {
-                Class<?> appGlobals = Class.forName("android.app.AppGlobals");
-                java.lang.reflect.Method getPackageManager = appGlobals.getMethod("getPackageManager");
-                Object pm = getPackageManager.invoke(null);
-                java.lang.reflect.Method getPackagesForUid = pm.getClass().getMethod("getPackagesForUid", int.class);
+                java.lang.reflect.Method getPackageManager = cachedGetPackageManagerMethod;
+                if (getPackageManager == null) {
+                    Class<?> appGlobals = Class.forName("android.app.AppGlobals");
+                    getPackageManager = appGlobals.getMethod("getPackageManager");
+                    cachedGetPackageManagerMethod = getPackageManager;
+                }
+                Object pm = cachedPackageManager;
+                if (pm == null) {
+                    pm = getPackageManager.invoke(null);
+                    cachedPackageManager = pm;
+                }
+                java.lang.reflect.Method getPackagesForUid = cachedGetPackagesForUidMethod;
+                if (getPackagesForUid == null) {
+                    getPackagesForUid = pm.getClass().getMethod("getPackagesForUid", int.class);
+                    cachedGetPackagesForUidMethod = getPackagesForUid;
+                }
                 packages = (String[]) getPackagesForUid.invoke(pm, callingUid);
             } catch (Throwable t) {
                 Logger.e("获取 uid 的包名失败", t);
@@ -116,7 +135,7 @@ public class TombstoneXService extends Binder {
                 case TX_GET_CONFIG: {
                     JSONObject config = new JSONObject();
                     ConfigManager cm = ConfigManager.getInstance();
-                    config.put("freezeMode", cm.getFreezeMode().ordinal());
+                    config.put("freezeMode", cm.getFreezeMode().getId());
                     config.put("freezeDelay", cm.getFreezeDelay());
                     config.put("debugEnabled", cm.isDebugEnabled());
                     config.put("globalPaused", cm.isGlobalPaused());
@@ -132,14 +151,15 @@ public class TombstoneXService extends Binder {
                 }
                 case TX_SET_FREEZE_MODE: {
                     int mode = data.readInt();
-                    FreezeMode[] modes = FreezeMode.values();
-                    if (mode < 0 || mode >= modes.length) {
+                    FreezeMode freezeMode = FreezeMode.fromId(mode);
+                    // fromId 对未知 id 回退到 SYSTEM_API；通过比对 id 判断是否真正匹配
+                    if (mode != freezeMode.getId()) {
                         reply.writeNoException();
                         replied = true;
                         reply.writeBoolean(false);
                         return true;
                     }
-                    ConfigManager.getInstance().setFreezeMode(modes[mode]);
+                    ConfigManager.getInstance().setFreezeMode(freezeMode);
                     reply.writeNoException();
                     replied = true;
                     reply.writeBoolean(true);
@@ -182,9 +202,11 @@ public class TombstoneXService extends Binder {
                 }
                 case TX_SET_GLOBAL_PAUSED: {
                     boolean paused = data.readBoolean();
-                    ConfigManager.getInstance().setGlobalPaused(paused);
+                    // P7-R7: 跟踪底层持久化结果，避免无条件返回 true
+                    boolean success = ConfigManager.getInstance().setGlobalPaused(paused);
                     reply.writeNoException();
                     replied = true;
+                    reply.writeBoolean(success);
                     return true;
                 }
                 case TX_IS_GLOBAL_PAUSED: {
@@ -335,10 +357,13 @@ public class TombstoneXService extends Binder {
                         obj.put("uid", info.uid);
                         obj.put("packageName", info.packageName);
                         obj.put("processName", info.processName);
-                        obj.put("state", info.state.ordinal());
-                        obj.put("isSystemApp", info.isSystemApp);
-                        obj.put("isWhiteListed", info.isWhiteListed);
-                        obj.put("oomAdj", info.oomAdj);
+                        obj.put("state", info.getState().ordinal());
+                        obj.put("isSystemApp", info.isSystemApp());
+                        // 轻微-2: 实时查询 WhitelistManager 而非使用 info.isWhiteListed()，
+                        // 后者在注册时设置一次且不再刷新，可能因白名单变更而过时。
+                        obj.put("isWhiteListed", !WhitelistManager.getInstance().shouldFreeze(
+                            info.packageName, info.processName, info.isSystemApp()));
+                        obj.put("oomAdj", info.getOomAdj());
                         arr.put(obj);
                     }
                     reply.writeNoException();
@@ -349,7 +374,7 @@ public class TombstoneXService extends Binder {
                 case TX_GET_FROZEN_COUNT: {
                     int count = 0;
                     for (AppInfo info : ProcessTracker.getInstance().getAllProcesses().values()) {
-                        if (info.state == AppState.FROZEN) count++;
+                        if (info.getState() == AppState.FROZEN) count++;
                     }
                     reply.writeNoException();
                     replied = true;
@@ -398,23 +423,27 @@ public class TombstoneXService extends Binder {
                 case TX_GET_APP_CONFIG: {
                     String pkg = data.readString();
                     org.json.JSONObject config = com.tombstonex.manager.AppConfigManager.getInstance().getAppConfig(pkg);
+                    // M5: config 可能为 null（应用无配置），null.toString() 会 NPE
+                    String configStr = (config != null) ? config.toString() : "{}";
                     reply.writeNoException();
                     replied = true;
-                    reply.writeString(config.toString());
+                    reply.writeString(configStr);
                     return true;
                 }
                 case TX_SET_APP_CONFIG_ITEM: {
                     String pkg = data.readString();
                     String key = data.readString();
                     int type = data.readInt(); // 0=boolean, 1=int, 2=string
+                    // M6: 旧代码 type 非 0/1/2 时仍 writeBoolean(true)，改为跟踪 success
+                    boolean success = false;
                     switch (type) {
-                        case 0: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readBoolean()); break;
-                        case 1: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readInt()); break;
-                        case 2: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readString()); break;
+                        case 0: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readBoolean()); success = true; break;
+                        case 1: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readInt()); success = true; break;
+                        case 2: com.tombstonex.manager.AppConfigManager.getInstance().setConfig(pkg, key, data.readString()); success = true; break;
                     }
                     reply.writeNoException();
                     replied = true;
-                    reply.writeBoolean(true);
+                    reply.writeBoolean(success);
                     return true;
                 }
                 case TX_GET_ROTATION_INTERVAL: {
@@ -426,10 +455,11 @@ public class TombstoneXService extends Binder {
                 }
                 case TX_SET_ROTATION_INTERVAL: {
                     int interval = data.readInt();
-                    ConfigManager.getInstance().setRotationInterval(interval);
+                    // P7-R7: 跟踪底层持久化结果，避免无条件返回 true
+                    boolean success = ConfigManager.getInstance().setRotationInterval(interval);
                     reply.writeNoException();
                     replied = true;
-                    reply.writeBoolean(true);
+                    reply.writeBoolean(success);
                     return true;
                 }
                 case TX_GET_APP_PRIORITY: {
@@ -443,10 +473,11 @@ public class TombstoneXService extends Binder {
                 case TX_SET_APP_PRIORITY: {
                     String pkg = data.readString();
                     int priority = data.readInt();
-                    com.tombstonex.manager.OomAdjManager.getInstance().setAppPriority(pkg, priority);
+                    // P7-R7: 跟踪底层持久化结果，避免无条件返回 true
+                    boolean success = com.tombstonex.manager.OomAdjManager.getInstance().setAppPriority(pkg, priority);
                     reply.writeNoException();
                     replied = true;
-                    reply.writeBoolean(true);
+                    reply.writeBoolean(success);
                     return true;
                 }
                 case TX_GET_INIT_DATA: {
@@ -455,7 +486,7 @@ public class TombstoneXService extends Binder {
                     // 配置
                     ConfigManager cm = ConfigManager.getInstance();
                     JSONObject config = new JSONObject();
-                    config.put("freezeMode", cm.getFreezeMode().ordinal());
+                    config.put("freezeMode", cm.getFreezeMode().getId());
                     config.put("freezeDelay", cm.getFreezeDelay());
                     config.put("debugEnabled", cm.isDebugEnabled());
                     config.put("globalPaused", cm.isGlobalPaused());
@@ -479,10 +510,13 @@ public class TombstoneXService extends Binder {
                         obj.put("uid", info.uid);
                         obj.put("packageName", info.packageName);
                         obj.put("processName", info.processName);
-                        obj.put("state", info.state.ordinal());
-                        obj.put("isSystemApp", info.isSystemApp);
-                        obj.put("isWhiteListed", info.isWhiteListed);
-                        obj.put("oomAdj", info.oomAdj);
+                        obj.put("state", info.getState().ordinal());
+                        obj.put("isSystemApp", info.isSystemApp());
+                        // 轻微-2: 实时查询 WhitelistManager 而非使用 info.isWhiteListed()，
+                        // 后者在注册时设置一次且不再刷新，可能因白名单变更而过时。
+                        obj.put("isWhiteListed", !WhitelistManager.getInstance().shouldFreeze(
+                            info.packageName, info.processName, info.isSystemApp()));
+                        obj.put("oomAdj", info.getOomAdj());
                         procArr.put(obj);
                     }
                     result.put("processes", procArr);
@@ -495,8 +529,10 @@ public class TombstoneXService extends Binder {
                     // 批量返回应用配置 + 优先级，避免两次 IPC 往返
                     String pkg = data.readString();
                     JSONObject result = new JSONObject();
-                    result.put("config", com.tombstonex.manager.AppConfigManager.getInstance()
-                        .getAppConfig(pkg).toString());
+                    // M5: getAppConfig 可能返回 null，需 null-safe 处理
+                    JSONObject appConfig = com.tombstonex.manager.AppConfigManager.getInstance()
+                        .getAppConfig(pkg);
+                    result.put("config", (appConfig != null) ? appConfig.toString() : "{}");
                     result.put("priority", com.tombstonex.manager.OomAdjManager.getInstance()
                         .getAppPriority(pkg));
                     reply.writeNoException();
@@ -507,7 +543,7 @@ public class TombstoneXService extends Binder {
                 default:
                     return super.onTransact(code, data, reply, flags);
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             Logger.e("TombstoneXService 事务出错: " + code, e);
             // P2-02: 仅在 reply 尚未被写入（writeNoException 未调用）时才写入异常，
             // 避免在 writeNoException 之后再 writeException 导致 reply 数据错位
@@ -635,14 +671,25 @@ public class TombstoneXService extends Binder {
 
     /**
      * 将注册状态写入系统属性，供 App 端读取诊断信息。
+     *
+     * L10 修复：系统属性值限制 92 字节（含 null 终止符），旧代码按字符数截断，
+     * 多字节 UTF-8 字符（如中文）可能导致实际字节数超限被系统截断为乱码。
+     * 改为按 UTF-8 字节长度截断到 91 字节。
      */
     private static void setRegStatus(String status) {
+        if (status == null) status = "";
         try {
             Class<?> spClass = Class.forName("android.os.SystemProperties");
             java.lang.reflect.Method setMethod = spClass.getMethod("set", String.class, String.class);
-            // 截断到 91 字符（系统属性值限制 92 字节）
-            String truncated = status.length() > 91 ? status.substring(0, 91) : status;
-            setMethod.invoke(null, "persist.sys.tombstonex.regstatus", truncated);
+            // 按 UTF-8 字节长度截断到 91 字节（系统属性值限制 92 字节，含 null 终止符）
+            byte[] bytes = status.getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > 91) {
+                int end = 91;
+                // 回退到最后一个完整字符边界，避免截断多字节 UTF-8 字符产生乱码
+                while (end > 0 && (bytes[end] & 0xC0) == 0x80) end--;
+                status = new String(bytes, 0, end, StandardCharsets.UTF_8);
+            }
+            setMethod.invoke(null, "sys.tombstonex.regstatus", status);
         } catch (Throwable t) {
             Logger.e("设置注册状态属性失败", t);
         }

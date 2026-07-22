@@ -53,6 +53,7 @@ import com.tombstonex.provider.AppProvider
 import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.safeRunCatching
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -82,6 +83,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
     var processes by remember { mutableStateOf<List<ProcessDisplayItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
+    var debouncedQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(0) }
 
     // 三类名单的当前条目集合
@@ -90,19 +92,26 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
     var blackSystem by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     // 异步从 ServiceClient 重新读取三类名单
-    fun reloadSets() {
-        scope.launch {
-            val (wa, wp, bs) = withContext(Dispatchers.IO) {
-                Triple(
-                    safeRunCatching { ServiceClient.getWhiteApps() }.getOrDefault(emptySet()),
-                    safeRunCatching { ServiceClient.getWhiteProcesses() }.getOrDefault(emptySet()),
-                    safeRunCatching { ServiceClient.getBlackSystemApps() }.getOrDefault(emptySet()),
-                )
-            }
-            whiteApps = wa
-            whiteProcesses = wp
-            blackSystem = bs
+    // M8 修复：改为 suspend 函数，在 LaunchedEffect 中 await，
+    // 避免异步执行覆盖用户在此期间的乐观更新
+    suspend fun reloadSets() {
+        val (wa, wp, bs) = withContext(Dispatchers.IO) {
+            Triple(
+                safeRunCatching { ServiceClient.getWhiteApps() }.getOrNull(),
+                safeRunCatching { ServiceClient.getWhiteProcesses() }.getOrNull(),
+                safeRunCatching { ServiceClient.getBlackSystemApps() }.getOrNull(),
+            )
         }
+        // M25: 仅在 IPC 成功时更新对应集合，失败时保留旧值，避免清空本地白名单状态
+        if (wa != null) whiteApps = wa
+        if (wp != null) whiteProcesses = wp
+        if (bs != null) blackSystem = bs
+    }
+
+    // 搜索防抖：延迟 300ms 后同步 debouncedQuery，避免每次按键都触发过滤
+    LaunchedEffect(searchQuery) {
+        delay(300)
+        debouncedQuery = searchQuery
     }
 
     LaunchedEffect(Unit) {
@@ -157,10 +166,13 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                     else ServiceClient.addWhiteApp(pkg)
                 }.getOrDefault(false)
             }
-            if (ok) reloadSets()
-            else {
-                // 回滚
-                whiteApps = if (currentlyOn) whiteApps + pkg else whiteApps - pkg
+            // M5 修复：移除 reloadSets()，依赖乐观更新 + 失败回滚，避免整体替换集合丢弃其他待定乐观更新
+            if (!ok) {
+                // M6 修复：仅当当前状态仍为本次乐观更新设置的状态时才回滚，避免覆盖用户后续操作
+                val currentContains = whiteApps.contains(pkg)
+                if (currentContains != currentlyOn) {
+                    whiteApps = if (currentlyOn) whiteApps + pkg else whiteApps - pkg
+                }
                 showSnackbar("操作失败（模块未激活或无权限）")
             }
         }
@@ -176,10 +188,13 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                     else ServiceClient.addWhiteProcess(proc)
                 }.getOrDefault(false)
             }
-            if (ok) reloadSets()
-            else {
-                // 回滚
-                whiteProcesses = if (currentlyOn) whiteProcesses + proc else whiteProcesses - proc
+            // M5 修复：移除 reloadSets()，依赖乐观更新 + 失败回滚，避免整体替换集合丢弃其他待定乐观更新
+            if (!ok) {
+                // M6 修复：仅当当前状态仍为本次乐观更新设置的状态时才回滚，避免覆盖用户后续操作
+                val currentContains = whiteProcesses.contains(proc)
+                if (currentContains != currentlyOn) {
+                    whiteProcesses = if (currentlyOn) whiteProcesses + proc else whiteProcesses - proc
+                }
                 showSnackbar("操作失败（模块未激活或无权限）")
             }
         }
@@ -195,10 +210,13 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                     else ServiceClient.addBlackSystemApp(pkg)
                 }.getOrDefault(false)
             }
-            if (ok) reloadSets()
-            else {
-                // 回滚
-                blackSystem = if (currentlyOn) blackSystem + pkg else blackSystem - pkg
+            // M5 修复：移除 reloadSets()，依赖乐观更新 + 失败回滚，避免整体替换集合丢弃其他待定乐观更新
+            if (!ok) {
+                // M6 修复：仅当当前状态仍为本次乐观更新设置的状态时才回滚，避免覆盖用户后续操作
+                val currentContains = blackSystem.contains(pkg)
+                if (currentContains != currentlyOn) {
+                    blackSystem = if (currentlyOn) blackSystem + pkg else blackSystem - pkg
+                }
                 showSnackbar("操作失败（模块未激活或无权限）")
             }
         }
@@ -265,11 +283,11 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                 when (selectedTab) {
                     0 -> {
                         val visibleApps = remember(apps) { apps.filter { !it.isSystem } }
-                        val filtered = remember(visibleApps, searchQuery) {
-                            if (searchQuery.isBlank()) visibleApps else {
+                        val filtered = remember(visibleApps, debouncedQuery) {
+                            if (debouncedQuery.isBlank()) visibleApps else {
                                 visibleApps.filter {
-                                    it.label.contains(searchQuery, ignoreCase = true) ||
-                                        it.packageName.contains(searchQuery, ignoreCase = true)
+                                    it.label.contains(debouncedQuery, ignoreCase = true) ||
+                                        it.packageName.contains(debouncedQuery, ignoreCase = true)
                                 }
                             }
                         }
@@ -298,11 +316,11 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                         }
                     }
                     1 -> {
-                        val filtered = remember(processes, searchQuery) {
-                            if (searchQuery.isBlank()) processes else {
+                        val filtered = remember(processes, debouncedQuery) {
+                            if (debouncedQuery.isBlank()) processes else {
                                 processes.filter {
-                                    it.processName.contains(searchQuery, ignoreCase = true) ||
-                                        it.packageName.contains(searchQuery, ignoreCase = true)
+                                    it.processName.contains(debouncedQuery, ignoreCase = true) ||
+                                        it.packageName.contains(debouncedQuery, ignoreCase = true)
                                 }
                             }
                         }
@@ -333,11 +351,11 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                     }
                     else -> {
                         val visibleApps = remember(apps) { apps.filter { it.isSystem } }
-                        val filtered = remember(visibleApps, searchQuery) {
-                            if (searchQuery.isBlank()) visibleApps else {
+                        val filtered = remember(visibleApps, debouncedQuery) {
+                            if (debouncedQuery.isBlank()) visibleApps else {
                                 visibleApps.filter {
-                                    it.label.contains(searchQuery, ignoreCase = true) ||
-                                        it.packageName.contains(searchQuery, ignoreCase = true)
+                                    it.label.contains(debouncedQuery, ignoreCase = true) ||
+                                        it.packageName.contains(debouncedQuery, ignoreCase = true)
                                 }
                             }
                         }

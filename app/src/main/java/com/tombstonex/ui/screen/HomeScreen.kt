@@ -65,6 +65,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +84,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import kotlin.coroutines.coroutineContext
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 /**
  * 主页列表项：合并 [AppProvider.AppData] 与 [ServiceClient.ProcessInfo] 信息。
@@ -108,6 +111,61 @@ private fun Int.toAppState(): AppState? = when (this) {
     else -> null
 }
 
+/**
+ * 执行命令并带超时等待，使用并行线程消费 stdout/stderr 避免管道阻塞。
+ * M2 修复：readText() 在 waitFor 之前会阻塞，改为并行消费模式（同 RootModuleInstaller.waitForProcess）。
+ * R7-5 修复：超时后 destroyForcibly 未 join 读取线程，可能导致线程泄漏；添加 join 等待线程退出。
+ * R7-6 修复：runRootCommandWithTimeout 与 runCommandWithTimeout 逻辑几乎完全相同，
+ * 提取公共方法 runProcessWithTimeout 消除重复代码。
+ */
+private suspend fun runProcessWithTimeout(
+    cmdArray: Array<String>,
+    timeoutSec: Long = 5,
+): Boolean = withContext(Dispatchers.IO) {
+    val process = Runtime.getRuntime().exec(cmdArray)
+    // M-45: 将 stdout/stderr 读取线程设为守护线程，避免 JVM 退出时被阻塞
+    val stdoutThread = Thread {
+        try { process.inputStream.bufferedReader().use { it.readText() } } catch (e: IOException) {
+            // m-11: 记录管道关闭异常，避免静默丢失诊断信息
+            android.util.Log.w("HomeScreen", "stdout read interrupted", e)
+        }
+    }.apply { isDaemon = true }
+    val stderrThread = Thread {
+        try { process.errorStream.bufferedReader().use { it.readText() } } catch (e: IOException) {
+            // m-12: 记录管道关闭异常
+            android.util.Log.w("HomeScreen", "stderr read interrupted", e)
+        }
+    }.apply { isDaemon = true }
+    stdoutThread.start()
+    stderrThread.start()
+    val exited = process.waitFor(timeoutSec, TimeUnit.SECONDS)
+    if (!exited) {
+        // R7-5: destroyForcibly 后 join 读取线程，避免线程在管道阻塞状态下泄漏
+        process.destroyForcibly()
+        stdoutThread.join(1000)
+        stderrThread.join(1000)
+        false
+    } else {
+        stdoutThread.join(3000)
+        stderrThread.join(3000)
+        process.exitValue() == 0
+    }
+}
+
+/**
+ * 通过 root 执行命令并带超时等待。
+ * 用于需要 su 权限的命令（如 reboot、setprop）。
+ */
+private suspend fun runRootCommandWithTimeout(cmd: String, timeoutSec: Long = 5): Boolean =
+    runProcessWithTimeout(arrayOf("su", "-c", cmd), timeoutSec)
+
+/**
+ * 执行命令（非 root）并带超时等待。
+ * 用于 su 不可用时的回退方案。
+ */
+private suspend fun runCommandWithTimeout(cmdArray: Array<String>, timeoutSec: Long = 5): Boolean =
+    runProcessWithTimeout(cmdArray, timeoutSec)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(showSnackbar: (String) -> Unit) {
@@ -115,6 +173,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     val scope = rememberCoroutineScope()
 
     var loadJob by remember { mutableStateOf<Job?>(null) }
+    // L7 修复：refreshStates 任务跟踪，取消前序未完成的刷新，避免并发执行导致状态错乱
+    var refreshJob by remember { mutableStateOf<Job?>(null) }
 
     var items by remember { mutableStateOf<List<HomeAppItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -126,7 +186,6 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     var moduleLoaded by remember { mutableStateOf(false) }
     var moduleEnabled by remember { mutableStateOf(false) }
     var regStatus by remember { mutableStateOf("") }
-    var currentIpcMode by remember { mutableStateOf("none") }
     var showRebootDialog by remember { mutableStateOf(false) }
     // 应用级配置 BottomSheet 状态
     var showAppConfigSheet by remember { mutableStateOf(false) }
@@ -140,36 +199,80 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
 
     // 图标懒加载器：按包名从 PackageManager 异步获取图标
     val pm = context.packageManager
+    // L3: 应用图标 LRU 缓存，避免滚动时重复解码
+    // L1 修复：改为基于字节大小的 LruCache（3MB），避免大图标导致内存溢出
+    val iconCache = remember {
+        object : android.util.LruCache<String, ImageBitmap>(3 * 1024 * 1024) {  // 3MB
+            // m-13: asAndroidBitmap() 每次调用都会创建临时 Bitmap 对象用于获取 byteCount，
+            // 这是 LruCache.sizeOf() 驱动的已知开销。在 system_server 环境下可接受，
+            // 若在其他内存受限环境中使用，可考虑缓存 byteCount 或改用 Bitmap 直接存储。
+            override fun sizeOf(key: String, value: ImageBitmap): Int =
+                value.asAndroidBitmap().byteCount
+            // M3 修复：不手动 recycle Bitmap，依赖 GC 回收 native 内存。
+            // 手动 recycle 会导致仍持有该 Bitmap 引用的 Composable 崩溃
+            // （IllegalStateException: Cannot draw a recycled Bitmap）。
+            // LruCache 驱逐后旧引用仅存在于缓存中，Compose 的 Image(bitmap=...) 已自行持有引用，
+            // 由 GC 负责回收即可。
+            override fun entryRemoved(
+                evicted: Boolean,
+                key: String,
+                oldValue: ImageBitmap,
+                newValue: ImageBitmap?,
+            ) {
+                // 不手动 recycle，依赖 GC 回收
+            }
+        }
+    }
     val loadIcon: suspend (String) -> ImageBitmap? = remember(pm) {
         { pkg ->
-            withContext(Dispatchers.IO) {
-                safeRunCatching {
-                    pm.getApplicationIcon(pkg).toImageBitmap(96)
-                }.getOrNull()
+            // 先查缓存
+            val cached = iconCache.get(pkg)
+            if (cached != null) {
+                cached
+            } else {
+                withContext(Dispatchers.IO) {
+                    safeRunCatching {
+                        pm.getApplicationIcon(pkg).toImageBitmap(96)
+                    }.getOrNull()?.also { bmp ->
+                        iconCache.put(pkg, bmp)
+                    }
+                }
             }
         }
     }
 
     // 异步刷新进程状态（从 ServiceClient 获取）
     fun refreshStates() {
-        scope.launch {
+        // L7 修复：取消前序未完成的刷新任务，避免并发执行导致状态错乱
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
             val procList = withContext(Dispatchers.IO) {
                 safeRunCatching { ServiceClient.getAllProcesses() }.getOrDefault(emptyList())
             }
             val procByPkg = procList.associateBy { it.packageName }
+            // M3 修复：在 launch 内读取最新 items 合并而非替换快照；仅更新 pid/uid/state，
+            // 保留当前 isWhiteListed。
+            // M2 修复：进程不在新快照中时重置 pid/state 为未运行，避免保留过期的进程信息
             items = items.map { item ->
                 val info = procByPkg[item.packageName]
-                item.copy(
-                    pid = info?.pid ?: -1,
-                    uid = info?.uid ?: -1,
-                    state = info?.state?.toAppState(),
-                )
+                if (info != null) {
+                    item.copy(
+                        pid = info.pid,
+                        uid = info.uid,
+                        state = info.state.toAppState(),
+                    )
+                } else {
+                    // 进程已消失，重置为未运行状态（保留 isWhiteListed 等其他字段）
+                    item.copy(pid = -1, state = null)
+                }
             }
         }
     }
 
     fun loadApps() {
         loadJob?.cancel()
+        // M5 修复：同时取消进行中的刷新任务，避免刷新结果覆盖新加载结果
+        refreshJob?.cancel()
         loadJob = scope.launch {
             try {
                 val appProvider = AppProvider.getInstance(context)
@@ -195,8 +298,6 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 moduleLoaded = triple.second
                 moduleAvailable = triple.third
                 regStatus = rs
-                // 获取当前 IPC 模式，用于判断是否显示一键启用按钮
-                currentIpcMode = safeRunCatching { ServiceClient.currentIpcMode }.getOrDefault("none")
 
                 val initData = dataDeferred.await()
                 val whiteApps = initData?.whiteApps ?: emptySet()
@@ -236,12 +337,13 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     }
 
     // 定期刷新进程状态（每 5 秒从 ServiceClient 拉取最新状态）
+    // 轻微-8 修复：模块不可用时直接 return，避免每 5 秒空转
     LaunchedEffect(moduleAvailable) {
+        if (!moduleAvailable) return@LaunchedEffect
         while (true) {
             delay(5000)
-            if (!loading && items.isNotEmpty()) {
-                refreshStates()
-            }
+            if (loading || items.isEmpty()) continue
+            refreshStates()
         }
     }
 
@@ -251,6 +353,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
             return
         }
         val willFreeze = item.state != AppState.FROZEN
+        // M-43: 先取消进行中的 refreshJob，避免刷新任务与本次修改产生竞态
+        refreshJob?.cancel()
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
                 safeRunCatching {
@@ -259,13 +363,17 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 }.getOrDefault(false)
             }
             if (ok) {
+                // M-43: 修改完成后触发 refreshStates() 拉取最新状态
                 refreshStates()
                 showSnackbar(
                     if (willFreeze) "已冻结：${item.label}"
                     else "已解冻：${item.label}"
                 )
             } else {
-                showSnackbar("操作失败（模块未激活或无权限）")
+                // R7-8 修复：操作失败时刷新状态，因为列表快照中的 pid 最多有 5 秒延迟，
+                // 进程可能已重启导致 pid 过期。刷新后用户可基于最新状态重试。
+                refreshStates()
+                showSnackbar("操作失败（进程可能已重启，请重试）")
             }
         }
     }
@@ -274,10 +382,23 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
      * 切换应用的冻结参与状态。
      * enabled=true: 参与自动冻结（从白名单移除）
      * enabled=false: 不参与冻结（加入白名单）
+     *
+     * 采用乐观更新：先更新 UI，IPC 失败后回滚。
+     *
+     * 中等-6 修复：记录 toggle 前的旧值，回滚时恢复旧值而非基于 enabled 反推，
+     * 避免快速连续切换时回滚到错误状态。
      */
     fun onToggleFreeze(item: HomeAppItem, enabled: Boolean) {
+        // 记录旧值用于回滚（避免快速连续切换时基于 enabled 反推错误）
+        val oldValue = items.find { it.packageName == item.packageName }?.isWhiteListed ?: return
+        // M-43: 先取消进行中的 refreshJob，避免刷新任务与本次修改产生竞态
+        refreshJob?.cancel()
+        // 乐观更新 UI
+        items = items.map {
+            if (it.packageName == item.packageName) it.copy(isWhiteListed = !enabled) else it
+        }
         scope.launch {
-            val ok = withContext(Dispatchers.IO) {
+            val success = withContext(Dispatchers.IO) {
                 safeRunCatching {
                     if (enabled) {
                         // 参与冻结 = 从白名单移除
@@ -288,18 +409,23 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     }
                 }.getOrDefault(false)
             }
-            if (ok) {
-                // 更新本地列表状态
-                items = items.map {
-                    if (it.packageName == item.packageName) {
-                        it.copy(isWhiteListed = !enabled)
-                    } else it
-                }
+            if (success) {
+                // M-43: 修改完成后触发 refreshStates() 拉取最新状态
+                refreshStates()
                 showSnackbar(
                     if (enabled) "已开启冻结：${item.label}"
                     else "已加入白名单：${item.label}"
                 )
             } else {
+                // M6 修复：仅当当前值仍为本次乐观更新设置的值（!enabled）时才回滚，
+                // 避免覆盖用户在此期间的后续操作
+                val currentValue = items.find { it.packageName == item.packageName }?.isWhiteListed
+                if (currentValue == !enabled) {
+                    // 回滚到旧值（而非基于 enabled 反推）
+                    items = items.map {
+                        if (it.packageName == item.packageName) it.copy(isWhiteListed = oldValue) else it
+                    }
+                }
                 showSnackbar("设置失败（模块未激活或无权限）")
             }
         }
@@ -375,14 +501,13 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // 模块未激活 或 处于 FileIPC 降级模式 或 模块已安装但 Binder 不可用时显示状态卡片
-                if (!moduleAvailable || currentIpcMode == "fileipc" || currentIpcMode == "error_binder_required") {
+                // 模块未激活（Binder 服务不可用）时显示状态卡片
+                if (!moduleAvailable) {
                     item {
                         ModuleNotActiveCard(
                             moduleEnabled = moduleEnabled,
                             moduleLoaded = moduleLoaded,
                             regStatus = regStatus,
-                            ipcMode = currentIpcMode,
                         )
                     }
                 }
@@ -489,15 +614,17 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 confirmButton = {
                     TextButton(onClick = {
                         showRebootDialog = false
-                        // 通过 root 权限执行 reboot
-                        try {
-                            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot"))
-                            process.waitFor()
-                        } catch (e: Exception) {
-                            // su 不可用时尝试普通 reboot（通常需要系统签名权限）
+                        // M2 修复：使用并行线程消费 stdout/stderr，避免 readText() 在 waitFor 之前阻塞
+                        scope.launch {
                             try {
-                                Runtime.getRuntime().exec(arrayOf("reboot"))
-                            } catch (_: Exception) {
+                                runRootCommandWithTimeout("reboot")
+                            } catch (e: Exception) {
+                                // su 不可用时尝试普通 reboot（通常需要系统签名权限）
+                                try {
+                                    runCommandWithTimeout(arrayOf("reboot"))
+                                } catch (e: Exception) {
+                                    android.util.Log.w("TombstoneX", "重启失败", e)
+                                }
                             }
                         }
                     }) {
@@ -533,7 +660,6 @@ private fun ModuleNotActiveCard(
     moduleEnabled: Boolean = false,
     moduleLoaded: Boolean = false,
     regStatus: String = "",
-    ipcMode: String = "none",
 ) {
     var showInstallDialog by remember { mutableStateOf(false) }
     var installResult by remember { mutableStateOf<com.tombstonex.util.RootModuleInstaller.InstallResult?>(null) }
@@ -541,19 +667,10 @@ private fun ModuleNotActiveCard(
     var showRebootDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // 根据状态决定卡片颜色：error_binder_required 用错误色，FileIPC 用警告色，未激活用错误色
-    val isErrorBinderMode = ipcMode == "error_binder_required"
-    val isFileIpcMode = ipcMode == "fileipc"
-    val containerColor = if (isFileIpcMode) {
-        MaterialTheme.colorScheme.tertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.errorContainer
-    }
-    val contentColor = if (isFileIpcMode) {
-        MaterialTheme.colorScheme.onTertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.onErrorContainer
-    }
+    // 模块已加载但 Binder 不可用 → 需要安装 SELinux 策略或重启
+    val isBinderFailed = moduleEnabled && moduleLoaded
+    val containerColor = MaterialTheme.colorScheme.errorContainer
+    val contentColor = MaterialTheme.colorScheme.onErrorContainer
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -567,21 +684,13 @@ private fun ModuleNotActiveCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    when {
-                        isErrorBinderMode -> Icons.Filled.Error
-                        isFileIpcMode -> Icons.Filled.Bolt
-                        else -> Icons.Filled.Warning
-                    },
+                    if (isBinderFailed) Icons.Filled.Error else Icons.Filled.Warning,
                     contentDescription = null,
                     tint = contentColor,
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = when {
-                        isErrorBinderMode -> "Binder 注册失败"
-                        isFileIpcMode -> "FileIPC 降级模式"
-                        else -> "模块未激活"
-                    },
+                    text = if (isBinderFailed) "Binder 服务未就绪" else "模块未激活",
                     fontWeight = FontWeight.SemiBold,
                     color = contentColor,
                 )
@@ -589,16 +698,8 @@ private fun ModuleNotActiveCard(
             val statusText = when {
                 !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块"
                 !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」"
-                isErrorBinderMode -> {
-                    val base = "SELinux 策略模块已安装，但 Binder 服务注册失败。\n请重启设备后再试。\n如重启后仍失败，请检查 SELinux 规则是否生效。"
-                    if (regStatus.isNotEmpty() && !regStatus.startsWith("ok") && !regStatus.startsWith("already")) {
-                        "$base\n\n注册诊断: $regStatus"
-                    } else {
-                        base
-                    }
-                }
-                isFileIpcMode -> {
-                    val base = "当前使用文件 IPC 通信，速度较慢\n可一键启用 Binder 高性能模式（需 root）"
+                isBinderFailed -> {
+                    val base = "Binder 服务注册失败，需要安装 SELinux 策略模块。\n点击下方按钮一键安装（需 root），安装后重启设备生效。"
                     if (regStatus.isNotEmpty() && !regStatus.startsWith("ok") && !regStatus.startsWith("already")) {
                         "$base\n\n注册诊断: $regStatus"
                     } else {
@@ -613,9 +714,8 @@ private fun ModuleNotActiveCard(
                 color = contentColor.copy(alpha = 0.8f),
             )
 
-            // FileIPC 模式下显示一键安装按钮（模块未安装时）
-            // error_binder_required 模式下不显示按钮（模块已安装，需重启）
-            if (isFileIpcMode) {
+            // 模块已加载但 Binder 失败时，显示一键安装 SELinux 策略按钮
+            if (isBinderFailed) {
                 Button(
                     onClick = {
                         showInstallDialog = true
@@ -628,21 +728,7 @@ private fun ModuleNotActiveCard(
                 ) {
                     Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("一键启用 Binder 高性能模式")
-                }
-            } else if (isErrorBinderMode) {
-                // 模块已安装但 Binder 失败，显示重启提示按钮
-                Button(
-                    onClick = { showRebootDialog = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = contentColor,
-                        contentColor = containerColor,
-                    ),
-                ) {
-                    Icon(Icons.Filled.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("重启设备")
+                    Text("一键安装 SELinux 策略")
                 }
             }
         }
@@ -654,7 +740,7 @@ private fun ModuleNotActiveCard(
             onDismissRequest = {
                 if (!isInstalling) showInstallDialog = false
             },
-            title = { Text("启用 Binder 高性能模式") },
+            title = { Text("安装 SELinux 策略") },
             text = {
                 if (isInstalling) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -685,13 +771,18 @@ private fun ModuleNotActiveCard(
                 } else if (installResult != null) {
                     TextButton(onClick = {
                         showInstallDialog = false
-                        installResult = null
-                    }) { Text("关闭") }
+                        showRebootDialog = true
+                    }) { Text("重启设备") }
                 }
             },
             dismissButton = {
                 if (installResult == null && !isInstalling) {
                     TextButton(onClick = { showInstallDialog = false }) { Text("取消") }
+                } else if (installResult != null) {
+                    TextButton(onClick = {
+                        showInstallDialog = false
+                        installResult = null
+                    }) { Text("关闭") }
                 }
             },
         )
@@ -708,10 +799,13 @@ private fun ModuleNotActiveCard(
             confirmButton = {
                 TextButton(onClick = {
                     showRebootDialog = false
-                    try {
-                        Runtime.getRuntime().exec(arrayOf("su", "-c", "setprop sys.powerctl reboot"))
-                    } catch (e: Exception) {
-                        // 忽略
+                    // M2 修复：使用并行线程消费 stdout/stderr，避免 readText() 在 waitFor 之前阻塞
+                    scope.launch {
+                        try {
+                            runRootCommandWithTimeout("setprop sys.powerctl reboot")
+                        } catch (e: Exception) {
+                            android.util.Log.w("TombstoneX", "重启失败", e)
+                        }
                     }
                 }) { Text("重启") }
             },
@@ -803,9 +897,10 @@ private fun AppCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 应用图标
-            if (icon != null) {
+            val bmp = icon
+            if (bmp != null) {
                 Image(
-                    bitmap = icon!!,
+                    bitmap = bmp,
                     contentDescription = item.label,
                     modifier = Modifier.size(40.dp),
                 )
@@ -966,6 +1061,8 @@ private fun AppConfigSheet(
     val scope = rememberCoroutineScope()
 
     var configLoaded by remember { mutableStateOf(false) }
+    // R7-4 修复：IPC 失败时不再静默用默认值填充，标记失败状态并提示用户
+    var configLoadFailed by remember { mutableStateOf(false) }
     var playAllowed by remember { mutableStateOf(false) }
     var ongoingNotification by remember { mutableStateOf(false) }
     var netTransfer by remember { mutableStateOf(false) }
@@ -975,25 +1072,70 @@ private fun AppConfigSheet(
     var backgroundLevel by remember { mutableStateOf(0) }
 
     // BottomSheet 打开时异步加载配置（批量获取配置+优先级，单次 IPC）
+    // R7-4 修复：IPC 失败（返回 null）时不再用默认值填充，标记 configLoadFailed，
+    // UI 中显示错误信息与重试按钮，避免用户误把默认值当作实际配置
     LaunchedEffect(item.packageName) {
+        configLoaded = false
+        configLoadFailed = false
         val full = withContext(Dispatchers.IO) {
             safeRunCatching { ServiceClient.getAppConfigFull(item.packageName) }.getOrNull()
         }
-        val cfg = full?.config ?: JSONObject()
+        if (full == null) {
+            configLoadFailed = true
+            configLoaded = true
+            return@LaunchedEffect
+        }
+        configLoadFailed = false
+        val cfg = full.config ?: JSONObject()
         playAllowed = cfg.optBoolean("playAllowed", false)
         ongoingNotification = cfg.optBoolean("ongoingNotification", false)
         netTransfer = cfg.optBoolean("netTransfer", false)
         autoStartAllowed = cfg.optBoolean("autoStartAllowed", false)
         keepConnection = cfg.optBoolean("keepConnection", false)
         backgroundLevel = cfg.optInt("backgroundLevel", 0)
-        priority = full?.priority ?: 1
+        priority = full.priority
         configLoaded = true
     }
 
     /**
-     * 切换布尔配置项：乐观更新，失败回滚。
+     * 重新加载应用配置（重试按钮触发）。
+     * R7-4: 提供手动重试入口，避免用户必须关闭重开 BottomSheet 才能重新加载。
      */
-    fun toggleConfig(key: String, current: Boolean, onUpdate: (Boolean) -> Unit) {
+    fun retryLoadConfig() {
+        scope.launch {
+            configLoaded = false
+            configLoadFailed = false
+            val full = withContext(Dispatchers.IO) {
+                safeRunCatching { ServiceClient.getAppConfigFull(item.packageName) }.getOrNull()
+            }
+            if (full == null) {
+                configLoadFailed = true
+                configLoaded = true
+                return@launch
+            }
+            configLoadFailed = false
+            val cfg = full.config ?: JSONObject()
+            playAllowed = cfg.optBoolean("playAllowed", false)
+            ongoingNotification = cfg.optBoolean("ongoingNotification", false)
+            netTransfer = cfg.optBoolean("netTransfer", false)
+            autoStartAllowed = cfg.optBoolean("autoStartAllowed", false)
+            keepConnection = cfg.optBoolean("keepConnection", false)
+            backgroundLevel = cfg.optInt("backgroundLevel", 0)
+            priority = full.priority
+            configLoaded = true
+        }
+    }
+
+    /**
+     * 切换布尔配置项：乐观更新，失败回滚。
+     * M6 修复：仅当当前值仍为本次设置的值时才回滚，避免覆盖用户在此期间的后续操作。
+     */
+    fun toggleConfig(
+        key: String,
+        current: Boolean,
+        getCurrent: () -> Boolean,
+        onUpdate: (Boolean) -> Unit,
+    ) {
         val newValue = !current
         onUpdate(newValue)
         scope.launch {
@@ -1003,7 +1145,10 @@ private fun AppConfigSheet(
                 }.getOrDefault(false)
             }
             if (!ok) {
-                onUpdate(!newValue)
+                // 仅当当前值仍为本次设置的值时才回滚
+                if (getCurrent() == newValue) {
+                    onUpdate(!newValue)
+                }
                 showSnackbar("设置未生效（模块未激活或无权限）")
             }
         }
@@ -1019,7 +1164,8 @@ private fun AppConfigSheet(
                     ServiceClient.setAppPriority(item.packageName, newPriority)
                 }.getOrDefault(false)
             }
-            if (!ok) {
+            // M4 修复：仅当当前值仍为本次设置值时才回滚，避免覆盖用户在此期间的新选择
+            if (!ok && priority == newPriority) {
                 priority = old
                 showSnackbar("设置未生效（模块未激活或无权限）")
             }
@@ -1036,7 +1182,8 @@ private fun AppConfigSheet(
                     ServiceClient.setAppConfigItem(item.packageName, "backgroundLevel", newLevel)
                 }.getOrDefault(false)
             }
-            if (!ok) {
+            // M4 修复：仅当当前值仍为本次设置值时才回滚，避免覆盖用户在此期间的新选择
+            if (!ok && backgroundLevel == newLevel) {
                 backgroundLevel = old
                 showSnackbar("设置未生效（模块未激活或无权限）")
             }
@@ -1081,33 +1228,63 @@ private fun AppConfigSheet(
                 ) {
                     CircularProgressIndicator()
                 }
+            } else if (configLoadFailed) {
+                // R7-4: IPC 失败时显示错误信息与重试按钮，而非静默用默认值填充
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Error,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(32.dp),
+                    )
+                    Text(
+                        text = "配置加载失败（模块未激活或无权限）",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(onClick = { retryLoadConfig() }) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("重试")
+                    }
+                }
             } else {
                 // ---- 开关配置项 ----
                 ConfigSwitchRow(
                     title = "后台播放",
                     subtitle = "播放期间不冻结",
                     checked = playAllowed,
-                ) { toggleConfig("playAllowed", playAllowed) { playAllowed = it } }
+                ) { toggleConfig("playAllowed", playAllowed, { playAllowed }) { playAllowed = it } }
                 ConfigSwitchRow(
                     title = "常驻通知",
                     subtitle = "通知常驻时不冻结",
                     checked = ongoingNotification,
-                ) { toggleConfig("ongoingNotification", ongoingNotification) { ongoingNotification = it } }
+                ) { toggleConfig("ongoingNotification", ongoingNotification, { ongoingNotification }) { ongoingNotification = it } }
                 ConfigSwitchRow(
                     title = "网速识别",
                     subtitle = "后台上传/下载达到阈值时不冻结",
                     checked = netTransfer,
-                ) { toggleConfig("netTransfer", netTransfer) { netTransfer = it } }
+                ) { toggleConfig("netTransfer", netTransfer, { netTransfer }) { netTransfer = it } }
                 ConfigSwitchRow(
                     title = "允许自启",
                     subtitle = "允许后台自启动",
                     checked = autoStartAllowed,
-                ) { toggleConfig("autoStartAllowed", autoStartAllowed) { autoStartAllowed = it } }
+                ) { toggleConfig("autoStartAllowed", autoStartAllowed, { autoStartAllowed }) { autoStartAllowed = it } }
                 ConfigSwitchRow(
                     title = "保持连接",
                     subtitle = "冻结后保持网络连接",
                     checked = keepConnection,
-                ) { toggleConfig("keepConnection", keepConnection) { keepConnection = it } }
+                ) { toggleConfig("keepConnection", keepConnection, { keepConnection }) { keepConnection = it } }
 
                 Spacer(modifier = Modifier.height(8.dp))
 

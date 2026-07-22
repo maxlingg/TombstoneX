@@ -56,6 +56,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +94,16 @@ fun SettingsScreen(
     var showModeDialog by remember { mutableStateOf(false) }
     // P2-R3: 配置加载门控，防止 LaunchedEffect 覆盖用户在加载期间的操作
     var configLoaded by remember { mutableStateOf(false) }
+    // R7-1 修复：单一 userInteracted 标志过于宽泛，用户触碰任意控件后即设为 true，
+    // 此后所有后续加载的配置项都被跳过。改为每配置项独立追踪，仅跳过用户已操作的项。
+    var freezeModeInteracted by remember { mutableStateOf(false) }
+    var freezeDelayInteracted by remember { mutableStateOf(false) }
+    var debugInteracted by remember { mutableStateOf(false) }
+    var hookAnrInteracted by remember { mutableStateOf(false) }
+    var hookBroadcastInteracted by remember { mutableStateOf(false) }
+    var hookWakeLockInteracted by remember { mutableStateOf(false) }
+    var hookActivitySwitchInteracted by remember { mutableStateOf(false) }
+    var hookScreenStateInteracted by remember { mutableStateOf(false) }
 
     // 子 Hook 开关
     var hookAnr by remember { mutableStateOf(true) }
@@ -104,6 +116,8 @@ fun SettingsScreen(
     var rotationInterval by remember { mutableFloatStateOf(360f) }
     var committedRotationInterval by remember { mutableFloatStateOf(360f) }
     var rotationLoaded by remember { mutableStateOf(false) }
+    // R7-2 修复：rotation 也使用独立的交互标志，与其他配置项保持一致
+    var rotationInteracted by remember { mutableStateOf(false) }
 
     // ReKernel 状态：null=检测中，true=可用，false=未安装
     var rekernelAvailable by remember { mutableStateOf<Boolean?>(null) }
@@ -112,16 +126,26 @@ fun SettingsScreen(
     LaunchedEffect(initialConfig) {
         val (cfg, freezer) = initialConfig
         // P2-R3: 仅在首次加载时同步配置，避免覆盖用户在加载期间的操作
-        if (cfg != null && !configLoaded) {
-            freezeMode = FreezeMode.entries.getOrElse(cfg.freezeMode) { FreezeMode.SYSTEM_API }
-            debugEnabled = cfg.debugEnabled
-            freezeDelay = cfg.freezeDelay.toFloat()
-            committedFreezeDelay = cfg.freezeDelay.toFloat()
-            hookAnr = cfg.hookANR
-            hookBroadcast = cfg.hookBroadcast
-            hookWakeLock = cfg.hookWakeLock
-            hookActivitySwitch = cfg.hookActivitySwitch
-            hookScreenState = cfg.hookScreenState
+        // R7-1 修复：对每个配置项检查独立的交互标志，仅跳过用户已操作的项，
+        // 其他未操作的项仍然可以从服务端返回值同步
+        // R7-3 修复：configLoaded 无论 cfg 是否为 null 都标记为已加载，
+        // 避免 produceState 失败返回 null 时永久显示"加载中…"
+        if (!configLoaded) {
+            if (cfg != null) {
+                if (!freezeModeInteracted) freezeMode = FreezeMode.fromId(cfg.freezeMode)
+                if (!debugInteracted) debugEnabled = cfg.debugEnabled
+                // R7-2 修复：配置加载时同步 committedFreezeDelay，
+                // 避免 IPC 失败回滚到错误的硬编码默认值
+                if (!freezeDelayInteracted) {
+                    freezeDelay = cfg.freezeDelay.toFloat()
+                    committedFreezeDelay = cfg.freezeDelay.toFloat()
+                }
+                if (!hookAnrInteracted) hookAnr = cfg.hookANR
+                if (!hookBroadcastInteracted) hookBroadcast = cfg.hookBroadcast
+                if (!hookWakeLockInteracted) hookWakeLock = cfg.hookWakeLock
+                if (!hookActivitySwitchInteracted) hookActivitySwitch = cfg.hookActivitySwitch
+                if (!hookScreenStateInteracted) hookScreenState = cfg.hookScreenState
+            }
             configLoaded = true
         }
         currentFreezerName = freezer
@@ -132,7 +156,9 @@ fun SettingsScreen(
         val interval = withContext(Dispatchers.IO) {
             safeRunCatching { ServiceClient.getRotationInterval() }.getOrDefault(360)
         }
-        if (!rotationLoaded) {
+        // R7-2 修复：使用 rotationInteracted 替代全局 userInteracted，
+        // 仅当用户未拖动该滑块时同步服务端返回值，同时同步 committedRotationInterval
+        if (!rotationLoaded && !rotationInteracted) {
             rotationInterval = interval.toFloat()
             committedRotationInterval = interval.toFloat()
             rotationLoaded = true
@@ -140,18 +166,49 @@ fun SettingsScreen(
     }
 
     // 异步检测 ReKernel 状态（通过 su 检查设备节点是否存在）
+    // M1 修复：使用并行线程消费 stdout/stderr，避免 readLine() 在 waitFor 之前阻塞导致超时失效
     LaunchedEffect(Unit) {
-        rekernelAvailable = withContext(Dispatchers.IO) {
+        val available = withContext(Dispatchers.IO) {
             safeRunCatching {
-                val paths = listOf("/dev/rekernel", "/dev/rekernel_x", "/proc/rekernel")
-                paths.any { path ->
-                    val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "test -e $path && echo 1 || echo 0"))
-                    val out = p.inputStream.bufferedReader().use { it.readLine() ?: "0" }
-                    p.waitFor()
-                    out.trim() == "1"
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "ls /data/adb/rekernel"))
+                val stdoutBuilder = StringBuffer()
+                // m-14: 守护线程，避免 JVM 退出时被阻塞
+                val stdoutThread = Thread {
+                    try {
+                        process.inputStream.bufferedReader().use { reader ->
+                            val line = reader.readLine()
+                            if (line != null) stdoutBuilder.append(line)
+                        }
+                    } catch (e: IOException) {
+                        // m-15: 记录管道关闭异常，便于排查
+                        android.util.Log.w("SettingsScreen", "ReKernel stdout read interrupted", e)
+                    }
+                }.apply { isDaemon = true }
+                val stderrThread = Thread {
+                    try {
+                        process.errorStream.bufferedReader().use { it.readText() }
+                    } catch (e: IOException) {
+                        // m-15: 记录管道关闭异常
+                        android.util.Log.w("SettingsScreen", "ReKernel stderr read interrupted", e)
+                    }
+                }.apply { isDaemon = true }
+                stdoutThread.start()
+                stderrThread.start()
+                val exited = process.waitFor(5, TimeUnit.SECONDS)
+                if (!exited) {
+                    process.destroyForcibly()
+                    // M-44: 超时路径中 join 读取线程，避免线程泄漏
+                    stdoutThread.join(1000)
+                    stderrThread.join(1000)
+                    "0"
+                } else {
+                    stdoutThread.join(3000)
+                    stderrThread.join(3000)
+                    if (process.exitValue() == 0) "1" else "0"
                 }
-            }.getOrDefault(false)
+            }.getOrDefault("0")
         }
+        rekernelAvailable = available == "1"
     }
 
     val modeDisplayName = freezeMode.displayLabel()
@@ -168,24 +225,29 @@ fun SettingsScreen(
     }
 
     fun applyFreezeMode(mode: FreezeMode) {
+        // R7-1: 仅标记 freezeMode 交互，不影响其他配置项的后续加载
+        freezeModeInteracted = true
         val oldMode = freezeMode
         freezeMode = mode
         scope.launch {
             val ok = withContext(Dispatchers.IO) {
-                safeRunCatching { ServiceClient.setFreezeMode(mode.ordinal) }.getOrDefault(false)
+                safeRunCatching { ServiceClient.setFreezeMode(mode.id) }.getOrDefault(false)
             }
             if (ok) {
                 // 冻结方式切换后重新选择冻结器
-                withContext(Dispatchers.IO) {
+                // L3 修复：合并两次 withContext 调用为一次，减少线程切换开销
+                val newFreezer = withContext(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.reselectFreezer() }
-                }
-                currentFreezerName = withContext(Dispatchers.IO) {
                     safeRunCatching { ServiceClient.getCurrentFreezerName() }.getOrDefault("未知")
                 }
+                currentFreezerName = newFreezer
                 showSnackbar("冻结方式已切换为 ${mode.displayLabel()}，当前生效：$currentFreezerName")
             } else {
                 // P2: 失败时回滚到旧模式，保持 UI 与服务端一致
-                freezeMode = oldMode
+                // M6 修复：仅当当前值仍为本次设置的值时才回滚，避免覆盖用户在此期间的后续操作
+                if (freezeMode == mode) {
+                    freezeMode = oldMode
+                }
                 showSnackbar("设置失败（模块未激活或无权限）")
             }
         }
@@ -194,8 +256,18 @@ fun SettingsScreen(
     /**
      * 切换子 Hook 开关，通过 ServiceClient.setHookEnabled(hookId, enabled) 写入。
      * hookId: 0=ANR, 1=Broadcast, 2=WakeLock, 3=ActivitySwitch, 4=ScreenState
+     * M6 修复：仅当当前值仍为本次设置的值时才回滚，避免覆盖用户在此期间的后续操作。
+     * R7-1 修复：通过 markInteracted 回调仅标记对应配置项的交互标志，
+     * 不再使用全局 userInteracted 影响其他配置项的加载。
      */
-    fun toggleHook(hookId: Int, current: Boolean, onUpdate: (Boolean) -> Unit) {
+    fun toggleHook(
+        hookId: Int,
+        current: Boolean,
+        getCurrent: () -> Boolean,
+        onUpdate: (Boolean) -> Unit,
+        markInteracted: () -> Unit,
+    ) {
+        markInteracted()
         val newValue = !current
         onUpdate(newValue)
         scope.launch {
@@ -203,8 +275,10 @@ fun SettingsScreen(
                 safeRunCatching { ServiceClient.setHookEnabled(hookId, newValue) }.getOrDefault(false)
             }
             if (!ok) {
-                // 回滚
-                onUpdate(!newValue)
+                // 仅当当前值仍为本次设置的值时才回滚
+                if (getCurrent() == newValue) {
+                    onUpdate(!newValue)
+                }
                 showSnackbar("设置未生效（模块未激活或无权限）")
             }
         }
@@ -325,8 +399,14 @@ fun SettingsScreen(
                     }
                     Slider(
                         value = freezeDelay,
-                        onValueChange = { freezeDelay = it },
+                        onValueChange = {
+                            // R7-1: 仅标记 freezeDelay 交互，不影响其他配置项的加载
+                            freezeDelayInteracted = true
+                            freezeDelay = it
+                        },
                         onValueChangeFinished = {
+                            // R7-1: 仅标记 freezeDelay 交互
+                            freezeDelayInteracted = true
                             val newDelay = freezeDelay.toInt()
                             scope.launch {
                                 val ok = withContext(Dispatchers.IO) {
@@ -369,8 +449,14 @@ fun SettingsScreen(
                     }
                     Slider(
                         value = rotationInterval,
-                        onValueChange = { rotationInterval = it },
+                        onValueChange = {
+                            // R7-2: 仅标记 rotation 交互，不影响其他配置项的加载
+                            rotationInteracted = true
+                            rotationInterval = it
+                        },
                         onValueChangeFinished = {
+                            // R7-2: 仅标记 rotation 交互
+                            rotationInteracted = true
                             val newInterval = rotationInterval.toInt()
                             scope.launch {
                                 val ok = withContext(Dispatchers.IO) {
@@ -406,6 +492,8 @@ fun SettingsScreen(
                         Switch(
                             checked = debugEnabled,
                             onCheckedChange = {
+                                // R7-1: 仅标记 debug 交互
+                                debugInteracted = true
                                 debugEnabled = it
                                 scope.launch {
                                     val ok = withContext(Dispatchers.IO) {
@@ -431,7 +519,9 @@ fun SettingsScreen(
                     subtitle = "切换 Activity 时触发冻结（核心功能）",
                     checked = hookActivitySwitch,
                 ) {
-                    toggleHook(3, hookActivitySwitch) { hookActivitySwitch = it }
+                    toggleHook(3, hookActivitySwitch, { hookActivitySwitch }, { hookActivitySwitch = it }) {
+                        hookActivitySwitchInteracted = true
+                    }
                 }
             }
             item {
@@ -440,7 +530,9 @@ fun SettingsScreen(
                     subtitle = "息屏后延迟批量冻结后台应用",
                     checked = hookScreenState,
                 ) {
-                    toggleHook(4, hookScreenState) { hookScreenState = it }
+                    toggleHook(4, hookScreenState, { hookScreenState }, { hookScreenState = it }) {
+                        hookScreenStateInteracted = true
+                    }
                 }
             }
             item {
@@ -449,7 +541,9 @@ fun SettingsScreen(
                     subtitle = "冻结后屏蔽广播投递",
                     checked = hookBroadcast,
                 ) {
-                    toggleHook(1, hookBroadcast) { hookBroadcast = it }
+                    toggleHook(1, hookBroadcast, { hookBroadcast }, { hookBroadcast = it }) {
+                        hookBroadcastInteracted = true
+                    }
                 }
             }
             item {
@@ -458,7 +552,9 @@ fun SettingsScreen(
                     subtitle = "冻结后阻止申请唤醒锁",
                     checked = hookWakeLock,
                 ) {
-                    toggleHook(2, hookWakeLock) { hookWakeLock = it }
+                    toggleHook(2, hookWakeLock, { hookWakeLock }, { hookWakeLock = it }) {
+                        hookWakeLockInteracted = true
+                    }
                 }
             }
             item {
@@ -467,7 +563,9 @@ fun SettingsScreen(
                     subtitle = "冻结后屏蔽应用无响应弹窗",
                     checked = hookAnr,
                 ) {
-                    toggleHook(0, hookAnr) { hookAnr = it }
+                    toggleHook(0, hookAnr, { hookAnr }, { hookAnr = it }) {
+                        hookAnrInteracted = true
+                    }
                 }
             }
             item { HorizontalDivider() }

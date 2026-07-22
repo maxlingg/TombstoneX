@@ -20,11 +20,16 @@ public class AppProvider {
     private static final Object lock = new Object();
     private final PackageManager pm;
 
-    /** 模块自身包名，需从列表中过滤 */
-    private static final String SELF_PACKAGE = "com.tombstonex";
+    /**
+     * 模块自身包名，需从列表中过滤。
+     * L5: 改为从 context 动态获取，避免硬编码。
+     */
+    private final String selfPackage;
 
     private AppProvider(Context context) {
-        this.pm = context.getApplicationContext().getPackageManager();
+        Context appContext = context.getApplicationContext();
+        this.pm = appContext.getPackageManager();
+        this.selfPackage = appContext.getPackageName();
     }
 
     public static AppProvider getInstance(Context context) {
@@ -61,7 +66,7 @@ public class AppProvider {
             for (PackageInfo pkg : packages) {
                 try {
                     // 过滤模块自身包名
-                    if (SELF_PACKAGE.equals(pkg.packageName)) continue;
+                    if (selfPackage.equals(pkg.packageName)) continue;
 
                     ApplicationInfo appInfo = pkg.applicationInfo;
                     if (appInfo == null) continue;

@@ -47,7 +47,9 @@ import androidx.compose.ui.unit.sp
 import com.tombstonex.BuildConfig
 import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.safeRunCatching
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -75,24 +77,40 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var moduleAvailable by remember { mutableStateOf(true) }
     var showClearDialog by remember { mutableStateOf(false) }
+    // 轻微-11 修复：loadLogs 可并发执行导致状态错乱，使用 loadJob 取消前序任务
+    var loadJob by remember { mutableStateOf<Job?>(null) }
+    // L2 修复：clearLogs 跟踪自身 Job，避免并发清空导致状态错乱
+    var clearJob by remember { mutableStateOf<Job?>(null) }
 
     fun loadLogs() {
-        scope.launch {
-            loading = true
-            errorMessage = null
-            moduleAvailable = withContext(Dispatchers.IO) { safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false) }
-            if (!moduleAvailable) {
-                lines = emptyList()
-                errorMessage = "模块未激活，无法读取日志"
-                loading = false
-                return@launch
+        // 取消前序未完成的加载任务，避免并发执行导致状态错乱
+        loadJob?.cancel()
+        // L2 修复：同时取消进行中的清空任务，避免清空结果覆盖新加载结果
+        clearJob?.cancel()
+        loadJob = scope.launch {
+            // S1 修复：try-finally 保证 loading 在协程被取消（如 clearLogs 调用 loadJob?.cancel()）时也能复位，
+            // 避免取消后 loading = false 永不执行导致 UI 永久卡在加载态。
+            try {
+                loading = true
+                errorMessage = null
+                moduleAvailable = withContext(Dispatchers.IO) { safeRunCatching { ServiceClient.isAvailable }.getOrDefault(false) }
+                if (!moduleAvailable) {
+                    lines = emptyList()
+                    errorMessage = "模块未激活，无法读取日志"
+                    return@launch
+                }
+                val result = withContext(Dispatchers.IO) {
+                    safeRunCatching { ServiceClient.readLog(5000) }.getOrDefault("")
+                }
+                lines = if (result.isBlank()) emptyList() else result.lines()
+                if (lines.isEmpty()) errorMessage = "日志为空"
+            } finally {
+                // M1 修复：仅当当前 loadJob 仍为本协程时才复位 loading，
+                // 避免被取消的旧协程 finally 覆盖新协程设置的 loading=true
+                if (loadJob == coroutineContext[Job]) {
+                    loading = false
+                }
             }
-            val result = withContext(Dispatchers.IO) {
-                safeRunCatching { ServiceClient.readLog(5000) }.getOrDefault("")
-            }
-            lines = if (result.isBlank()) emptyList() else result.lines()
-            if (lines.isEmpty()) errorMessage = "日志为空"
-            loading = false
         }
     }
 
@@ -111,7 +129,11 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
     }
 
     fun clearLogs() {
-        scope.launch {
+        // L2 修复：取消前序未完成的清空任务，避免并发执行
+        clearJob?.cancel()
+        // 取消在途加载，防止加载完成后覆盖清空结果
+        loadJob?.cancel()
+        clearJob = scope.launch {
             val ok = withContext(Dispatchers.IO) {
                 safeRunCatching { ServiceClient.clearLog() }.getOrDefault(false)
             }

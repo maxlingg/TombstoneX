@@ -1,7 +1,6 @@
 package com.tombstonex.manager;
 
 import com.tombstonex.model.AppInfo;
-import com.tombstonex.model.AppState;
 import com.tombstonex.util.Logger;
 
 import java.util.List;
@@ -46,19 +45,53 @@ public class RotationThawManager {
 
     /**
      * 启动轮番解冻。重复调用安全（已运行时直接返回）。
-     * 间隔从 {@link ConfigManager#getRotationInterval()} 读取。
+     * 间隔从 {@link ConfigManager#getRotationInterval()} 读取，并在每次执行后
+     * 重新读取，使配置变更即时生效（不再使用 scheduleAtFixedRate 固定间隔）。
      */
     public synchronized void start() {
         if (executor != null && !executor.isShutdown()) {
             Logger.d("RotationThawManager 已在运行");
             return;
         }
-        int interval = ConfigManager.getInstance().getRotationInterval();
         executor = new ScheduledThreadPoolExecutor(1);
         executor.setRemoveOnCancelPolicy(true);
-        executor.scheduleAtFixedRate(this::rotateThaw,
-            interval, interval, TimeUnit.SECONDS);
-        Logger.i("RotationThawManager 已启动，间隔=" + interval + "s");
+        // M-22: 允许核心线程在空闲时超时回收，避免线程池永久占用资源。
+        executor.setKeepAliveTime(60, TimeUnit.SECONDS);
+        executor.allowCoreThreadTimeOut(true);
+        Logger.i("RotationThawManager 已启动");
+        scheduleNext();
+    }
+
+    /**
+     * 调度下一次轮番解冻。每次执行完后重新读取 interval，使配置变更即时生效。
+     */
+    private void scheduleNext() {
+        // M-23: volatile 读 this.executor 保证可见性，与 this.executor == exec 检查
+        // 配合确保 stop() 后旧 lambda 不会在新 executor 上重复调度。
+        // volatile 保证：stop() 写入 null 后，scheduleNext() 的读可见该变更。
+        // 无需额外锁：this.executor == exec 检查本就是正确的 happens-before 模式。
+        ScheduledThreadPoolExecutor exec = this.executor;
+        if (exec == null || exec.isShutdown()) return;
+        int interval = ConfigManager.getInstance().getRotationInterval();
+        // L2: 减去 3 秒解冻窗口时长，避免 Thread.sleep(3s) 使实际轮番间隔变为 interval+3 秒
+        // （如默认 360s 实际为 363s）。下限保护为 1 秒。
+        int adjustedInterval = Math.max(1, interval - (int) (THAW_DURATION_MS / 1000));
+        try {
+            exec.schedule(() -> {
+                try {
+                    rotateThaw();
+                } catch (Throwable t) {
+                    Logger.e("RotationThaw error", t);
+                }
+                // 仅当当前 executor 仍是本次调度所用的 executor 时才调度下一次，
+                // 避免 stop()+start() 期间旧 lambda 在新 executor 上重复调度。
+                if (this.executor == exec) {
+                    scheduleNext();
+                }
+            }, adjustedInterval, TimeUnit.SECONDS);
+        } catch (Throwable t) {
+            Logger.d("RotationThawManager: 调度下一次失败（可能已停止）: " + t.getMessage());
+        }
     }
 
     /**
@@ -66,9 +99,9 @@ public class RotationThawManager {
      */
     public synchronized void stop() {
         if (executor != null) {
-            executor.shutdownNow();
+            List<Runnable> discarded = executor.shutdownNow();
             executor = null;
-            Logger.i("RotationThawManager 已停止");
+            Logger.i("RotationThawManager 已停止，丢弃了 " + discarded.size() + " 个待执行任务");
         }
     }
 
@@ -76,6 +109,7 @@ public class RotationThawManager {
      * 执行一次轮番解冻：找到冻结时间最长的应用 -> 解冻 -> 等待 3 秒 -> 重新冻结。
      */
     private void rotateThaw() {
+        AppInfo target = null;
         try {
             // 全局暂停时跳过
             if (ConfigManager.getInstance().isGlobalPaused()) {
@@ -83,7 +117,7 @@ public class RotationThawManager {
                 return;
             }
 
-            AppInfo target = findLongestFrozen();
+            target = findLongestFrozen();
             if (target == null) {
                 Logger.d("RotationThawManager: 没有可轮番的冻结应用");
                 return;
@@ -91,7 +125,16 @@ public class RotationThawManager {
 
             Logger.i("RotationThawManager: 正在轮番 " + target.packageName
                 + " pid=" + target.pid
-                + " frozenSince=" + target.freezeTimestamp);
+                + " frozenSince=" + target.getFreezeTimestamp());
+
+            // M1/M2: 先抑制冻结，确保解冻窗口期间不会被 scanAndFreeze 及其他 Hook 重新冻结。
+            // suppressFreeze 必须在 unfreezeProcess 之前调用，避免解冻与抑制之间的竞态窗口
+            // （旧代码在 unfreezeProcess 之后才调用 suppressFreeze，存在被重新冻结的竞态）。
+            // FreezeManager.suppressFreeze 覆盖所有冻结入口（ScreenStateHook /
+            // ActivitySwitchHook / ScheduledFreezeManager 均经过 FreezeManager.freezeProcess）；
+            // ScheduledFreezeManager.suppressFreeze 额外抑制其自身的 lastFreezeTime 窗口。
+            FreezeManager.suppressFreeze(target.pid);
+            ScheduledFreezeManager.getInstance().suppressFreeze(target.pid);
 
             // 1. 解冻
             boolean unfrozen = FreezeManager.getInstance().unfreezeProcess(target.pid, target.uid);
@@ -113,17 +156,31 @@ public class RotationThawManager {
                 Logger.d("RotationThawManager: 解冻期间全局已暂停，跳过重新冻结");
                 return;
             }
-            FreezeManager.getInstance().freezeProcess(target.pid, target.uid);
-
-            // 4. 更新冻结时间戳为当前时间
-            // freezeProcess 成功后 ProcessTracker 已将状态置为 FROZEN 并更新 freezeTimestamp，
-            // 这里显式再更新一次以保证时间戳反映轮番解冻后的新冻结时刻。
-            ProcessTracker.getInstance().updateState(target.pid, AppState.FROZEN);
-
-            Logger.d("RotationThawManager: 已重新冻结 " + target.packageName
-                + " pid=" + target.pid);
+            // 解除冻结抑制，使重新冻结能够执行（freezeProcess 内部会检查抑制标志）。
+            // finally 块会再次调用 unsuppressFreeze 作为兜底（对已移除的 pid 是 no-op）。
+            FreezeManager.unsuppressFreeze(target.pid);
+            // 轻微-3: freezeProcess 内部已调用 updateState(FROZEN) 并设置 freezeTimestamp，
+            // 此处无需再次调用 updateState（旧注释声称"不刷新时间戳"与实际行为矛盾，
+            // 且第二次调用完全冗余），仅记录日志即可。
+            if (FreezeManager.getInstance().freezeProcess(target.pid, target.uid)) {
+                Logger.d("RotationThawManager: 已重新冻结 " + target.packageName
+                    + " pid=" + target.pid);
+            } else {
+                Logger.w("RotationThawManager: 重新冻结失败 pid=" + target.pid);
+            }
         } catch (Throwable t) {
             Logger.e("RotationThawManager 轮番出错", t);
+        } finally {
+            // M2: 确保所有退出路径（早返回/异常/正常完成）都解除冻结抑制，避免永久抑制。
+            // 仅在已设置 target（即已调用 suppressFreeze）时才需要解除。
+            if (target != null) {
+                FreezeManager.unsuppressFreeze(target.pid);
+                // R7: 同时清理 ScheduledFreezeManager.lastFreezeTime，避免下次冻结时
+                // 使用过期的 lastFreezeTime 而在 MIN_REFREEZE_INTERVAL_MS 窗口内被跳过。
+                // suppressFreeze 写入了 lastFreezeTime，若重新冻结失败则该时间戳会
+                // 阻止下一次 scanAndFreeze 重试冻结。
+                ScheduledFreezeManager.getInstance().clearLastFreezeTime(target.pid);
+            }
         }
     }
 
@@ -139,9 +196,9 @@ public class RotationThawManager {
         AppInfo longest = null;
         long earliest = Long.MAX_VALUE;
         for (AppInfo info : frozen) {
-            if (info.freezeTimestamp <= 0) continue;
-            if (info.freezeTimestamp < earliest) {
-                earliest = info.freezeTimestamp;
+            if (info.getFreezeTimestamp() <= 0) continue;
+            if (info.getFreezeTimestamp() < earliest) {
+                earliest = info.getFreezeTimestamp();
                 longest = info;
             }
         }

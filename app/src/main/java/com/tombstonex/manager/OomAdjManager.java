@@ -23,8 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *   LOW    : 主进程 800-899 / 子进程 900-999
  * </pre>
  *
- * 主进程判断：processName 等于 packageName 或 processName 不包含 ":"
- * 子进程判断：processName 包含 ":"
+ * 主进程判断：processName 等于 packageName
+ * 子进程判断：processName 不等于 packageName（如 com.example.app:pushservice）
  *
  * 配置文件：{@value #CONFIG_FILE}，格式 "包名=优先级"（每行一个），通过
  * {@link FileUtils} 原子写入。默认优先级为 {@link #PRIORITY_MEDIUM}。
@@ -71,6 +71,10 @@ public class OomAdjManager {
      */
     private void loadConfig() {
         Set<String> lines = FileUtils.readLines(CONFIG_FILE);
+        if (lines == null) {
+            Logger.w("OomAdjManager: 无法加载 OOM 优先级配置");
+            return;
+        }
         Map<String, Integer> map = new ConcurrentHashMap<>();
         for (String line : lines) {
             int idx = line.indexOf('=');
@@ -99,15 +103,24 @@ public class OomAdjManager {
      *
      * @param packageName 包名
      * @param priority    {@link #PRIORITY_HIGH} / {@link #PRIORITY_MEDIUM} / {@link #PRIORITY_LOW}
+     *
+     * P7-R7: 返回值改为 boolean，供服务端（TombstoneXService）跟踪持久化结果。
+     *
+     * @return true 表示文件写入成功并已更新内存映射；false 表示写入失败或参数非法
      */
-    public void setAppPriority(String packageName, int priority) {
-        if (packageName == null) return;
+    public boolean setAppPriority(String packageName, int priority) {
+        if (packageName == null) return false;
+        // S-7: 统一使用 return false 处理非法参数，不抛异常。
         if (priority < PRIORITY_HIGH || priority > PRIORITY_LOW) {
-            throw new IllegalArgumentException("Invalid priority: " + priority
-                + ", must be PRIORITY_HIGH(0)/MEDIUM(1)/LOW(2)");
+            Logger.w("OomAdjManager: 无效优先级 " + priority
+                + "（" + packageName + "），必须为 HIGH(0)/MEDIUM(1)/LOW(2)");
+            return false;
         }
         synchronized (lock) {
             // 复制当前映射 -> 修改 -> 原子写文件 -> 替换 volatile 引用
+            // 注意: 每次 setAppPriority 都重写整个文件，时间复杂度 O(n)，
+            // 适合配置项数量较少（通常 < 200）的场景。若配置项增长到千级以上，
+            // 应考虑增量更新策略。
             Map<String, Integer> copy = new HashMap<>(priorityMap);
             copy.put(packageName, priority);
 
@@ -119,7 +132,9 @@ public class OomAdjManager {
                 priorityMap = new ConcurrentHashMap<>(copy);
                 Logger.i("OomAdjManager: 已设置优先级 " + priorityName(priority)
                     + "（" + packageName + "）");
+                return true;
             }
+            return false;
         }
     }
 
@@ -187,17 +202,20 @@ public class OomAdjManager {
     }
 
     /**
-     * 主进程判断：processName 等于 packageName 或 processName 不包含 ":"。
-     * 子进程判断：processName 包含 ":"。
+     * 主进程判断：严格判断 processName 等于 packageName。
+     * 子进程判断：processName 不等于 packageName（如 com.example.app:pushservice）。
+     *
+     * <p>L8: 旧实现把"不含冒号"的进程一律视为主进程，会误判
+     * "com.example.app.widget" 这类无冒号但非主进程的进程为主进程。
+     * 改为严格相等判断，避免误判。
      *
      * @param packageName 包名
      * @param processName 进程名（可能与包名不同，如 com.example.app:pushservice）
-     * @return true 表示主进程
+     * @return true 表示主进程（processName 等于 packageName）
      */
     public static boolean isMainProcess(String packageName, String processName) {
-        if (processName == null) return true;
-        if (packageName != null && packageName.equals(processName)) return true;
-        return !processName.contains(":");
+        if (processName == null || packageName == null) return false;
+        return processName.equals(packageName);
     }
 
     private static String priorityName(int priority) {

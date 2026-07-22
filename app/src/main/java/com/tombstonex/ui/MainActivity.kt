@@ -43,17 +43,51 @@ val LocalModuleState = compositionLocalOf {
 
 class MainActivity : ComponentActivity() {
 
+    // 模块状态：初始为默认值，在 onCreate 中通过 detectModuleState() 更新
+    private val moduleState = mutableStateOf(ModuleState(installed = false, entryClass = "", activated = false))
+
+    // 轻微-9 修复：onResume 与 onCreate 重复调用 checkModuleState，加 5 秒节流
+    private var lastCheckTime = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         // 初始状态：读取 xposed_init 判断模块入口是否存在
-        val moduleState = mutableStateOf(detectModuleState())
+        moduleState.value = detectModuleState()
 
-        // 异步通过 ServiceClient 检测模块激活状态（三级检测）
-        // 1. isModuleEnabled: 检查 persist.sys.tombstonex.loaded，判断 LSPosed 是否已启用模块
-        // 2. isModuleLoaded: 检查 persist.sys.tombstonex.active，判断模块是否已加载到 system_server
-        // 3. isAvailable: 检查 Binder 服务，判断服务是否已就绪
+        // 异步通过 ServiceClient 检测模块激活状态
+        // 记录检测时间，避免 onResume 立即重复检测
+        lastCheckTime = System.currentTimeMillis()
+        checkModuleState()
+
+        setContent {
+            TombstoneXTheme {
+                CompositionLocalProvider(LocalModuleState provides moduleState.value) {
+                    NavigationHost()
+                }
+            }
+        }
+    }
+
+    // L25: onResume 中重新检测模块状态，确保从后台返回时状态最新
+    // 轻微-9 修复：加 5 秒节流，避免与 onCreate 中的检测重复
+    override fun onResume() {
+        super.onResume()
+        val now = System.currentTimeMillis()
+        if (now - lastCheckTime > 5000) {
+            lastCheckTime = now
+            checkModuleState()
+        }
+    }
+
+    /**
+     * 异步通过 ServiceClient 检测模块激活状态（三级检测）
+     * 1. isModuleEnabled: 检查 sys.tombstonex.loaded，判断 LSPosed 是否已启用模块
+     * 2. isModuleLoaded: 检查 sys.tombstonex.active，判断模块是否已加载到 system_server
+     * 3. isAvailable: 检查 Binder 服务，判断服务是否已就绪
+     */
+    private fun checkModuleState() {
         lifecycleScope.launch {
             val (enabled, loaded, activated) = withContext(Dispatchers.IO) {
                 val enabled = safeRunCatching { ServiceClient.isModuleEnabled }.getOrDefault(false)
@@ -66,14 +100,6 @@ class MainActivity : ComponentActivity() {
                 moduleLoaded = loaded,
                 activated = activated,
             )
-        }
-
-        setContent {
-            TombstoneXTheme {
-                CompositionLocalProvider(LocalModuleState provides moduleState.value) {
-                    NavigationHost()
-                }
-            }
         }
     }
 
@@ -88,6 +114,8 @@ class MainActivity : ComponentActivity() {
      */
     private fun detectModuleState(): ModuleState {
         return try {
+            // m-10: xposed_init 文件通常很小（< 1KB），主线程读取可接受。
+            // 若文件大小增长，应考虑使用 Dispatchers.IO 异步读取。
             val entry = assets.open("xposed_init").bufferedReader(Charsets.UTF_8).use {
                 it.readText().trim()
             }
