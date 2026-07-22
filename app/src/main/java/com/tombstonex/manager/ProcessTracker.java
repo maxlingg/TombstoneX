@@ -3,17 +3,28 @@ package com.tombstonex.manager;
 import com.tombstonex.model.AppInfo;
 import com.tombstonex.model.AppState;
 import com.tombstonex.util.Logger;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ProcessTracker {
     private static volatile ProcessTracker instance;
     private final Map<Integer, AppInfo> processMap = new ConcurrentHashMap<>();
     private final Map<String, List<Integer>> packageToPids = new ConcurrentHashMap<>();
     private final Map<Integer, List<Integer>> uidToPids = new ConcurrentHashMap<>();
+
+    /** 上次 /proc 扫描时间戳，避免频繁扫描 */
+    private final AtomicLong lastProcScanTime = new AtomicLong(0);
+    /** /proc 扫描最小间隔（毫秒），默认 5 秒 */
+    private static final long MIN_SCAN_INTERVAL_MS = 5000;
 
     private ProcessTracker() {}
 
@@ -201,6 +212,142 @@ public class ProcessTracker {
                 freezer.unfreezeProcess(info.pid, info.uid);
             }
         }
+    }
+
+    /**
+     * 扫描 /proc 目录，发现运行中的用户进程并注册到 ProcessTracker。
+     *
+     * 作为 Hook 回调注册机制的兜底方案：当 Hook 方法（setOomAdj 等）因签名不匹配
+     * 等原因未能触发时，此方法直接扫描 /proc 文件系统来发现进程，确保 UI 端能显示
+     * 应用的真实运行状态。
+     *
+     * 调用时机：由 TombstoneXService 在 TX_GET_ALL_PROCESSES / TX_GET_INIT_DATA
+     * 中检测到 ProcessTracker 为空时调用。
+     *
+     * 频率控制：使用 lastProcScanTime 确保两次扫描之间至少间隔 MIN_SCAN_INTERVAL_MS。
+     */
+    public void scanRunningProcesses() {
+        long now = System.currentTimeMillis();
+        long lastScan = lastProcScanTime.get();
+        if (now - lastScan < MIN_SCAN_INTERVAL_MS) {
+            return; // 距离上次扫描不足 5 秒，跳过
+        }
+        if (!lastProcScanTime.compareAndSet(lastScan, now)) {
+            return; // 其他线程正在扫描，跳过
+        }
+
+        try {
+            File procDir = new File("/proc");
+            File[] files = procDir.listFiles();
+            if (files == null) return;
+
+            int registeredCount = 0;
+            for (File file : files) {
+                if (!file.isDirectory()) continue;
+                String name = file.getName();
+                // 仅处理纯数字目录（PID）
+                int pid;
+                try {
+                    pid = Integer.parseInt(name);
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+                if (pid <= 0) continue;
+
+                // 已注册的进程跳过
+                if (processMap.containsKey(pid)) continue;
+
+                try {
+                    // 读取 /proc/<pid>/cmdline 获取进程名
+                    String processName = readProcCmdline(pid);
+                    if (processName == null || processName.isEmpty()) continue;
+
+                    // 读取 /proc/<pid>/status 获取 UID
+                    int uid = readProcUid(pid);
+                    if (uid < 0) continue;
+
+                    // 仅注册用户应用进程（uid >= 10000）
+                    if (uid < 10000) continue;
+
+                    // 从进程名提取包名
+                    String packageName = extractPackageName(processName);
+                    if (packageName == null) continue;
+
+                    boolean isSystemApp = false; // uid >= 10000 均为用户应用
+                    registerProcess(packageName, processName, pid, uid, isSystemApp);
+                    registeredCount++;
+
+                } catch (Throwable t) {
+                    // 单个进程读取失败不影响整体扫描
+                    Logger.d("ProcessTracker: 扫描进程失败 pid=" + pid + ": " + t.getMessage());
+                }
+            }
+
+            if (registeredCount > 0) {
+                Logger.i("ProcessTracker: /proc 扫描完成，注册 " + registeredCount + " 个进程");
+            }
+        } catch (Throwable t) {
+            Logger.e("ProcessTracker: /proc 扫描异常: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 读取 /proc/<pid>/cmdline 的第一段作为进程名。
+     * cmdline 以 null 字节分隔参数，第一段即为进程名。
+     */
+    private static String readProcCmdline(int pid) {
+        File cmdFile = new File("/proc/" + pid + "/cmdline");
+        if (!cmdFile.exists() || !cmdFile.canRead()) return null;
+        try (FileInputStream fis = new FileInputStream(cmdFile)) {
+            byte[] buf = new byte[512];
+            int len = fis.read(buf);
+            if (len <= 0) return null;
+            // 找到第一个 null 字节
+            int end = 0;
+            while (end < len && buf[end] != 0) end++;
+            if (end == 0) return null;
+            return new String(buf, 0, end, StandardCharsets.UTF_8).trim();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 读取 /proc/<pid>/status 中的 Uid 字段。
+     * 格式: "Uid:\t1000\t1000\t1000\t1000" — 取第一个数字。
+     */
+    private static int readProcUid(int pid) {
+        File statusFile = new File("/proc/" + pid + "/status");
+        if (!statusFile.exists() || !statusFile.canRead()) return -1;
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new FileInputStream(statusFile), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("Uid:")) {
+                    // 格式: "Uid:\t<real>\t<effective>\t<saved>\t<fs>"
+                    String[] parts = line.substring(4).trim().split("\\s+");
+                    if (parts.length > 0) {
+                        return Integer.parseInt(parts[0]);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return -1;
+    }
+
+    /**
+     * 从进程名提取包名。
+     * 进程名格式: "com.example.app" 或 "com.example.app:service"
+     * 冒号后的部分为进程后缀，冒号前为包名。
+     */
+    private static String extractPackageName(String processName) {
+        if (processName == null) return null;
+        int colonIdx = processName.indexOf(':');
+        if (colonIdx == 0) return null; // 冒号开头的进程名无包名
+        if (colonIdx > 0) return processName.substring(0, colonIdx);
+        return processName;
     }
 
     /**

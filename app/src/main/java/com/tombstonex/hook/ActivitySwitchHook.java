@@ -656,12 +656,9 @@ public class ActivitySwitchHook {
         try {
             java.io.File cmdFile = new java.io.File("/proc/" + pid + "/cmdline");
             if (!cmdFile.exists()) return;
-            byte[] data = java.nio.file.Files.readAllBytes(cmdFile.toPath());
-            // cmdline 以 null 分隔，取第一段作为进程名
-            int nullIdx = 0;
-            while (nullIdx < data.length && data[nullIdx] != 0) nullIdx++;
-            String processName = new String(data, 0, nullIdx, java.nio.charset.StandardCharsets.UTF_8).trim();
-            if (processName.isEmpty()) return;
+            // 使用 FileInputStream 替代 java.nio.file.Files，兼容所有 Android 版本
+            String processName = readFirstCmdlineSegment(cmdFile);
+            if (processName == null || processName.isEmpty()) return;
 
             String packageName = extractPackageName(processName);
             if (packageName == null) return;
@@ -674,6 +671,24 @@ public class ActivitySwitchHook {
             Logger.d("通过 setOomAdj 自动注册进程: " + processName + " pid=" + pid + " uid=" + uid);
         } catch (Throwable t) {
             Logger.d("自动注册进程失败 pid=" + pid + ": " + t.getMessage());
+        }
+    }
+
+    /**
+     * 读取 /proc/<pid>/cmdline 的第一段（null 字节前的内容）。
+     * 使用 FileInputStream 替代 java.nio.file.Files 以确保兼容性。
+     */
+    private static String readFirstCmdlineSegment(java.io.File cmdFile) {
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(cmdFile)) {
+            byte[] buf = new byte[512];
+            int len = fis.read(buf);
+            if (len <= 0) return null;
+            int end = 0;
+            while (end < len && buf[end] != 0) end++;
+            if (end == 0) return null;
+            return new String(buf, 0, end, java.nio.charset.StandardCharsets.UTF_8).trim();
+        } catch (Exception e) {
+            return null;
         }
     }
 

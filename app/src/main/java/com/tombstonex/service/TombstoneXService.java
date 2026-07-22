@@ -354,6 +354,10 @@ public class TombstoneXService extends Binder {
                     return true;
                 }
                 case TX_GET_ALL_PROCESSES: {
+                    // 兜底：若 ProcessTracker 为空（Hook 未触发），扫描 /proc 发现进程
+                    if (ProcessTracker.getInstance().getTotalCount() == 0) {
+                        ProcessTracker.getInstance().scanRunningProcesses();
+                    }
                     JSONArray arr = new JSONArray();
                     try {
                         for (Map.Entry<Integer, AppInfo> entry :
@@ -493,6 +497,10 @@ public class TombstoneXService extends Binder {
                     return true;
                 }
                 case TX_GET_INIT_DATA: {
+                    // 兜底：若 ProcessTracker 为空（Hook 未触发），扫描 /proc 发现进程
+                    if (ProcessTracker.getInstance().getTotalCount() == 0) {
+                        ProcessTracker.getInstance().scanRunningProcesses();
+                    }
                     // 批量返回首页所需全部数据：配置 + 白名单 + 进程列表
                     JSONObject result = new JSONObject();
                     try {
