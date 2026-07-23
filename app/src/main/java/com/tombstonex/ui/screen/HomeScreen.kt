@@ -32,25 +32,21 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -70,6 +66,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.Color
@@ -199,6 +196,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
     // 应用级配置 BottomSheet 状态
     var showAppConfigSheet by remember { mutableStateOf(false) }
     var selectedAppForConfig by remember { mutableStateOf<HomeAppItem?>(null) }
+    // 模块未激活卡片关闭状态
+    var moduleCardDismissed by remember { mutableStateOf(false) }
 
     // 搜索防抖
     LaunchedEffect(searchQuery) {
@@ -282,6 +281,8 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         loadJob?.cancel()
         // M5 修复：同时取消进行中的刷新任务，避免刷新结果覆盖新加载结果
         refreshJob?.cancel()
+        // 系统应用切换时重置关闭状态
+        moduleCardDismissed = false
         loadJob = scope.launch {
             try {
                 val appProvider = AppProvider.getInstance(context)
@@ -458,6 +459,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
         items.count { it.state == AppState.FROZEN || (!it.isWhiteListed && it.pid <= 0) }
     }
     val whiteCount = remember(items) { items.count { it.isWhiteListed } }
+    val totalCount = remember(items) { items.size }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -473,32 +475,31 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(0.dp),
             ) {
                 // 模块未激活（Binder 服务不可用）时显示状态卡片
-                if (!moduleAvailable) {
+                if (!moduleAvailable && !moduleCardDismissed) {
                     item {
                         ModuleNotActiveCard(
                             moduleEnabled = moduleEnabled,
                             moduleLoaded = moduleLoaded,
                             regStatus = regStatus,
+                            onDismiss = { moduleCardDismissed = true },
                         )
                     }
                 }
 
                 if (!loading) {
-                    item { StatsCard(runningCount, frozenCount, whiteCount) }
+                    item { StatsCard(runningCount, frozenCount, whiteCount, totalCount) }
 
-                    // ---- 搜索栏 + 系统应用 FilterChip ----
+                    // ---- 搜索栏 + 系统应用 Switch ----
                     item {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             OutlinedTextField(
                                 value = searchQuery,
                                 onValueChange = { searchQuery = it },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("搜索应用名称或包名…") },
                                 leadingIcon = {
                                     Icon(
@@ -525,35 +526,22 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                                 ),
                             )
-                            FilterChip(
-                                selected = includeSystem,
-                                onClick = { includeSystem = !includeSystem },
-                                label = { Text("系统应用") },
-                                leadingIcon = if (includeSystem) {
-                                    {
-                                        Box(
-                                            Modifier
-                                                .size(7.dp)
-                                                .background(
-                                                    MaterialTheme.colorScheme.primary,
-                                                    CircleShape,
-                                                ),
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.primary,
-                                ),
-                                border = FilterChipDefaults.filterChipBorder(
-                                    borderColor = MaterialTheme.colorScheme.outlineVariant,
-                                    selectedBorderColor = MaterialTheme.colorScheme.primary,
-                                    enabled = true,
-                                    selected = includeSystem,
-                                ),
-                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "系统应用",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Switch(
+                                    checked = includeSystem,
+                                    onCheckedChange = { includeSystem = it },
+                                )
+                            }
                         }
                     }
 
@@ -568,13 +556,11 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                             Text(
                                 text = "应用列表",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
                                 text = "${filtered.size} 个",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -692,6 +678,7 @@ private fun ModuleNotActiveCard(
     moduleEnabled: Boolean = false,
     moduleLoaded: Boolean = false,
     regStatus: String = "",
+    onDismiss: () -> Unit = {},
 ) {
     var showInstallDialog by remember { mutableStateOf(false) }
     var installResult by remember { mutableStateOf<com.tombstonex.util.RootModuleInstaller.InstallResult?>(null) }
@@ -701,15 +688,31 @@ private fun ModuleNotActiveCard(
 
     // 模块已加载但 Binder 不可用 → 需要安装 SELinux 策略或重启
     val isBinderFailed = moduleEnabled && moduleLoaded
-    val containerColor = MaterialTheme.colorScheme.errorContainer
-    val contentColor = MaterialTheme.colorScheme.onErrorContainer
 
-    Card(
+    val statusText = when {
+        !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块"
+        !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」"
+        isBinderFailed -> {
+            val base = "Binder 服务注册失败，需要安装 SELinux 策略模块。\n点击下方按钮一键安装（需 root），安装后重启设备生效。"
+            if (regStatus.isNotEmpty() && !regStatus.startsWith("ok") && !regStatus.startsWith("already")) {
+                "$base\n\n注册诊断: $regStatus"
+            } else {
+                base
+            }
+        }
+        else -> "模块已加载，通信通道未就绪，正在等待..."
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(containerColor = containerColor),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFF3D1F1F), Color(0xFF2A1010)),
+                ),
+                shape = RoundedCornerShape(12.dp),
+            ),
     ) {
         Column(
             modifier = Modifier
@@ -717,53 +720,75 @@ private fun ModuleNotActiveCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // 标题行：警告图标 + 标题 + 关闭按钮
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    if (isBinderFailed) Icons.Filled.Error else Icons.Filled.Warning,
+                    Icons.Filled.Warning,
                     contentDescription = null,
-                    tint = contentColor,
+                    tint = Color(0xFFFF4444),
+                    modifier = Modifier.size(20.dp),
                 )
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isBinderFailed) "Binder 服务未就绪" else "模块未激活",
-                    fontWeight = FontWeight.SemiBold,
-                    color = contentColor,
+                    text = "模块未激活",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFF4444),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
                 )
-            }
-            val statusText = when {
-                !moduleEnabled -> "LSPosed 未启用模块\n请在 LSPosed 管理器中启用 TombstoneX 模块"
-                !moduleLoaded -> "模块已启用，但未加载到系统框架\n请在 LSPosed 作用域中勾选「Android 系统」"
-                isBinderFailed -> {
-                    val base = "Binder 服务注册失败，需要安装 SELinux 策略模块。\n点击下方按钮一键安装（需 root），安装后重启设备生效。"
-                    if (regStatus.isNotEmpty() && !regStatus.startsWith("ok") && !regStatus.startsWith("already")) {
-                        "$base\n\n注册诊断: $regStatus"
-                    } else {
-                        base
-                    }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(24.dp),
+                ) {
+                    Text(
+                        text = "\u00D7",
+                        fontSize = 20.sp,
+                        color = Color.Gray,
+                    )
                 }
-                else -> "模块已加载，通信通道未就绪，正在等待..."
             }
+
+            // 描述文字
             Text(
                 text = statusText,
                 fontSize = 12.sp,
-                color = contentColor.copy(alpha = 0.8f),
+                color = Color.Gray,
+                lineHeight = 18.sp,
             )
 
-            // 模块已加载但 Binder 失败时，显示一键安装 SELinux 策略按钮
-            if (isBinderFailed) {
-                Button(
-                    onClick = {
-                        showInstallDialog = true
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = contentColor,
-                        contentColor = containerColor,
-                    ),
+            // 底部按钮行
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.5f)),
                 ) {
-                    Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("一键安装 SELinux 策略")
+                    Text("稍后", color = Color.Gray)
+                }
+
+                if (isBinderFailed) {
+                    Button(
+                        onClick = {
+                            showInstallDialog = true
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFF6B6B),
+                            contentColor = Color.White,
+                        ),
+                    ) {
+                        Icon(
+                            Icons.Filled.Bolt,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("安装 SELinux 策略")
+                    }
                 }
             }
         }
@@ -852,17 +877,37 @@ private fun ModuleNotActiveCard(
 }
 
 @Composable
-private fun StatsCard(runningCount: Int, frozenCount: Int, whitelistCount: Int) {
+private fun StatsCard(runningCount: Int, frozenCount: Int, whitelistCount: Int, totalCount: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        StatItem("运行中", runningCount, MaterialTheme.colorScheme.secondary, modifier = Modifier.weight(1f))
-        StatItem("已冻结", frozenCount, MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-        StatItem("白名单", whitelistCount, MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        StatItem("总应用", runningCount + frozenCount, MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+        StatItem(
+            label = "运行中",
+            count = runningCount,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        StatItem(
+            label = "已冻结",
+            count = frozenCount,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        StatItem(
+            label = "白名单",
+            count = whitelistCount,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        StatItem(
+            label = "总应用",
+            count = totalCount,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -870,9 +915,8 @@ private fun StatsCard(runningCount: Int, frozenCount: Int, whitelistCount: Int) 
 private fun StatItem(label: String, count: Int, color: Color, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
             modifier = Modifier.padding(vertical = 10.dp),
@@ -881,14 +925,13 @@ private fun StatItem(label: String, count: Int, color: Color, modifier: Modifier
             Text(
                 text = count.toString(),
                 style = MaterialTheme.typography.headlineLarge,
-                color = if (count > 0) color else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = color,
             )
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 0.5.sp,
             )
         }
     }
@@ -978,17 +1021,18 @@ private fun AppCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White,
                     )
                     if (item.isWhiteListed) {
                         Text(
-                            " ☆",
+                            " \u2606",
                             color = MaterialTheme.colorScheme.primary,
                             fontSize = 12.sp,
                         )
                     }
                 }
                 Text(
-                    text = item.packageName + if (item.isSystem) " · 系统" else "",
+                    text = item.packageName + if (item.isSystem) " . 系统" else "",
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1010,20 +1054,14 @@ private fun AppCard(
                 }
             }
 
-            // 冻结按钮
+            // 冻结按钮：圆形，38dp，深灰背景
             IconButton(
                 onClick = { onFreezeClick(item) },
                 modifier = Modifier
                     .size(38.dp)
                     .background(
-                        if (isFrozen) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainer,
-                        RoundedCornerShape(10.dp),
-                    )
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant,
-                        RoundedCornerShape(10.dp),
+                        MaterialTheme.colorScheme.surfaceContainer,
+                        CircleShape,
                     ),
             ) {
                 Text(
@@ -1036,7 +1074,7 @@ private fun AppCard(
 }
 
 /**
- * 进程状态徽章
+ * 进程状态徽章（pill 形状）
  */
 @Composable
 private fun StateBadge(state: AppState?) {
@@ -1048,7 +1086,7 @@ private fun StateBadge(state: AppState?) {
         null -> "未运行" to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Surface(
-        shape = MaterialTheme.shapes.extraSmall,
+        shape = RoundedCornerShape(12.dp),
         color = color.copy(alpha = 0.12f),
         border = BorderStroke(1.dp, color.copy(alpha = 0.2f)),
     ) {

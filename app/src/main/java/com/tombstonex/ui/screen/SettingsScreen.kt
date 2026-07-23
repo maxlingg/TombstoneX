@@ -282,7 +282,7 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
-        // ---- 模块状态 ----
+        // ---- 模块设置 ----
         item {
             Row(
                 modifier = Modifier
@@ -290,7 +290,7 @@ fun SettingsScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Text(
-                    "模块状态",
+                    "模块设置",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -369,7 +369,7 @@ fun SettingsScreen(
             )
         }
 
-        // ---- 设置 ----
+        // ---- 冻结设置 ----
         item {
             Row(
                 modifier = Modifier
@@ -377,7 +377,7 @@ fun SettingsScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Text(
-                    "设置",
+                    "冻结设置",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -230,6 +230,10 @@ fun NavigationHost() {
     }
 }
 
+// 未激活状态的专用红色
+private val InactiveRed = Color(0xFFFF5252)
+private val InactiveBg = Color(0xFF8B3A3A)
+
 @Composable
 private fun TombstoneXTopBar() {
     val moduleState = LocalModuleState.current
@@ -244,6 +248,7 @@ private fun TombstoneXTopBar() {
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // TX 圆角方形 logo
             Surface(
                 modifier = Modifier.size(36.dp),
                 shape = RoundedCornerShape(12.dp),
@@ -252,7 +257,7 @@ private fun TombstoneXTopBar() {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         "TX",
-                        color = Color(0xFF00E5FF),
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                     )
@@ -265,15 +270,15 @@ private fun TombstoneXTopBar() {
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.weight(1f))
-            // 状态芯片
+            // 状态芯片 —— pill 形状 16.dp 圆角
             Surface(
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(16.dp),
                 color = if (isActive) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.errorContainer,
+                    else InactiveBg,
                 border = BorderStroke(
                     1.dp,
                     if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                    else MaterialTheme.colorScheme.error.copy(alpha = 0.25f),
+                    else InactiveRed.copy(alpha = 0.25f),
                 ),
             ) {
                 Row(
@@ -286,7 +291,7 @@ private fun TombstoneXTopBar() {
                             .size(6.dp)
                             .background(
                                 if (isActive) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.error,
+                                else InactiveRed,
                                 CircleShape,
                             ),
                     )
@@ -295,7 +300,7 @@ private fun TombstoneXTopBar() {
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = FontFamily.Monospace,
                         color = if (isActive) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.error,
+                            else InactiveRed,
                     )
                 }
             }
