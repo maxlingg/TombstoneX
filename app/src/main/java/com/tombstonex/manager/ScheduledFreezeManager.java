@@ -75,7 +75,7 @@ public class ScheduledFreezeManager {
         executor.allowCoreThreadTimeOut(true);
         executor.scheduleAtFixedRate(this::scanAndFreeze,
             SCAN_INTERVAL_SECONDS, SCAN_INTERVAL_SECONDS, TimeUnit.SECONDS);
-        Logger.i("定时冻结管理器已启动，间隔= + SCAN_INTERVAL_SECONDS + "s");
+        Logger.i("定时冻结管理器已启动，间隔=" + SCAN_INTERVAL_SECONDS + "s");
     }
 
     /**
@@ -85,7 +85,7 @@ public class ScheduledFreezeManager {
         if (executor != null) {
             // M-21: 记录被丢弃的待执行任务数量，便于排查调度异常。
             List<Runnable> discarded = executor.shutdownNow();
-            Logger.i("定时冻结管理器已停止，丢弃了  + discarded.size() + " 个待执行任务");
+            Logger.i("定时冻结管理器已停止，丢弃了 " + discarded.size() + " 个待执行任务");
             executor = null;
         }
         lastFreezeTime.clear();
@@ -183,7 +183,7 @@ public class ScheduledFreezeManager {
                 }
             }
 
-            Logger.d("定时冻结管理器扫描完成: 扫描= + scanned
+            Logger.d("定时冻结管理器扫描完成: 扫描=" + scanned
                 + " frozen=" + frozen);
         } catch (Throwable t) {
             Logger.e("定时冻结管理器扫描出错", t);

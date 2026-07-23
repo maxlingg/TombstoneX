@@ -101,7 +101,7 @@ public class RotationThawManager {
         if (executor != null) {
             List<Runnable> discarded = executor.shutdownNow();
             executor = null;
-            Logger.i("轮换解冻管理器已停止，丢弃了  + discarded.size() + " 个待执行任务");
+            Logger.i("轮换解冻管理器已停止，丢弃了 " + discarded.size() + " 个待执行任务");
         }
     }
 
@@ -123,7 +123,7 @@ public class RotationThawManager {
                 return;
             }
 
-            Logger.i("轮换解冻管理器: 正在轮换解冻  + target.packageName
+            Logger.i("轮换解冻管理器: 正在轮换解冻 " + target.packageName
                 + " pid=" + target.pid
                 + " frozenSince=" + target.getFreezeTimestamp());
 
@@ -139,7 +139,7 @@ public class RotationThawManager {
             // 1. 解冻
             boolean unfrozen = FreezeManager.getInstance().unfreezeProcess(target.pid, target.uid);
             if (!unfrozen) {
-                Logger.w("轮换解冻管理器: 解冻失败 pid= + target.pid);
+                Logger.w("轮换解冻管理器: 解冻失败 pid=" + target.pid);
                 return;
             }
 
@@ -163,10 +163,10 @@ public class RotationThawManager {
             // 此处无需再次调用 updateState（旧注释声称"不刷新时间戳"与实际行为矛盾，
             // 且第二次调用完全冗余），仅记录日志即可。
             if (FreezeManager.getInstance().freezeProcess(target.pid, target.uid)) {
-                Logger.d("轮换解冻管理器: 已重新冻结  + target.packageName
+                Logger.d("轮换解冻管理器: 已重新冻结 " + target.packageName
                     + " pid=" + target.pid);
             } else {
-                Logger.w("轮换解冻管理器: 重新冻结失败 pid= + target.pid);
+                Logger.w("轮换解冻管理器: 重新冻结失败 pid=" + target.pid);
             }
         } catch (Throwable t) {
             Logger.e("轮换解冻管理器轮换出错", t);
