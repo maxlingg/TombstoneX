@@ -229,6 +229,7 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                 }
             }
         }
+    }
 
     if (showClearDialog) {
         AlertDialog(
