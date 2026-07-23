@@ -64,7 +64,7 @@ public class ScheduledFreezeManager {
      */
     public synchronized void start() {
         if (executor != null && !executor.isShutdown()) {
-            Logger.d("ScheduledFreezeManager 已在运行");
+            Logger.d("定时冻结管理器已在运行");
             return;
         }
         executor = new ScheduledThreadPoolExecutor(1);
@@ -75,7 +75,7 @@ public class ScheduledFreezeManager {
         executor.allowCoreThreadTimeOut(true);
         executor.scheduleAtFixedRate(this::scanAndFreeze,
             SCAN_INTERVAL_SECONDS, SCAN_INTERVAL_SECONDS, TimeUnit.SECONDS);
-        Logger.i("ScheduledFreezeManager 已启动，间隔=" + SCAN_INTERVAL_SECONDS + "s");
+        Logger.i("定时冻结管理器已启动，间隔= + SCAN_INTERVAL_SECONDS + "s");
     }
 
     /**
@@ -85,7 +85,7 @@ public class ScheduledFreezeManager {
         if (executor != null) {
             // M-21: 记录被丢弃的待执行任务数量，便于排查调度异常。
             List<Runnable> discarded = executor.shutdownNow();
-            Logger.i("ScheduledFreezeManager 已停止，丢弃了 " + discarded.size() + " 个待执行任务");
+            Logger.i("定时冻结管理器已停止，丢弃了  + discarded.size() + " 个待执行任务");
             executor = null;
         }
         lastFreezeTime.clear();
@@ -137,7 +137,7 @@ public class ScheduledFreezeManager {
         try {
             // 全局暂停时不执行新的冻结
             if (ConfigManager.getInstance().isGlobalPaused()) {
-                Logger.d("ScheduledFreezeManager: 全局已暂停，跳过扫描");
+                Logger.d("定时冻结管理器: 全局已暂停，跳过扫描");
                 return;
             }
 
@@ -167,7 +167,7 @@ public class ScheduledFreezeManager {
 
                 // 智能状态检查（如果 SmartStateHook 可用）
                 if (info.packageName != null && isAppActive(info.uid, info.packageName)) {
-                    Logger.d("ScheduledFreezeManager: 应用活跃，跳过: " + info.packageName);
+                    Logger.d("定时冻结管理器: 应用活跃，跳过: " + info.packageName);
                     continue;
                 }
 
@@ -183,10 +183,10 @@ public class ScheduledFreezeManager {
                 }
             }
 
-            Logger.d("ScheduledFreezeManager 扫描完成: scanned=" + scanned
+            Logger.d("定时冻结管理器扫描完成: 扫描= + scanned
                 + " frozen=" + frozen);
         } catch (Throwable t) {
-            Logger.e("ScheduledFreezeManager 扫描出错", t);
+            Logger.e("定时冻结管理器扫描出错", t);
         }
     }
 

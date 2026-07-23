@@ -102,11 +102,11 @@ public class ReKernelHook {
         synchronized (lifecycleLock) {
             // R8-S8: 原子的检查并设置，避免并发 init() 导致多个监控线程
             if (!initFlag.compareAndSet(false, true)) {
-                Logger.d("ReKernelHook 已初始化，跳过");
+                Logger.d("ReKernel Hook 已初始化，跳过");
                 return;
             }
             if (!isReKernelAvailable()) {
-                Logger.i("ReKernel 未安装，跳过 ReKernelHook");
+                Logger.i("ReKernel 未安装，跳过 ReKernel Hook");
                 initFlag.set(false);
                 return;
             }
@@ -166,7 +166,7 @@ public class ReKernelHook {
         // R9-m5: running=true 在此设置，早于实际启动 reader/FileObserver。
         // 若启动失败，由 R9-M1 修复在 reader 线程连续错误退出时重置 running/initFlag 兜底。
         running = true;
-        Logger.i("ReKernelHook 监控中: " + monitoredPath);
+        Logger.i("ReKernel Hook 监控中: " + monitoredPath);
 
         // R8-m6: 根据路径类型选择单一读取策略
         if (monitoredPath.startsWith("/dev/")) {
@@ -186,7 +186,7 @@ public class ReKernelHook {
     private static void startFileObserver() {
         // S-4: /proc/ 虚拟文件系统不支持 FileObserver（inotify），降级为轮询读取
         if (monitoredPath != null && monitoredPath.startsWith("/proc/")) {
-            Logger.i("检测到 /proc/ 路径，FileObserver 不支持，降级为轮询模式: " + monitoredPath);
+            Logger.i("检测到 /proc/ 路径，不支持文件监听，降级为轮询模式: " + monitoredPath);
             startReaderThread();
             return;
         }
@@ -199,14 +199,14 @@ public class ReKernelHook {
                     try {
                         readAndHandle();
                     } catch (Throwable t) {
-                        Logger.d("ReKernel FileObserver onEvent 出错: " + t.getMessage());
+                        Logger.d("ReKernel 文件监听事件出错: " + t.getMessage());
                     }
                 }
             };
             fileObserver.startWatching();
-            Logger.i("ReKernel FileObserver 已启动于 " + monitoredPath);
+            Logger.i("ReKernel 文件监听已启动于 " + monitoredPath);
         } catch (Throwable t) {
-            Logger.w("ReKernel FileObserver 设置失败: " + t.getMessage());
+            Logger.w("ReKernel 文件监听设置失败: " + t.getMessage());
             running = false; // R8-S11: 启动失败，允许后续重试
         }
     }
@@ -265,7 +265,7 @@ public class ReKernelHook {
                                 FreezeManager.unsuppressFreeze(suppressedPid);
                             }
                         } catch (Throwable ignore) {
-                            Logger.d("ReKernel 错误退出清理 unsuppressFreeze 出错: " + ignore.getMessage());
+                            Logger.d("ReKernel 错误退出清理冻结抑制出错: " + ignore.getMessage());
                         }
                         rekernelSuppressedPids.clear();
                         break;
@@ -286,7 +286,7 @@ public class ReKernelHook {
                     }
                     if (reader != null) {
                         try { reader.close(); } catch (Throwable ignore) {
-                            Logger.d("ReKernel readerThread 关闭 reader 出错: " + ignore.getMessage());
+                            Logger.d("ReKernel 读取线程关闭 reader 出错: " + ignore.getMessage());
                         }
                     }
                 }
@@ -314,11 +314,11 @@ public class ReKernelHook {
                 }
             }
         } catch (Throwable t) {
-            Logger.d("readAndHandle 出错: " + t.getMessage());
+            Logger.d("读取处理出错: " + t.getMessage());
         } finally {
             if (reader != null) {
                 try { reader.close(); } catch (Throwable ignore) {
-                    Logger.d("readAndHandle 关闭 reader 出错: " + ignore.getMessage());
+                    Logger.d("读取处理关闭 reader 出错: " + ignore.getMessage());
                 }
             }
         }
@@ -381,7 +381,7 @@ public class ReKernelHook {
         }
         if (!anyFrozen) return;
 
-        Logger.i("ReKernel: 临时解冻包 " + packageName);
+        Logger.i("ReKernel: 临时解冻包名 " + packageName);
         FreezeManager.getInstance().unfreezePackage(packageName);
         scheduleRefreeze(packageName, -1);
     }
@@ -451,7 +451,7 @@ public class ReKernelHook {
                                 }
                             }
                             FreezeManager.getInstance().freezePackage(packageName);
-                            Logger.d("ReKernel: 已重新冻结包 " + packageName);
+                            Logger.d("ReKernel: 已重新冻结包名 " + packageName);
                         } else if (uid > 0) {
                             // R11-m-2: 先收集快照列表再遍历，避免双次 getByUid() 调用存在 TOCTOU 窗口
                             List<AppInfo> toRefreeze = ProcessTracker.getInstance().getByUid(uid);
@@ -489,7 +489,7 @@ public class ReKernelHook {
                                 }
                             }
                         } catch (Throwable ignore) {
-                            Logger.d("ReKernel scheduleRefreeze finally 清理 unsuppressFreeze 出错: " + ignore.getMessage());
+                            Logger.d("ReKernel 重新冻结调度清理冻结抑制出错: " + ignore.getMessage());
                         }
                         pendingRefreezes.remove(key, holder[0]);
                     }
@@ -500,7 +500,7 @@ public class ReKernelHook {
             // R9-S4: scheduler 已关闭（RejectedExecutionException），回滚冻结抑制
             // R11-M-1: 仅清除 rekernelSuppressedPids 中的 pid，
             // 避免破坏 RotationThawManager 的活跃抑制窗口。
-            Logger.w("scheduleRefreeze 失败，回滚冻结抑制: " + t.getMessage());
+            Logger.w("重新冻结调度失败，回滚冻结抑制: " + t.getMessage());
             try {
                 if (packageName != null) {
                     for (AppInfo info : ProcessTracker.getInstance().getAllByPackage(packageName)) {
@@ -516,7 +516,7 @@ public class ReKernelHook {
                     }
                 }
             } catch (Throwable ignore) {
-                Logger.d("scheduleRefreeze 回滚抑制清理 unsuppressFreeze 出错: " + ignore.getMessage());
+                Logger.d("重新冻结调度回滚抑制清理出错: " + ignore.getMessage());
             }
             // m-3: compute 抛异常时移除 pendingRefreezes 中的过期条目，
             // 避免残留的旧 ScheduledFuture 引用导致后续 compute 误取消
@@ -566,7 +566,7 @@ public class ReKernelHook {
                     FreezeManager.unsuppressFreeze(pid);
                 }
             } catch (Throwable ignore) {
-                Logger.d("ReKernel stop() unsuppressFreeze 清理出错: " + ignore.getMessage());
+                Logger.d("ReKernel 停止时清理冻结抑制出错: " + ignore.getMessage());
             }
             rekernelSuppressedPids.clear();
             pendingRefreezes.clear();
@@ -578,7 +578,7 @@ public class ReKernelHook {
             // R8-M7: 关闭 reader 以中断 native I/O 阻塞（须在 interrupt 之前）
             if (currentReader != null) {
                 try { currentReader.close(); } catch (Throwable ignore) {
-                    Logger.d("ReKernel stop() 关闭 currentReader 出错: " + ignore.getMessage());
+                    Logger.d("ReKernel 停止时关闭 reader 出错: " + ignore.getMessage());
                 }
                 currentReader = null;
             }
@@ -587,7 +587,7 @@ public class ReKernelHook {
                     fileObserver.stopWatching();
                 } catch (Throwable ignore) {
                     // 忽略停止异常
-                    Logger.d("ReKernel stop() 停止 FileObserver 出错: " + ignore.getMessage());
+                    Logger.d("ReKernel 停止时关闭文件监听出错: " + ignore.getMessage());
                 }
                 fileObserver = null;
             }
@@ -597,7 +597,7 @@ public class ReKernelHook {
             }
             // R8-S10: 重置 initFlag，允许后续重新 init()
             initFlag.set(false);
-            Logger.i("ReKernelHook 已停止");
+            Logger.i("ReKernel Hook 已停止");
         }
     }
 }

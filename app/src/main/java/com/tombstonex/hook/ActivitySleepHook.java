@@ -91,11 +91,11 @@ public class ActivitySleepHook {
                             try {
                                 String pkg = extractPackageFromArgs(param.args);
                                 if (pkg != null && isPackageFrozen(pkg)) {
-                                    Logger.d("跳过已冻结应用的 sleepPackage: " + pkg);
+                                    Logger.d("跳过已冻结应用的休眠: " + pkg);
                                     param.setResult(null);
                                 }
                             } catch (Throwable t) {
-                                Logger.e("sleepPackage Hook 出错", t);
+                                Logger.e("休眠方法 Hook 出错", t);
                             }
                         }
                     });
@@ -109,7 +109,7 @@ public class ActivitySleepHook {
         }
 
         if (hookCount == 0) {
-            Logger.w("在 AMS/ATMS 上未找到已知签名的 sleepPackage");
+            Logger.w("在 AMS/ATMS 上未找到已知签名的休眠方法");
         }
     }
 
@@ -142,7 +142,7 @@ public class ActivitySleepHook {
         try {
             clazz = XposedHelpers.findClass(className, classLoader);
         } catch (Throwable t) {
-            Logger.d("未找到 finishDisabledPackageActivities 的类: " + className);
+            Logger.d("未找到 Activity 清理方法所在的类: " + className);
             return;
         }
 
@@ -181,7 +181,7 @@ public class ActivitySleepHook {
                         try {
                             String pkg = extractPackageFromArgs(param.args);
                             if (pkg != null && isPackageFrozen(pkg)) {
-                                Logger.d("跳过已冻结应用的 finishDisabledPackageActivities: " + pkg
+                                Logger.d("跳过已冻结应用的 Activity 清理: " + pkg
                                     + " 于 " + clazz.getName());
                                 // R10-M-2: finishDisabledPackageActivities 返回 boolean，
                                 // setResult(null) 对基本类型方法不安全（可能导致 NPE/类型不匹配），
@@ -190,7 +190,7 @@ public class ActivitySleepHook {
                                 param.setResult(false);
                             }
                         } catch (Throwable t) {
-                            Logger.e("finishDisabledPackageActivities Hook 出错", t);
+                            Logger.e("Activity 清理 Hook 出错", t);
                         }
                     }
                 });
@@ -204,7 +204,7 @@ public class ActivitySleepHook {
             }
         }
         if (hookCount == 0) {
-            Logger.w("在 " + className + " 上未找到已知签名的 finishDisabledPackageActivities");
+            Logger.w("未找到已知签名的 Activity 清理方法: " + className);
         }
     }
 
@@ -241,11 +241,11 @@ public class ActivitySleepHook {
                         try {
                             String pkg = getPackageFromActivityRecord(param.thisObject);
                             if (pkg != null && isPackageFrozen(pkg)) {
-                                Logger.d("跳过已冻结应用的 ActivityRecord.goToSleep: " + pkg);
+                                Logger.d("跳过已冻结应用的 Activity 休眠: " + pkg);
                                 param.setResult(null);
                             }
                         } catch (Throwable t) {
-                            Logger.e("ActivityRecord.goToSleep Hook 出错", t);
+                            Logger.e("Activity 休眠 Hook 出错", t);
                         }
                     }
                 });
@@ -258,7 +258,7 @@ public class ActivitySleepHook {
         }
 
         if (hookCount == 0) {
-            Logger.w("未找到已知签名的 ActivityRecord.goToSleep");
+            Logger.w("未找到已知签名的 Activity 休眠方法");
         }
     }
 

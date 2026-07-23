@@ -18,7 +18,7 @@ public class SystemApiFreezer implements IFreezer {
     public SystemApiFreezer() {
         // Android 版本检查: setProcessFrozen 仅 Android 11+ (API 30) 可用
         if (Build.VERSION.SDK_INT < 30) {
-            Logger.w("SystemApi freezer 需要 Android 11+ (API 30)，当前 SDK=" + Build.VERSION.SDK_INT);
+            Logger.w("SystemApi 冻结器需要 Android 11+ (API 30)，当前 SDK=" + Build.VERSION.SDK_INT);
             // S1-修复: final 字段必须在所有构造函数路径中赋值，提前 return 前显式赋 null
             setProcessFrozenMethod = null;
             return;
@@ -29,7 +29,7 @@ public class SystemApiFreezer implements IFreezer {
             try {
                 setProcessFrozenMethod.setAccessible(true);
             } catch (SecurityException e) {
-                Logger.w("SystemApiFreezer: setAccessible 被拒绝: " + e.getMessage());
+                Logger.w("SystemApi 冻结器: setAccessible 被拒绝: " + e.getMessage());
                 setProcessFrozenMethod = null;
             }
         } catch (NoSuchMethodException e) {
@@ -110,7 +110,7 @@ public class SystemApiFreezer implements IFreezer {
                 }
             }
         } catch (Exception e) {
-            Logger.d("SystemApiFreezer: 读取 /proc/" + pid + "/status 失败: " + e.getMessage());
+            Logger.d("SystemApi 冻结器: 读取 /proc/" + pid + "/status 失败: " + e.getMessage());
         }
         return null;
     }

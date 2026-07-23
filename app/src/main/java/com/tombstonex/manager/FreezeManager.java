@@ -88,13 +88,13 @@ public class FreezeManager {
 
     private void selectFreezer() {
         FreezeMode mode = ConfigManager.getInstance().getFreezeMode();
-        Logger.i("正在选择 freezer: " + mode);
+        Logger.i("正在选择冻结器: " + mode);
 
         switch (mode) {
             case SYSTEM_API:
                 currentFreezer = new SystemApiFreezer();
                 if (currentFreezer.isAvailable()) break;
-                Logger.w("SystemApi freezer 不可用，回退到 CgroupV2");
+                Logger.w("SystemApi 冻结器不可用，回退到 CgroupV2");
             case CGROUP_V2:
                 currentFreezer = new CgroupFreezerV2();
                 if (currentFreezer.isAvailable()) break;
@@ -112,15 +112,15 @@ public class FreezeManager {
                 if (currentFreezer.isAvailable()) break;
                 // 最终回退
             default:
-                Logger.w("无可用 freezer");
+                Logger.w("无可用冻结器");
                 currentFreezer = null;
                 break;
         }
         if (currentFreezer != null) {
-            Logger.i("已选择 freezer: " + currentFreezer.getName()
+            Logger.i("已选择冻结器: " + currentFreezer.getName()
                 + " available=" + currentFreezer.isAvailable());
         } else {
-            Logger.w("未选择 freezer");
+            Logger.w("未选择冻结器");
         }
     }
 
@@ -149,14 +149,14 @@ public class FreezeManager {
             // M1: 校验 caller 传入的 uid 与 ProcessTracker 中刚获取的 info.uid 一致，
             // 避免因 pid 被复用导致对错误 uid 的进程执行冻结（cgroup 路径错乱等）。
             if (info.uid != uid) {
-                Logger.w("uid 不匹配，拒绝冻结: pid=" + pid + " uid=" + uid
+                Logger.w("UID 不匹配，拒绝冻结: pid=" + pid + " uid=" + uid
                     + " info.uid=" + info.uid);
                 return false;
             }
             // M-13: 防御性检查 —— packageName 为 null 时 shouldFreeze 内部 contains() 会 NPE。
             // 虽理论上不应发生（registerProcess 始终传入 packageName），但作为防御层保留。
             if (info.packageName == null) {
-                Logger.w("packageName 为 null，拒绝冻结: pid=" + pid);
+                Logger.w("包名为空，拒绝冻结: pid=" + pid);
                 return false;
             }
             if (!WhitelistManager.getInstance().shouldFreeze(
@@ -182,7 +182,7 @@ public class FreezeManager {
             }
 
             if (currentFreezer == null) {
-                Logger.w("无可用 freezer，无法冻结: pid=" + pid);
+                Logger.w("无可用冻结器，无法冻结: pid=" + pid);
                 return false;
             }
             // M1: 使用 info.uid（权威）而非 caller 传入的 uid，避免 pid 复用场景下的错乱。
@@ -238,12 +238,12 @@ public class FreezeManager {
             }
             // M1: 校验 uid 一致性，避免 pid 复用导致对错误 uid 的进程执行解冻。
             if (info.uid != uid) {
-                Logger.w("uid 不匹配，拒绝解冻: pid=" + pid + " uid=" + uid
+                Logger.w("UID 不匹配，拒绝解冻: pid=" + pid + " uid=" + uid
                     + " info.uid=" + info.uid);
                 return false;
             }
             if (currentFreezer == null) {
-                Logger.w("无可用 freezer，无法解冻: pid=" + pid);
+                Logger.w("无可用冻结器，无法解冻: pid=" + pid);
                 return false;
             }
             // M1: 使用 info.uid（权威）而非 caller 传入的 uid，避免 pid 复用场景下的错乱。
@@ -326,9 +326,9 @@ public class FreezeManager {
                     // NetworkHook 可能未初始化，忽略
                 }
             } else {
-                Logger.w("重新选择期间解冻 pid=" + info.pid + " 失败");
+                Logger.w("切换冻结器期间解冻 pid=" + info.pid + " 失败");
             }
         }
-        Logger.i("重新选择前已解冻所有冻结进程: " + frozenList.size());
+        Logger.i("切换冻结器前已解冻所有冻结进程: " + frozenList.size());
     }
 }

@@ -27,23 +27,23 @@ public class SignalFreezer implements IFreezer {
                 Thread.sleep(10);
                 String state = readProcessState(pid);
                 if ("T".equals(state)) {
-                    Logger.d("Signal 冻结: pid=" + pid + " signal=" + stopSignal);
+                    Logger.d("信号冻结: pid=" + pid + " signal=" + stopSignal);
                     return true;
                 }
             }
             // M-27: 5 次重试后仍未达到目标状态，记录告警并回滚。
             String finalState = readProcessState(pid);
-            Logger.w("SignalFreezer: 冻结验证失败 state=" + finalState + "（已重试 5 次），回滚 SIGCONT pid=" + pid);
+            Logger.w("信号冻结器: 冻结验证失败 state=" + finalState + "（已重试 5 次），回滚 SIGCONT pid=" + pid);
             Process.sendSignal(pid, CONT_SIGNAL);
             return false;
         } catch (InterruptedException e) {
             // M6-修复: 恢复中断标志，避免吞掉中断信号
             Thread.currentThread().interrupt();
-            Logger.e("Signal 冻结被中断 pid=" + pid, e);
+            Logger.e("信号冻结被中断 pid=" + pid, e);
             try { Process.sendSignal(pid, CONT_SIGNAL); } catch (Exception ignored) {}
             return false;
         } catch (Exception e) {
-            Logger.e("Signal 冻结失败 pid=" + pid, e);
+            Logger.e("信号冻结失败 pid=" + pid, e);
             // L3: 清理 —— 信号可能已发送，发送 SIGCONT 确保进程回到可调度状态。
             try { Process.sendSignal(pid, CONT_SIGNAL); } catch (Exception ignored) {}
             return false;
@@ -71,7 +71,7 @@ public class SignalFreezer implements IFreezer {
                 }
             }
         } catch (IOException e) {
-            Logger.w("SignalFreezer: 读取 /proc/" + pid + "/status 失败: " + e.getMessage());
+            Logger.w("信号冻结器: 读取 /proc/" + pid + "/status 失败: " + e.getMessage());
         }
         return null;
     }
@@ -85,20 +85,20 @@ public class SignalFreezer implements IFreezer {
                 Thread.sleep(10);
                 String state = readProcessState(pid);
                 if (state != null && !"T".equals(state)) {
-                    Logger.d("Signal 解冻: pid=" + pid);
+                    Logger.d("信号解冻: pid=" + pid);
                     return true;
                 }
             }
             String finalState = readProcessState(pid);
-            Logger.w("SignalFreezer: 解冻验证失败 state=" + finalState + "（已重试 5 次）pid=" + pid);
+            Logger.w("信号冻结器: 解冻验证失败 state=" + finalState + "（已重试 5 次）pid=" + pid);
             return false;
         } catch (InterruptedException e) {
             // M6-修复: 恢复中断标志，避免吞掉中断信号
             Thread.currentThread().interrupt();
-            Logger.e("Signal 解冻被中断 pid=" + pid, e);
+            Logger.e("信号解冻被中断 pid=" + pid, e);
             return false;
         } catch (Exception e) {
-            Logger.e("Signal 解冻失败 pid=" + pid, e);
+            Logger.e("信号解冻失败 pid=" + pid, e);
             return false;
         }
     }

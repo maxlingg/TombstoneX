@@ -50,7 +50,7 @@ public class RotationThawManager {
      */
     public synchronized void start() {
         if (executor != null && !executor.isShutdown()) {
-            Logger.d("RotationThawManager 已在运行");
+            Logger.d("轮换解冻管理器已在运行");
             return;
         }
         executor = new ScheduledThreadPoolExecutor(1);
@@ -58,7 +58,7 @@ public class RotationThawManager {
         // M-22: 允许核心线程在空闲时超时回收，避免线程池永久占用资源。
         executor.setKeepAliveTime(60, TimeUnit.SECONDS);
         executor.allowCoreThreadTimeOut(true);
-        Logger.i("RotationThawManager 已启动");
+        Logger.i("轮换解冻管理器已启动");
         scheduleNext();
     }
 
@@ -81,7 +81,7 @@ public class RotationThawManager {
                 try {
                     rotateThaw();
                 } catch (Throwable t) {
-                    Logger.e("RotationThaw error", t);
+                    Logger.e("轮换解冻出错", t);
                 }
                 // 仅当当前 executor 仍是本次调度所用的 executor 时才调度下一次，
                 // 避免 stop()+start() 期间旧 lambda 在新 executor 上重复调度。
@@ -90,7 +90,7 @@ public class RotationThawManager {
                 }
             }, adjustedInterval, TimeUnit.SECONDS);
         } catch (Throwable t) {
-            Logger.d("RotationThawManager: 调度下一次失败（可能已停止）: " + t.getMessage());
+            Logger.d("轮换解冻管理器: 调度下一次失败（可能已停止）: " + t.getMessage());
         }
     }
 
@@ -101,7 +101,7 @@ public class RotationThawManager {
         if (executor != null) {
             List<Runnable> discarded = executor.shutdownNow();
             executor = null;
-            Logger.i("RotationThawManager 已停止，丢弃了 " + discarded.size() + " 个待执行任务");
+            Logger.i("轮换解冻管理器已停止，丢弃了  + discarded.size() + " 个待执行任务");
         }
     }
 
@@ -113,17 +113,17 @@ public class RotationThawManager {
         try {
             // 全局暂停时跳过
             if (ConfigManager.getInstance().isGlobalPaused()) {
-                Logger.d("RotationThawManager: 全局已暂停，跳过轮番");
+                Logger.d("轮换解冻管理器: 全局已暂停，跳过轮换");
                 return;
             }
 
             target = findLongestFrozen();
             if (target == null) {
-                Logger.d("RotationThawManager: 没有可轮番的冻结应用");
+                Logger.d("轮换解冻管理器: 没有可轮换的冻结应用");
                 return;
             }
 
-            Logger.i("RotationThawManager: 正在轮番 " + target.packageName
+            Logger.i("轮换解冻管理器: 正在轮换解冻  + target.packageName
                 + " pid=" + target.pid
                 + " frozenSince=" + target.getFreezeTimestamp());
 
@@ -139,7 +139,7 @@ public class RotationThawManager {
             // 1. 解冻
             boolean unfrozen = FreezeManager.getInstance().unfreezeProcess(target.pid, target.uid);
             if (!unfrozen) {
-                Logger.w("RotationThawManager: 解冻失败 pid=" + target.pid);
+                Logger.w("轮换解冻管理器: 解冻失败 pid= + target.pid);
                 return;
             }
 
@@ -148,12 +148,12 @@ public class RotationThawManager {
                 Thread.sleep(THAW_DURATION_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                Logger.d("RotationThawManager: 睡眠被中断，立即重新冻结");
+                Logger.d("轮换解冻管理器: 睡眠被中断，立即重新冻结");
             }
 
             // 3. 重新冻结（再次检查全局暂停，避免暂停期间误冻结）
             if (ConfigManager.getInstance().isGlobalPaused()) {
-                Logger.d("RotationThawManager: 解冻期间全局已暂停，跳过重新冻结");
+                Logger.d("轮换解冻管理器: 解冻期间全局已暂停，跳过重新冻结");
                 return;
             }
             // 解除冻结抑制，使重新冻结能够执行（freezeProcess 内部会检查抑制标志）。
@@ -163,13 +163,13 @@ public class RotationThawManager {
             // 此处无需再次调用 updateState（旧注释声称"不刷新时间戳"与实际行为矛盾，
             // 且第二次调用完全冗余），仅记录日志即可。
             if (FreezeManager.getInstance().freezeProcess(target.pid, target.uid)) {
-                Logger.d("RotationThawManager: 已重新冻结 " + target.packageName
+                Logger.d("轮换解冻管理器: 已重新冻结  + target.packageName
                     + " pid=" + target.pid);
             } else {
-                Logger.w("RotationThawManager: 重新冻结失败 pid=" + target.pid);
+                Logger.w("轮换解冻管理器: 重新冻结失败 pid= + target.pid);
             }
         } catch (Throwable t) {
-            Logger.e("RotationThawManager 轮番出错", t);
+            Logger.e("轮换解冻管理器轮换出错", t);
         } finally {
             // M2: 确保所有退出路径（早返回/异常/正常完成）都解除冻结抑制，避免永久抑制。
             // 仅在已设置 target（即已调用 suppressFreeze）时才需要解除。

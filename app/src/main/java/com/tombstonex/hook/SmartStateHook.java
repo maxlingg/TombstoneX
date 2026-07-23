@@ -129,28 +129,28 @@ public class SmartStateHook {
 
     private static void preloadServices() {
         try { telephonyService = getService("phone", "com.android.internal.telephony.ITelephony$Stub"); } catch (Throwable ignored) {
-            Logger.d("预加载 telephonyService 失败: " + ignored.getMessage());
+            Logger.d("预加载电话服务失败: " + ignored.getMessage());
         }
         try { audioService = getService("audio", "android.media.IAudioService$Stub"); } catch (Throwable ignored) {
-            Logger.d("预加载 audioService 失败: " + ignored.getMessage());
+            Logger.d("预加载音频服务失败: " + ignored.getMessage());
         }
         try { appOpsService = getService("appops", "com.android.internal.app.IAppOpsService$Stub"); } catch (Throwable ignored) {
-            Logger.d("预加载 appOpsService 失败: " + ignored.getMessage());
+            Logger.d("预加载应用操作服务失败: " + ignored.getMessage());
         }
         try { connectivityService = getService("connectivity", "android.net.IConnectivityManager$Stub"); } catch (Throwable ignored) {
-            Logger.d("预加载 connectivityService 失败: " + ignored.getMessage());
+            Logger.d("预加载网络服务失败: " + ignored.getMessage());
         }
         try { accessibilityService = getService("accessibility", "android.accessibilityservice.IAccessibilityManager$Stub"); } catch (Throwable ignored) {
-            Logger.d("预加载 accessibilityService 失败: " + ignored.getMessage());
+            Logger.d("预加载无障碍服务失败: " + ignored.getMessage());
         }
         try { notificationService = getService("notification", "android.app.INotificationManager$Stub"); } catch (Throwable ignored) {
-            Logger.d("预加载 notificationService 失败: " + ignored.getMessage());
+            Logger.d("预加载通知服务失败: " + ignored.getMessage());
         }
         try { windowService = getService("window", "android.view.IWindowManager$Stub"); } catch (Throwable ignored) {
-            Logger.d("预加载 windowService 失败: " + ignored.getMessage());
+            Logger.d("预加载窗口服务失败: " + ignored.getMessage());
         }
         try { autofillService = getService("autofill", "android.view.autofill.IAutoFillManager$Stub"); } catch (Throwable ignored) {
-            Logger.d("预加载 autofillService 失败: " + ignored.getMessage());
+            Logger.d("预加载自动填充服务失败: " + ignored.getMessage());
         }
         // InputMethod stub 类名跨版本不同，单独处理
         try {
@@ -158,7 +158,7 @@ public class SmartStateHook {
                 "com.android.internal.inputmethod.IInputMethodManager$Stub",
                 "android.view.inputmethod.IInputMethodManager$Stub");
         } catch (Throwable ignored) {
-            Logger.d("预加载 inputMethodService 失败: " + ignored.getMessage());
+            Logger.d("预加载输入法服务失败: " + ignored.getMessage());
         }
     }
 

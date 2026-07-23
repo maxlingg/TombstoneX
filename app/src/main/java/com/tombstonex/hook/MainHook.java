@@ -39,7 +39,7 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             Class<?> spClass = Class.forName("android.os.SystemProperties");
             java.lang.reflect.Method setMethod = spClass.getMethod("set", String.class, String.class);
             setMethod.invoke(null, "sys.tombstonex.loaded", "1");
-            Logger.i("系统属性 'sys.tombstonex.loaded' 已设置为 1");
+            Logger.i("系统属性 sys.tombstonex.loaded 已设置为 1");
         } catch (Throwable t) {
             Logger.e("设置系统属性 sys.tombstonex.loaded 失败", t);
         }
@@ -55,7 +55,7 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             + (lpparam.processName != null ? lpparam.processName : "null"));
 
         if (PACKAGE_ANDROID.equals(pkg)) {
-            Logger.i("正在 Hook 系统 Framework (android)");
+            Logger.i("正在 Hook 系统框架 (android)");
 
             // 设置系统属性标记模块已加载到 system_server。
             // App 端通过读取此属性区分"模块未加载"和"Binder服务注册失败"。
@@ -66,7 +66,7 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
                 Class<?> spClass = Class.forName("android.os.SystemProperties");
                 java.lang.reflect.Method setMethod = spClass.getMethod("set", String.class, String.class);
                 setMethod.invoke(null, "sys.tombstonex.active", "1");
-                Logger.i("系统属性 'sys.tombstonex.active' 已设置为 1");
+                Logger.i("系统属性 sys.tombstonex.active 已设置为 1");
             } catch (Throwable t) {
                 Logger.e("设置系统属性 tombstonex.active 失败", t);
             }
@@ -113,21 +113,21 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
         try {
             SystemFreezerDisableHook.init(classLoader);
         } catch (Throwable t) {
-            Logger.e("SystemFreezerDisableHook 初始化失败", t);
+            Logger.e("系统冻结器禁用 Hook 初始化失败", t);
         }
 
         // 2. 智能状态识别（其他 Hook 依赖此模块判断应用是否活跃）
         try {
             SmartStateHook.init(classLoader);
         } catch (Throwable t) {
-            Logger.e("SmartStateHook 初始化失败", t);
+            Logger.e("智能状态 Hook 初始化失败", t);
         }
 
         // 3. 进程死亡清理 — 始终启用，防止内存泄漏和 PID 复用问题
         try {
             ProcessDeathHook.init(classLoader);
         } catch (Throwable t) {
-            Logger.e("ProcessDeathHook 初始化失败", t);
+            Logger.e("进程死亡 Hook 初始化失败", t);
         }
 
         // 4. Activity 切换冻结 — 核心功能
@@ -135,10 +135,10 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             try {
                 ActivitySwitchHook.init(classLoader);
             } catch (Throwable t) {
-                Logger.e("ActivitySwitchHook 初始化失败", t);
+                Logger.e("Activity 切换 Hook 初始化失败", t);
             }
         } else {
-            Logger.i("ActivitySwitchHook 已被配置禁用");
+            Logger.i("Activity 切换 Hook 已被配置禁用");
         }
 
         // 5. 广播拦截
@@ -146,10 +146,10 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             try {
                 BroadcastHook.init(classLoader);
             } catch (Throwable t) {
-                Logger.e("BroadcastHook 初始化失败", t);
+                Logger.e("广播拦截 Hook 初始化失败", t);
             }
         } else {
-            Logger.i("BroadcastHook 已被配置禁用");
+            Logger.i("广播拦截 Hook 已被配置禁用");
         }
 
         // 6. ANR 拦截
@@ -157,10 +157,10 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             try {
                 ANRHook.init(classLoader);
             } catch (Throwable t) {
-                Logger.e("ANRHook 初始化失败", t);
+                Logger.e("ANR 拦截 Hook 初始化失败", t);
             }
         } else {
-            Logger.i("ANRHook 已被配置禁用");
+            Logger.i("ANR 拦截 Hook 已被配置禁用");
         }
 
         // 7. WakeLock 拦截
@@ -168,10 +168,10 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             try {
                 WakeLockHook.init(classLoader);
             } catch (Throwable t) {
-                Logger.e("WakeLockHook 初始化失败", t);
+                Logger.e("WakeLock 拦截 Hook 初始化失败", t);
             }
         } else {
-            Logger.i("WakeLockHook 已被配置禁用");
+            Logger.i("WakeLock 拦截 Hook 已被配置禁用");
         }
 
         // 8. 锁屏批量冻结
@@ -179,38 +179,38 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
             try {
                 ScreenStateHook.init(classLoader);
             } catch (Throwable t) {
-                Logger.e("ScreenStateHook 初始化失败", t);
+                Logger.e("锁屏状态 Hook 初始化失败", t);
             }
         } else {
-            Logger.i("ScreenStateHook 已被配置禁用");
+            Logger.i("锁屏状态 Hook 已被配置禁用");
         }
 
         // 9. Activity 休眠保护（防止冻结应用在最近任务中消失）
         try {
             ActivitySleepHook.init(classLoader);
         } catch (Throwable t) {
-            Logger.e("ActivitySleepHook 初始化失败", t);
+            Logger.e("Activity 休眠保护 Hook 初始化失败", t);
         }
 
         // 10. 冻结新进程（拦截后台应用启动新进程）
         try {
             ProcessStartHook.init(classLoader);
         } catch (Throwable t) {
-            Logger.e("ProcessStartHook 初始化失败", t);
+            Logger.e("进程启动拦截 Hook 初始化失败", t);
         }
 
         // 11. 冻结后断网
         try {
             NetworkHook.init(classLoader);
         } catch (Throwable t) {
-            Logger.e("NetworkHook 初始化失败", t);
+            Logger.e("网络拦截 Hook 初始化失败", t);
         }
 
         // 12. 自启拦截
         try {
             AutoStartHook.init(classLoader);
         } catch (Throwable t) {
-            Logger.e("AutoStartHook 初始化失败", t);
+            Logger.e("自启拦截 Hook 初始化失败", t);
         }
 
         // 13. 定时器限制（禁止冻结应用设置闹钟/定时器）
@@ -220,33 +220,33 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
         try {
             TimerHook.init(classLoader);
         } catch (Throwable t) {
-            Logger.e("TimerHook 初始化失败", t);
+            Logger.e("定时器限制 Hook 初始化失败", t);
         }
 
-        Logger.i("所有系统 Framework Hook 已初始化");
+        Logger.i("所有系统框架 Hook 已初始化");
 
         // 启动后台管理器
         try {
             // 定时冻结（每分钟扫描）
             com.tombstonex.manager.ScheduledFreezeManager.getInstance().start();
-            Logger.i("ScheduledFreezeManager 已启动");
+            Logger.i("定时冻结管理器已启动");
         } catch (Throwable t) {
-            Logger.e("ScheduledFreezeManager 启动失败", t);
+            Logger.e("定时冻结管理器启动失败", t);
         }
 
         try {
             // 轮番解冻（定期解冻最久应用 3 秒）
             com.tombstonex.manager.RotationThawManager.getInstance().start();
-            Logger.i("RotationThawManager 已启动");
+            Logger.i("轮换解冻管理器已启动");
         } catch (Throwable t) {
-            Logger.e("RotationThawManager 启动失败", t);
+            Logger.e("轮换解冻管理器启动失败", t);
         }
 
         try {
             // ReKernel 集成（可选，ReKernel 不存在时安全跳过）
             com.tombstonex.hook.ReKernelHook.init();
         } catch (Throwable t) {
-            Logger.e("ReKernelHook 初始化失败", t);
+            Logger.e("ReKernel Hook 初始化失败", t);
         }
 
         // 注册 IPC 服务到 ServiceManager，供 UI 进程调用
@@ -256,7 +256,7 @@ public class MainHook implements IXposedHookLoadPackage, IXposedHookZygoteInit {
         try {
             TombstoneXService.register();
         } catch (Throwable t) {
-            Logger.e("TombstoneXService.register 失败", t);
+            Logger.e("TombstoneXService 注册失败", t);
         }
 
         // 检查 Binder 是否注册成功，如果失败则启动后台重试线程
