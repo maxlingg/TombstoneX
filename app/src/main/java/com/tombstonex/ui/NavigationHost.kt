@@ -7,9 +7,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
@@ -30,9 +36,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.tombstonex.ui.LocalModuleState
 import com.tombstonex.ui.screen.AboutScreen
 import com.tombstonex.ui.screen.HomeScreen
 import com.tombstonex.ui.screen.LogViewerScreen
@@ -174,7 +186,7 @@ fun NavigationHost() {
                     shape = RoundedCornerShape(16.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.AcUnit,
+                        imageVector = Icons.Filled.Settings,
                         contentDescription = "冻结全部",
                         modifier = Modifier.size(24.dp),
                     )
@@ -184,6 +196,11 @@ fun NavigationHost() {
         snackbarHost = { SnackbarHost(snackbarHostState) },
         // 由内部各页面的 Scaffold 单独处理顶部状态栏内边距
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            if (currentDest != TxDestination.About) {
+                TombstoneXTopBar()
+            }
+        },
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -208,6 +225,79 @@ fun NavigationHost() {
                 )
                 TxDestination.Logs -> LogViewerScreen(showSnackbar = showSnackbar)
                 TxDestination.About -> AboutScreen(onBack = { navController.popBackStack() })
+            }
+        }
+    }
+}
+
+@Composable
+private fun TombstoneXTopBar() {
+    val moduleState = LocalModuleState.current
+    val isActive = moduleState.activated
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.size(36.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF00E5FF).copy(alpha = 0.25f),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        "TX",
+                        color = Color(0xFF00E5FF),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "TombstoneX",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.weight(1f))
+            // 状态芯片
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isActive) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.errorContainer,
+                border = BorderStroke(
+                    1.dp,
+                    if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                    else MaterialTheme.colorScheme.error.copy(alpha = 0.25f),
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(
+                                if (isActive) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error,
+                                CircleShape,
+                            ),
+                    )
+                    Text(
+                        text = if (isActive) "已激活" else "未激活",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (isActive) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
     }

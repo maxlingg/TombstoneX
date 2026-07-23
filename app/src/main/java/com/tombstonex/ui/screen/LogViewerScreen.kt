@@ -126,25 +126,6 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 标题行
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "运行日志",
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = { showClearDialog = true }) {
-                Text("清空", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-            }
-        }
-
         // 日志内容区
         Surface(
             modifier = Modifier
