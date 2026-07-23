@@ -1,8 +1,10 @@
 package com.tombstonex.ui.screen
 
 import android.os.Build
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,21 +17,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,12 +36,11 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.tombstonex.BuildConfig
 import com.tombstonex.model.FreezeMode
 import com.tombstonex.service.ServiceClient
@@ -59,7 +54,6 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     showSnackbar: (String) -> Unit,
@@ -284,320 +278,384 @@ fun SettingsScreen(
         }
     }
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("设置", fontWeight = FontWeight.SemiBold) }) },
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(vertical = 8.dp),
-        ) {
-            // ---- 模块状态 ----
-            item { SectionHeader("模块状态") }
-            item {
-                ListItem(
-                    headlineContent = { Text("激活状态") },
-                    supportingContent = {
-                        Text(
-                            when {
-                                moduleState.activated -> "已激活（${moduleState.entryClass}）"
-                                moduleState.moduleLoaded -> "模块已加载到系统框架，但 Binder 服务未就绪\n请检查 LSPosed 日志"
-                                moduleState.moduleEnabled -> "LSPosed 已启用模块，但未加载到系统框架\n请在作用域中勾选「Android 系统」并重启设备"
-                                moduleState.installed -> "已安装但 LSPosed 未启用\n请在 LSPosed 管理器中启用模块并重启设备"
-                                else -> "未检测到模块入口\n请在 LSPosed 中启用模块"
-                            }
-                        )
-                    },
-                    trailingContent = {
-                        StatusDot(moduleState.activated)
-                    },
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 8.dp),
+    ) {
+        // ---- 标题行 ----
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "模块设置",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            item {
-                ListItem(
-                    headlineContent = { Text("模块版本") },
-                    supportingContent = { Text("v${BuildConfig.VERSION_NAME}（build ${BuildConfig.VERSION_CODE}）") },
-                )
-            }
-            item {
-                // 已启用的 Hook 列表（依据已加载的子 Hook 开关）
-                val enabledHooksText = if (!configLoaded) {
-                    "加载中…"
-                } else {
-                    buildList {
-                        if (hookActivitySwitch) add("Activity 切换")
-                        if (hookScreenState) add("锁屏冻结")
-                        if (hookBroadcast) add("广播拦截")
-                        if (hookWakeLock) add("WakeLock 拦截")
-                        if (hookAnr) add("ANR 拦截")
-                    }.joinToString("、").ifEmpty { "无" }
-                }
-                ListItem(
-                    headlineContent = { Text("已启用 Hook") },
-                    supportingContent = { Text(enabledHooksText) },
-                )
-            }
-            item {
-                // 后台管理器运行状态：模块激活后由 MainHook 启动
-                ListItem(
-                    headlineContent = { Text("后台管理器") },
-                    supportingContent = {
-                        Text(
-                            if (moduleState.activated)
-                                "ScheduledFreezeManager、RotationThawManager（运行中）"
-                            else "未运行（模块未激活）"
-                        )
-                    },
-                )
-            }
-            item {
-                // ReKernel 状态：检测内核模块设备节点是否存在
-                ListItem(
-                    headlineContent = { Text("ReKernel 状态") },
-                    supportingContent = {
-                        Text(
-                            when (rekernelAvailable) {
-                                null -> "检测中…"
-                                true -> "可用（网络包通知已集成）"
-                                false -> "未安装"
-                            }
-                        )
-                    },
-                )
-            }
-            item { HorizontalDivider() }
+        }
 
-            // ---- 冻结配置 ----
-            item { SectionHeader("冻结配置") }
-            item {
-                ListItem(
-                    headlineContent = { Text("冻结方式") },
-                    supportingContent = {
-                        Column {
-                            Text("已选：$modeDisplayName")
+        // ---- 模块状态 ----
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    "模块状态",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item {
+            ListItem(
+                headlineContent = { Text("激活状态") },
+                supportingContent = {
+                    Text(
+                        when {
+                            moduleState.activated -> "已激活（${moduleState.entryClass}）"
+                            moduleState.moduleLoaded -> "模块已加载到系统框架，但 Binder 服务未就绪\n请检查 LSPosed 日志"
+                            moduleState.moduleEnabled -> "LSPosed 已启用模块，但未加载到系统框架\n请在作用域中勾选「Android 系统」并重启设备"
+                            moduleState.installed -> "已安装但 LSPosed 未启用\n请在 LSPosed 管理器中启用模块并重启设备"
+                            else -> "未检测到模块入口\n请在 LSPosed 中启用模块"
+                        }
+                    )
+                },
+                trailingContent = {
+                    StatusDot(moduleState.activated)
+                },
+            )
+        }
+        item {
+            ListItem(
+                headlineContent = { Text("模块版本") },
+                supportingContent = { Text("v${BuildConfig.VERSION_NAME}（build ${BuildConfig.VERSION_CODE}）") },
+            )
+        }
+        item {
+            // 已启用的 Hook 列表（依据已加载的子 Hook 开关）
+            val enabledHooksText = if (!configLoaded) {
+                "加载中…"
+            } else {
+                buildList {
+                    if (hookActivitySwitch) add("Activity 切换")
+                    if (hookScreenState) add("锁屏冻结")
+                    if (hookBroadcast) add("广播拦截")
+                    if (hookWakeLock) add("WakeLock 拦截")
+                    if (hookAnr) add("ANR 拦截")
+                }.joinToString("、").ifEmpty { "无" }
+            }
+            ListItem(
+                headlineContent = { Text("已启用 Hook") },
+                supportingContent = { Text(enabledHooksText) },
+            )
+        }
+        item {
+            // 后台管理器运行状态：模块激活后由 MainHook 启动
+            ListItem(
+                headlineContent = { Text("后台管理器") },
+                supportingContent = {
+                    Text(
+                        if (moduleState.activated)
+                            "ScheduledFreezeManager、RotationThawManager（运行中）"
+                        else "未运行（模块未激活）"
+                    )
+                },
+            )
+        }
+        item {
+            // ReKernel 状态：检测内核模块设备节点是否存在
+            ListItem(
+                headlineContent = { Text("ReKernel 状态") },
+                supportingContent = {
+                    Text(
+                        when (rekernelAvailable) {
+                            null -> "检测中…"
+                            true -> "可用（网络包通知已集成）"
+                            false -> "未安装"
+                        }
+                    )
+                },
+            )
+        }
+
+        // ---- 设置 ----
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    "设置",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item {
+            SettingRow(
+                title = "冻结方式",
+                value = modeDisplayName,
+                showChevron = true,
+                onClick = { showModeDialog = true },
+            )
+        }
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "冻结延迟",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    "1-10 秒可调",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             Text(
-                                "当前生效冻结器：$currentFreezerName",
+                                "${freezeDelay.toInt()} 秒",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.primary,
-                                fontSize = 13.sp,
                             )
                         }
-                    },
-                    modifier = Modifier.clickable { showModeDialog = true },
-                )
-            }
-            item {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("冻结延迟", modifier = Modifier.weight(1f))
-                        Text(
-                            "${freezeDelay.toInt()} 秒",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                    Slider(
-                        value = freezeDelay,
-                        onValueChange = {
-                            // R7-1: 仅标记 freezeDelay 交互，不影响其他配置项的加载
-                            freezeDelayInteracted = true
-                            freezeDelay = it
-                        },
-                        onValueChangeFinished = {
-                            // R7-1: 仅标记 freezeDelay 交互
-                            freezeDelayInteracted = true
-                            val newDelay = freezeDelay.toInt()
-                            scope.launch {
-                                val ok = withContext(Dispatchers.IO) {
-                                    safeRunCatching { ServiceClient.setFreezeDelay(newDelay) }.getOrDefault(false)
-                                }
-                                if (ok) {
-                                    committedFreezeDelay = newDelay.toFloat()
-                                } else {
-                                    freezeDelay = committedFreezeDelay
-                                    showSnackbar("设置未生效（模块未激活或无权限）")
-                                }
-                            }
-                        },
-                        valueRange = 1f..10f,
-                        steps = 8,
-                    )
-                    Text(
-                        "应用退到后台后等待指定秒数再冻结",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    )
-                }
-            }
-            item { HorizontalDivider() }
-
-            // ---- 高级设置 ----
-            item { SectionHeader("高级设置") }
-            item {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("轮番解冻间隔", modifier = Modifier.weight(1f))
-                        val totalSec = rotationInterval.toInt()
-                        val mins = totalSec / 60
-                        val secs = totalSec % 60
-                        Text(
-                            if (secs == 0) "$mins 分钟" else "$mins 分 $secs 秒",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                    Slider(
-                        value = rotationInterval,
-                        onValueChange = {
-                            // R7-2: 仅标记 rotation 交互，不影响其他配置项的加载
-                            rotationInteracted = true
-                            rotationInterval = it
-                        },
-                        onValueChangeFinished = {
-                            // R7-2: 仅标记 rotation 交互
-                            rotationInteracted = true
-                            val newInterval = rotationInterval.toInt()
-                            scope.launch {
-                                val ok = withContext(Dispatchers.IO) {
-                                    safeRunCatching { ServiceClient.setRotationInterval(newInterval) }.getOrDefault(false)
-                                }
-                                if (ok) {
-                                    committedRotationInterval = newInterval.toFloat()
-                                } else {
-                                    rotationInterval = committedRotationInterval
-                                    showSnackbar("设置未生效（模块未激活或无权限）")
-                                }
-                            }
-                        },
-                        valueRange = 60f..3600f,
-                        steps = 58,
-                    )
-                    Text(
-                        "定期解冻最久未使用的应用，间隔越小越频繁（耗电略增）",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    )
-                }
-            }
-            item { HorizontalDivider() }
-
-            // ---- 日志与调试 ----
-            item { SectionHeader("日志与调试") }
-            item {
-                ListItem(
-                    headlineContent = { Text("调试日志") },
-                    supportingContent = { Text(BuildConfig.LOG_PATH) },
-                    trailingContent = {
-                        Switch(
-                            checked = debugEnabled,
-                            onCheckedChange = {
-                                // R7-1: 仅标记 debug 交互
-                                debugInteracted = true
-                                debugEnabled = it
+                        Slider(
+                            value = freezeDelay,
+                            onValueChange = {
+                                // R7-1: 仅标记 freezeDelay 交互，不影响其他配置项的加载
+                                freezeDelayInteracted = true
+                                freezeDelay = it
+                            },
+                            onValueChangeFinished = {
+                                // R7-1: 仅标记 freezeDelay 交互
+                                freezeDelayInteracted = true
+                                val newDelay = freezeDelay.toInt()
                                 scope.launch {
                                     val ok = withContext(Dispatchers.IO) {
-                                        safeRunCatching { ServiceClient.setDebugEnabled(it) }.getOrDefault(false)
+                                        safeRunCatching { ServiceClient.setFreezeDelay(newDelay) }.getOrDefault(false)
                                     }
-                                    if (!ok) {
-                                        debugEnabled = !it
+                                    if (ok) {
+                                        committedFreezeDelay = newDelay.toFloat()
+                                    } else {
+                                        freezeDelay = committedFreezeDelay
                                         showSnackbar("设置未生效（模块未激活或无权限）")
                                     }
                                 }
                             },
+                            valueRange = 1f..10f,
+                            steps = 8,
                         )
-                    },
-                )
-            }
-            item { HorizontalDivider() }
-
-            // ---- 子 Hook 开关 ----
-            item { SectionHeader("子 Hook 开关") }
-            item {
-                HookSwitchRow(
-                    title = "Activity 切换",
-                    subtitle = "切换 Activity 时触发冻结（核心功能）",
-                    checked = hookActivitySwitch,
-                ) {
-                    toggleHook(3, hookActivitySwitch, { hookActivitySwitch }, { hookActivitySwitch = it }) {
-                        hookActivitySwitchInteracted = true
                     }
                 }
             }
-            item {
-                HookSwitchRow(
-                    title = "锁屏批量冻结",
-                    subtitle = "息屏后延迟批量冻结后台应用",
-                    checked = hookScreenState,
+        }
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
-                    toggleHook(4, hookScreenState, { hookScreenState }, { hookScreenState = it }) {
-                        hookScreenStateInteracted = true
-                    }
-                }
-            }
-            item {
-                HookSwitchRow(
-                    title = "广播拦截",
-                    subtitle = "冻结后屏蔽广播投递",
-                    checked = hookBroadcast,
-                ) {
-                    toggleHook(1, hookBroadcast, { hookBroadcast }, { hookBroadcast = it }) {
-                        hookBroadcastInteracted = true
-                    }
-                }
-            }
-            item {
-                HookSwitchRow(
-                    title = "WakeLock 拦截",
-                    subtitle = "冻结后阻止申请唤醒锁",
-                    checked = hookWakeLock,
-                ) {
-                    toggleHook(2, hookWakeLock, { hookWakeLock }, { hookWakeLock = it }) {
-                        hookWakeLockInteracted = true
-                    }
-                }
-            }
-            item {
-                HookSwitchRow(
-                    title = "ANR 拦截",
-                    subtitle = "冻结后屏蔽应用无响应弹窗",
-                    checked = hookAnr,
-                ) {
-                    toggleHook(0, hookAnr, { hookAnr }, { hookAnr = it }) {
-                        hookAnrInteracted = true
-                    }
-                }
-            }
-            item { HorizontalDivider() }
-
-            // ---- 关于 ----
-            item { SectionHeader("其他") }
-            item {
-                ListItem(
-                    headlineContent = { Text("关于 TombstoneX") },
-                    supportingContent = { Text("版本信息、系统信息与致谢") },
-                    trailingContent = {
-                        Icon(
-                            Icons.Filled.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "轮番解冻间隔",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    "60-3600 秒",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            val totalSec = rotationInterval.toInt()
+                            val mins = totalSec / 60
+                            val secs = totalSec % 60
+                            Text(
+                                if (secs == 0) "$mins 分钟" else "$mins 分 $secs 秒",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Slider(
+                            value = rotationInterval,
+                            onValueChange = {
+                                // R7-2: 仅标记 rotation 交互，不影响其他配置项的加载
+                                rotationInteracted = true
+                                rotationInterval = it
+                            },
+                            onValueChangeFinished = {
+                                // R7-2: 仅标记 rotation 交互
+                                rotationInteracted = true
+                                val newInterval = rotationInterval.toInt()
+                                scope.launch {
+                                    val ok = withContext(Dispatchers.IO) {
+                                        safeRunCatching { ServiceClient.setRotationInterval(newInterval) }.getOrDefault(false)
+                                    }
+                                    if (ok) {
+                                        committedRotationInterval = newInterval.toFloat()
+                                    } else {
+                                        rotationInterval = committedRotationInterval
+                                        showSnackbar("设置未生效（模块未激活或无权限）")
+                                    }
+                                }
+                            },
+                            valueRange = 60f..3600f,
+                            steps = 58,
                         )
-                    },
-                    modifier = Modifier.clickable { onNavigateAbout() },
+                    }
+                }
+            }
+        }
+        item {
+            SettingRow(
+                title = "调试日志",
+                value = if (debugEnabled) "开启" else "关闭",
+                hint = "输出详细日志",
+                onClick = {
+                    debugInteracted = true
+                    val newValue = !debugEnabled
+                    debugEnabled = newValue
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) {
+                            safeRunCatching { ServiceClient.setDebugEnabled(newValue) }.getOrDefault(false)
+                        }
+                        if (!ok) {
+                            debugEnabled = !newValue
+                            showSnackbar("设置未生效（模块未激活或无权限）")
+                        }
+                    }
+                },
+            )
+        }
+
+        // ---- 子 Hook 开关 ----
+        item { Spacer(modifier = Modifier.size(8.dp)) }
+        item {
+            HookSwitchRow(
+                title = "Activity 切换 Hook",
+                checked = hookActivitySwitch,
+            ) {
+                toggleHook(3, hookActivitySwitch, { hookActivitySwitch }, { hookActivitySwitch = it }) {
+                    hookActivitySwitchInteracted = true
+                }
+            }
+        }
+        item {
+            HookSwitchRow(
+                title = "锁屏批量冻结",
+                checked = hookScreenState,
+            ) {
+                toggleHook(4, hookScreenState, { hookScreenState }, { hookScreenState = it }) {
+                    hookScreenStateInteracted = true
+                }
+            }
+        }
+        item {
+            HookSwitchRow(
+                title = "广播拦截",
+                checked = hookBroadcast,
+            ) {
+                toggleHook(1, hookBroadcast, { hookBroadcast }, { hookBroadcast = it }) {
+                    hookBroadcastInteracted = true
+                }
+            }
+        }
+        item {
+            HookSwitchRow(
+                title = "WakeLock 拦截",
+                checked = hookWakeLock,
+            ) {
+                toggleHook(2, hookWakeLock, { hookWakeLock }, { hookWakeLock = it }) {
+                    hookWakeLockInteracted = true
+                }
+            }
+        }
+        item {
+            HookSwitchRow(
+                title = "ANR 拦截",
+                checked = hookAnr,
+            ) {
+                toggleHook(0, hookAnr, { hookAnr }, { hookAnr = it }) {
+                    hookAnrInteracted = true
+                }
+            }
+        }
+
+        // ---- 关于 ----
+        item { Spacer(modifier = Modifier.size(8.dp)) }
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    "关于",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            item {
-                ListItem(
-                    headlineContent = { Text("Android 版本") },
-                    supportingContent = { Text("API ${Build.VERSION.SDK_INT}（Android ${Build.VERSION.RELEASE}）") },
-                )
-            }
-            item {
-                ListItem(
-                    headlineContent = { Text("设备信息") },
-                    supportingContent = { Text("${Build.MANUFACTURER} ${Build.MODEL}") },
-                )
-            }
+        }
+        item {
+            SettingRow(
+                title = "版本",
+                value = "v${BuildConfig.VERSION_NAME}",
+                hint = "TombstoneX",
+            )
+        }
+        item {
+            SettingRow(
+                title = "Android 版本",
+                value = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            )
+        }
+        item {
+            SettingRow(
+                title = "设备",
+                value = "${Build.MANUFACTURER} ${Build.MODEL}",
+            )
+        }
+        item {
+            SettingRow(
+                title = "冻结器",
+                value = currentFreezerName,
+                hint = if (currentFreezerName != "未知" && currentFreezerName != "None") "可用" else "不可用",
+            )
         }
     }
 
@@ -654,18 +712,54 @@ data class ConfigLoadResult(
 )
 
 @Composable
-private fun SectionHeader(text: String) {
-    Box(
+private fun SettingRow(
+    title: String,
+    value: String,
+    hint: String? = null,
+    showChevron: Boolean = false,
+    onClick: (() -> Unit)? = null,
+) {
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Text(
-            text = text,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-            style = MaterialTheme.typography.labelLarge,
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                if (hint != null) {
+                    Text(
+                        hint,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            if (showChevron) {
+                Text(
+                    " \u203A",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -683,17 +777,29 @@ private fun StatusDot(active: Boolean) {
 @Composable
 private fun HookSwitchRow(
     title: String,
-    subtitle: String,
     checked: Boolean,
     onToggle: (Boolean) -> Unit,
 ) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle) },
-        trailingContent = {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                title,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Switch(checked = checked, onCheckedChange = onToggle)
-        },
-    )
+        }
+    }
 }
 
 private fun FreezeMode.displayLabel(): String = when (this) {

@@ -1,5 +1,6 @@
 package com.tombstonex.ui.screen
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,7 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
@@ -24,14 +25,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -45,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,6 +74,72 @@ private data class ProcessDisplayItem(
     val packageName: String,
     val pid: Int,
 )
+
+/** 自定义 pill 标签页 */
+@Composable
+private fun PillTabs(selectedIndex: Int, onSelect: (Int) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        listOf("应用白名单", "进程白名单", "系统冻结名单").forEachIndexed { index, label ->
+            val selected = selectedIndex == index
+            FilterChip(
+                selected = selected,
+                onClick = { onSelect(index) },
+                label = {
+                    Text(
+                        text = label,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                },
+                shape = RoundedCornerShape(24.dp),
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.primary,
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    borderColor = MaterialTheme.colorScheme.outlineVariant,
+                    selectedBorderColor = MaterialTheme.colorScheme.primary,
+                    enabled = true,
+                    selected = selected,
+                ),
+            )
+        }
+    }
+}
+
+/** 空状态 */
+@Composable
+private fun EmptyState() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "\u2606",
+            fontSize = 40.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "白名单为空",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "白名单中的应用不会被冻结。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -222,8 +290,6 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
         }
     }
 
-    val tabs = listOf("应用白名单", "进程白名单", "系统冻结名单")
-
     Scaffold(
         topBar = { TopAppBar(title = { Text("白名单管理", fontWeight = FontWeight.SemiBold) }) },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -233,15 +299,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            PrimaryTabRow(selectedTabIndex = selectedTab) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = { Text(title) },
-                    )
-                }
-            }
+            PillTabs(selectedIndex = selectedTab, onSelect = { selectedTab = it })
 
             OutlinedTextField(
                 value = searchQuery,
@@ -291,27 +349,31 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                                 }
                             }
                         }
-                        Text(
-                            text = "已加入应用白名单：${whiteApps.size} 个",
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            items(filtered, key = { it.packageName }) { app ->
-                                val isOn = whiteApps.contains(app.packageName)
-                                WhitelistAppCard(
-                                    label = app.label,
-                                    subtitle = app.packageName,
-                                    isOn = isOn,
-                                    onToggle = { toggleWhiteApp(app.packageName, isOn) },
-                                )
+                        if (filtered.isEmpty()) {
+                            EmptyState()
+                        } else {
+                            Text(
+                                text = "已加入应用白名单：${whiteApps.size} 个",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(filtered, key = { it.packageName }) { app ->
+                                    val isOn = whiteApps.contains(app.packageName)
+                                    WhitelistAppCard(
+                                        label = app.label,
+                                        subtitle = app.packageName,
+                                        isOn = isOn,
+                                        onToggle = { toggleWhiteApp(app.packageName, isOn) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -324,28 +386,32 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                                 }
                             }
                         }
-                        Text(
-                            text = "已加入进程白名单：${whiteProcesses.size} 个",
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            items(filtered, key = { it.processName }) { proc ->
-                                val isOn = whiteProcesses.contains(proc.processName)
-                                WhitelistProcessCard(
-                                    processName = proc.processName,
-                                    packageName = proc.packageName,
-                                    pid = proc.pid,
-                                    isOn = isOn,
-                                    onToggle = { toggleWhiteProcess(proc.processName, isOn) },
-                                )
+                        if (filtered.isEmpty()) {
+                            EmptyState()
+                        } else {
+                            Text(
+                                text = "已加入进程白名单：${whiteProcesses.size} 个",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(filtered, key = { it.processName }) { proc ->
+                                    val isOn = whiteProcesses.contains(proc.processName)
+                                    WhitelistProcessCard(
+                                        processName = proc.processName,
+                                        packageName = proc.packageName,
+                                        pid = proc.pid,
+                                        isOn = isOn,
+                                        onToggle = { toggleWhiteProcess(proc.processName, isOn) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -359,27 +425,31 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                                 }
                             }
                         }
-                        Text(
-                            text = "系统应用冻结名单：${blackSystem.size} 个",
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            items(filtered, key = { it.packageName }) { app ->
-                                val isOn = blackSystem.contains(app.packageName)
-                                WhitelistAppCard(
-                                    label = app.label,
-                                    subtitle = app.packageName,
-                                    isOn = isOn,
-                                    onToggle = { toggleBlackSystem(app.packageName, isOn) },
-                                )
+                        if (filtered.isEmpty()) {
+                            EmptyState()
+                        } else {
+                            Text(
+                                text = "系统应用冻结名单：${blackSystem.size} 个",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(filtered, key = { it.packageName }) { app ->
+                                    val isOn = blackSystem.contains(app.packageName)
+                                    WhitelistAppCard(
+                                        label = app.label,
+                                        subtitle = app.packageName,
+                                        isOn = isOn,
+                                        onToggle = { toggleBlackSystem(app.packageName, isOn) },
+                                    )
+                                }
                             }
                         }
                     }
@@ -398,25 +468,28 @@ private fun WhitelistAppCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = if (isOn)
-                MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
             else
-                MaterialTheme.colorScheme.surfaceContainerHigh,
+                MaterialTheme.colorScheme.surface,
         ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(40.dp)
                     .background(
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                        CircleShape,
+                        RoundedCornerShape(10.dp),
                     ),
                 contentAlignment = Alignment.Center,
             ) {
@@ -424,11 +497,9 @@ private fun WhitelistAppCard(
                     text = label.firstOrNull()?.toString() ?: "?",
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                 )
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -440,14 +511,20 @@ private fun WhitelistAppCard(
                 )
                 Text(
                     text = subtitle,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
 
-            Switch(checked = isOn, onCheckedChange = { onToggle() })
+            OutlinedButton(
+                onClick = { onToggle() },
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text(if (isOn) "移除" else "加入")
+            }
         }
     }
 }
@@ -462,25 +539,28 @@ private fun WhitelistProcessCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = if (isOn)
-                MaterialTheme.colorScheme.secondary.copy(alpha = 0.10f)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
             else
-                MaterialTheme.colorScheme.surfaceContainerHigh,
+                MaterialTheme.colorScheme.surface,
         ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(40.dp)
                     .background(
                         MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f),
-                        CircleShape,
+                        RoundedCornerShape(10.dp),
                     ),
                 contentAlignment = Alignment.Center,
             ) {
@@ -488,11 +568,9 @@ private fun WhitelistProcessCard(
                     text = ":",
                     color = MaterialTheme.colorScheme.tertiary,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                 )
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -504,14 +582,20 @@ private fun WhitelistProcessCard(
                 )
                 Text(
                     text = "$packageName (pid=$pid)",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
 
-            Switch(checked = isOn, onCheckedChange = { onToggle() })
+            OutlinedButton(
+                onClick = { onToggle() },
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text(if (isOn) "移除" else "加入")
+            }
         }
     }
 }
