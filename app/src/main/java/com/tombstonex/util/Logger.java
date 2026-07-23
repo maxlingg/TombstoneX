@@ -52,7 +52,7 @@ public class Logger {
      */
     private static final ThreadLocal<SimpleDateFormat> dateFormatHolder =
         ThreadLocal.withInitial(() ->
-            new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.getDefault()));
+            new SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault()));
 
     public static void init(boolean debug) {
         debugEnabled = debug;
@@ -124,7 +124,7 @@ public class Logger {
         SimpleDateFormat sdf = dateFormatHolder.get();
         // P3-7: null msg 输出空字符串而非字面量 "null"
         String safeMsg = msg != null ? msg : "";
-        return String.format("[%s][%s] %s\n", sdf.format(new Date()), level, safeMsg);
+        return String.format("[%s] %s %s\n", level, sdf.format(new Date()), safeMsg);
     }
 
     /**
@@ -137,23 +137,23 @@ public class Logger {
     public static void d(String msg) {
         if (debugEnabled) {
             Log.d(TAG, msg);
-            writeFile("调试", msg);
+            writeFile("D", msg);
         }
     }
 
     public static void i(String msg) {
         Log.i(TAG, msg);
-        writeFile("信息", msg);
+        writeFile("I", msg);
     }
 
     public static void w(String msg) {
         Log.w(TAG, msg);
-        writeFile("警告", msg);
+        writeFile("W", msg);
     }
 
     public static void e(String msg) {
         Log.e(TAG, msg);
-        writeFile("错误", msg);
+        writeFile("E", msg);
     }
 
     public static void e(String msg, Throwable t) {
@@ -165,7 +165,7 @@ public class Logger {
             detail = safeMsg + " | " + (tMsg != null ? tMsg : t.toString());
         }
         Log.e(TAG, detail);
-        writeFile("错误", detail);
+        writeFile("E", detail);
     }
 
     private static void writeFile(String level, String msg) {

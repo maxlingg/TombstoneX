@@ -93,6 +93,8 @@ fun SettingsScreen(
     var freezeDelay by remember { mutableFloatStateOf(3f) }
     var committedFreezeDelay by remember { mutableFloatStateOf(3f) }
     var showModeDialog by remember { mutableStateOf(false) }
+    var showDelayDialog by remember { mutableStateOf(false) }
+    var showRotationDialog by remember { mutableStateOf(false) }
     // P2-R3: 配置加载门控，防止 LaunchedEffect 覆盖用户在加载期间的操作
     var configLoaded by remember { mutableStateOf(false) }
     // R7-1 修复：单一 userInteracted 标志过于宽泛，用户触碰任意控件后即设为 true，
@@ -265,145 +267,25 @@ fun SettingsScreen(
             )
         }
         item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = SurfaceColor,
-                    border = BorderStroke(1.dp, OutlineVariantColor),
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "冻结延迟",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = OnSurfaceColor,
-                                )
-                                Text(
-                                    "1-10 秒可调",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = OnSurfaceMutedColor,
-                                )
-                            }
-                            Text(
-                                "${freezeDelay.toInt()} 秒",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontFamily = FontFamily.Monospace,
-                                color = PrimaryColor,
-                            )
-                        }
-                        Slider(
-                            value = freezeDelay,
-                            onValueChange = {
-                                // R7-1: 仅标记 freezeDelay 交互，不影响其他配置项的加载
-                                freezeDelayInteracted = true
-                                freezeDelay = it
-                            },
-                            onValueChangeFinished = {
-                                // R7-1: 仅标记 freezeDelay 交互
-                                freezeDelayInteracted = true
-                                val newDelay = freezeDelay.toInt()
-                                scope.launch {
-                                    val ok = withContext(Dispatchers.IO) {
-                                        safeRunCatching { ServiceClient.setFreezeDelay(newDelay) }.getOrDefault(false)
-                                    }
-                                    if (ok) {
-                                        committedFreezeDelay = newDelay.toFloat()
-                                    } else {
-                                        freezeDelay = committedFreezeDelay
-                                        showSnackbar("设置未生效（模块未激活或无权限）")
-                                    }
-                                }
-                            },
-                            valueRange = 1f..10f,
-                            steps = 8,
-                            colors = SliderDefaults.colors(
-                                thumbColor = PrimaryColor,
-                                activeTrackColor = PrimaryColor,
-                            ),
-                        )
-                    }
-                }
-            }
+            SettingRow(
+                title = "冻结延迟",
+                value = "${freezeDelay.toInt()} 秒",
+                hint = "1-10 秒可调",
+                showChevron = true,
+                onClick = { showDelayDialog = true },
+            )
         }
         item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = SurfaceColor,
-                    border = BorderStroke(1.dp, OutlineVariantColor),
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "轮番解冻间隔",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = OnSurfaceColor,
-                                )
-                                Text(
-                                    "60-3600 秒",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = OnSurfaceMutedColor,
-                                )
-                            }
-                            val totalSec = rotationInterval.toInt()
-                            val mins = totalSec / 60
-                            val secs = totalSec % 60
-                            Text(
-                                if (secs == 0) "$mins 分钟" else "$mins 分 $secs 秒",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontFamily = FontFamily.Monospace,
-                                color = PrimaryColor,
-                            )
-                        }
-                        Slider(
-                            value = rotationInterval,
-                            onValueChange = {
-                                // R7-2: 仅标记 rotation 交互，不影响其他配置项的加载
-                                rotationInteracted = true
-                                rotationInterval = it
-                            },
-                            onValueChangeFinished = {
-                                // R7-2: 仅标记 rotation 交互
-                                rotationInteracted = true
-                                val newInterval = rotationInterval.toInt()
-                                scope.launch {
-                                    val ok = withContext(Dispatchers.IO) {
-                                        safeRunCatching { ServiceClient.setRotationInterval(newInterval) }.getOrDefault(false)
-                                    }
-                                    if (ok) {
-                                        committedRotationInterval = newInterval.toFloat()
-                                    } else {
-                                        rotationInterval = committedRotationInterval
-                                        showSnackbar("设置未生效（模块未激活或无权限）")
-                                    }
-                                }
-                            },
-                            valueRange = 60f..3600f,
-                            steps = 58,
-                            colors = SliderDefaults.colors(
-                                thumbColor = PrimaryColor,
-                                activeTrackColor = PrimaryColor,
-                            ),
-                        )
-                    }
-                }
-            }
+            val totalSec = rotationInterval.toInt()
+            val mins = totalSec / 60
+            val secs = totalSec % 60
+            SettingRow(
+                title = "轮番解冻间隔",
+                value = if (secs == 0) "$mins 分钟" else "$mins 分 $secs 秒",
+                hint = "60-3600 秒",
+                showChevron = true,
+                onClick = { showRotationDialog = true },
+            )
         }
         item {
             SettingRow(
@@ -516,10 +398,10 @@ fun SettingsScreen(
             )
         }
         item {
+            val freezerAvailable = currentFreezerName != "未知" && currentFreezerName != "None"
             SettingRow(
                 title = "冻结器",
-                value = currentFreezerName,
-                hint = if (currentFreezerName != "未知" && currentFreezerName != "None") "可用" else "不可用",
+                value = "$currentFreezerName · ${if (freezerAvailable) "可用" else "不可用"}",
             )
         }
     }
@@ -565,6 +447,107 @@ fun SettingsScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showModeDialog = false }) { Text("取消") }
+            },
+        )
+    }
+
+    if (showDelayDialog) {
+        AlertDialog(
+            onDismissRequest = { showDelayDialog = false },
+            title = { Text("冻结延迟") },
+            text = {
+                Column {
+                    Text(
+                        "${freezeDelay.toInt()} 秒",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = PrimaryColor,
+                    )
+                    Spacer(modifier = Modifier.size(16.dp))
+                    Slider(
+                        value = freezeDelay,
+                        onValueChange = {
+                            freezeDelayInteracted = true
+                            freezeDelay = it
+                        },
+                        onValueChangeFinished = {
+                            freezeDelayInteracted = true
+                            val newDelay = freezeDelay.toInt()
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) {
+                                    safeRunCatching { ServiceClient.setFreezeDelay(newDelay) }.getOrDefault(false)
+                                }
+                                if (ok) {
+                                    committedFreezeDelay = newDelay.toFloat()
+                                } else {
+                                    freezeDelay = committedFreezeDelay
+                                    showSnackbar("设置未生效（模块未激活或无权限）")
+                                }
+                            }
+                        },
+                        valueRange = 1f..10f,
+                        steps = 8,
+                        colors = SliderDefaults.colors(
+                            thumbColor = PrimaryColor,
+                            activeTrackColor = PrimaryColor,
+                        ),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDelayDialog = false }) { Text("确定") }
+            },
+        )
+    }
+
+    if (showRotationDialog) {
+        AlertDialog(
+            onDismissRequest = { showRotationDialog = false },
+            title = { Text("轮番解冻间隔") },
+            text = {
+                Column {
+                    val totalSec = rotationInterval.toInt()
+                    val mins = totalSec / 60
+                    val secs = totalSec % 60
+                    Text(
+                        if (secs == 0) "$mins 分钟" else "$mins 分 $secs 秒",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = PrimaryColor,
+                    )
+                    Spacer(modifier = Modifier.size(16.dp))
+                    Slider(
+                        value = rotationInterval,
+                        onValueChange = {
+                            rotationInteracted = true
+                            rotationInterval = it
+                        },
+                        onValueChangeFinished = {
+                            rotationInteracted = true
+                            val newInterval = rotationInterval.toInt()
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) {
+                                    safeRunCatching { ServiceClient.setRotationInterval(newInterval) }.getOrDefault(false)
+                                }
+                                if (ok) {
+                                    committedRotationInterval = newInterval.toFloat()
+                                } else {
+                                    rotationInterval = committedRotationInterval
+                                    showSnackbar("设置未生效（模块未激活或无权限）")
+                                }
+                            }
+                        },
+                        valueRange = 60f..3600f,
+                        steps = 58,
+                        colors = SliderDefaults.colors(
+                            thumbColor = PrimaryColor,
+                            activeTrackColor = PrimaryColor,
+                        ),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showRotationDialog = false }) { Text("确定") }
             },
         )
     }
