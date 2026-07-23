@@ -1,6 +1,7 @@
 package com.tombstonex.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
@@ -43,9 +45,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,17 +64,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.geometry.Size
 import com.tombstonex.model.AppState
 import com.tombstonex.provider.AppProvider
 import com.tombstonex.service.ServiceClient
@@ -465,6 +473,41 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                             color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.titleMedium,
                         )
+                        Spacer(modifier = Modifier.weight(1f))
+                        // 模块状态指示器
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (moduleAvailable)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.errorContainer,
+                            border = if (moduleAvailable)
+                                BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                            else
+                                BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.25f)),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .background(
+                                            if (moduleAvailable) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.error,
+                                            CircleShape,
+                                        ),
+                                )
+                                Text(
+                                    text = if (moduleAvailable) "已激活" else "未激活",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (moduleAvailable) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
                     }
                 },
                 actions = {
@@ -519,8 +562,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("搜索应用名称或包名") },
+                            placeholder = { Text("搜索应用名称或包名…") },
                             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                             trailingIcon = {
                                 if (searchQuery.isNotEmpty()) {
@@ -530,6 +572,16 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                                 }
                             },
                             singleLine = true,
+                            shape = RoundedCornerShape(24.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
                         )
                     }
 
@@ -674,6 +726,7 @@ private fun ModuleNotActiveCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = containerColor),
     ) {
         Column(
@@ -817,54 +870,46 @@ private fun ModuleNotActiveCard(
 }
 
 @Composable
-private fun StatsCard(running: Int, frozen: Int, white: Int) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
+private fun StatsCard(runningCount: Int, frozenCount: Int, whitelistCount: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+        StatItem("运行中", runningCount, MaterialTheme.colorScheme.secondary, modifier = Modifier.weight(1f))
+        StatItem("已冻结", frozenCount, MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+        StatItem("白名单", whitelistCount, MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        StatItem("总应用", runningCount + frozenCount, MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun StatItem(label: String, count: Int, color: Color, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            StatItem("运行中", running.toString())
-            VerticalDivider()
-            StatItem("已冻结", frozen.toString())
-            VerticalDivider()
-            StatItem("白名单", white.toString())
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.headlineLarge,
+                color = if (count > 0) color else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Serif,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 0.5.sp,
+            )
         }
     }
-}
-
-@Composable
-private fun StatItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-        )
-    }
-}
-
-@Composable
-private fun VerticalDivider() {
-    Box(
-        modifier = Modifier
-            .size(width = 1.dp, height = 32.dp)
-            .background(
-                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f)
-            ),
-    )
 }
 
 @Composable
@@ -884,10 +929,27 @@ private fun AppCard(
     // 冻结开关状态：白名单内的应用 = 不冻结 = 开关关闭
     val freezeEnabled = !item.isWhiteListed
 
+    val accentColor = when (item.state) {
+        AppState.FROZEN -> MaterialTheme.colorScheme.primary
+        AppState.FOREGROUND, AppState.BACKGROUND -> MaterialTheme.colorScheme.secondary
+        else -> Color.Transparent
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+            .drawBehind {
+                if (accentColor != Color.Transparent) {
+                    drawRect(
+                        color = accentColor,
+                        size = Size(3.dp.toPx(), size.height),
+                    )
+                }
+            },
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = MaterialTheme.colorScheme.surface,
         ),
     ) {
         Row(
@@ -1026,21 +1088,22 @@ private fun AppCard(
 private fun StateBadge(state: AppState?) {
     val (text, color) = when (state) {
         AppState.FROZEN -> "已冻结" to MaterialTheme.colorScheme.primary
-        AppState.FOREGROUND -> "前台" to MaterialTheme.colorScheme.tertiary
-        AppState.BACKGROUND -> "后台" to MaterialTheme.colorScheme.secondary
+        AppState.FOREGROUND -> "前台" to MaterialTheme.colorScheme.secondary
+        AppState.BACKGROUND -> "后台" to MaterialTheme.colorScheme.onSurfaceVariant
         AppState.KILLED -> "已终止" to MaterialTheme.colorScheme.error
-        null -> "未运行" to MaterialTheme.colorScheme.outline
+        null -> "未运行" to MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Box(
-        modifier = Modifier
-            .background(color.copy(alpha = 0.16f), MaterialTheme.shapes.small)
-            .padding(horizontal = 8.dp, vertical = 2.dp),
+    Surface(
+        shape = MaterialTheme.shapes.extraSmall,
+        color = color.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.2f)),
     ) {
         Text(
             text = text,
             fontSize = 10.sp,
             color = color,
             fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
         )
     }
 }

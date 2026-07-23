@@ -1,166 +1,96 @@
 package com.tombstonex.ui.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /* ------------------------------------------------------------------
- *  冰蓝色系（Ice Blue）调色板 —— 代表「冻结」概念
- *  基于 Material Theme Builder 生成的 MD3 配色方案
+ *  Frost Terminal 暗色主题 (M3 Dark)
  * ------------------------------------------------------------------ */
 
-// ---- 浅色配色 ----
-private val IceBlueLightPrimary = Color(0xFF0061A4)
-private val IceBlueLightOnPrimary = Color(0xFFFFFFFF)
-private val IceBlueLightPrimaryContainer = Color(0xFFD1E4FF)
-private val IceBlueLightOnPrimaryContainer = Color(0xFF001D36)
+// ---- Frost Terminal 暗色主题 (M3 Dark) ----
+private val FrostBg = Color(0xFF121212)
+private val FrostSurface = Color(0xFF1C1B1F)
+private val FrostSurface2 = Color(0xFF242329)
+private val FrostSurface3 = Color(0xFF2B2930)
+private val FrostSurface4 = Color(0xFF333138)
+private val FrostSurface5 = Color(0xFF3B3942)
 
-private val IceBlueLightSecondary = Color(0xFF535F70)
-private val IceBlueLightOnSecondary = Color(0xFFFFFFFF)
-private val IceBlueLightSecondaryContainer = Color(0xFFD7E3F7)
-private val IceBlueLightOnSecondaryContainer = Color(0xFF101C2B)
+private val FrostPrimary = Color(0xFF00E5FF)
+private val FrostOnPrimary = Color(0xFF003543)
+private val FrostPrimaryContainer = Color(0x1F00E5FF) // 12% opacity
+private val FrostOnPrimaryContainer = Color(0xFFD1E4FF)
 
-private val IceBlueLightTertiary = Color(0xFF6B5778)
-private val IceBlueLightOnTertiary = Color(0xFFFFFFFF)
-private val IceBlueLightTertiaryContainer = Color(0xFFF2DAFF)
-private val IceBlueLightOnTertiaryContainer = Color(0xFF251431)
+private val FrostSecondary = Color(0xFFFFB347)
+private val FrostOnSecondary = Color(0xFF3D2600)
+private val FrostSecondaryContainer = Color(0x1FFFB347) // 12% opacity
+private val FrostOnSecondaryContainer = Color(0xFFFFDEB8)
 
-private val IceBlueLightError = Color(0xFFBA1A1A)
-private val IceBlueLightOnError = Color(0xFFFFFFFF)
-private val IceBlueLightErrorContainer = Color(0xFFFFDAD6)
-private val IceBlueLightOnErrorContainer = Color(0xFF410002)
+private val FrostTertiary = Color(0xFFCAC4D0)
+private val FrostOnTertiary = Color(0xFF2B2930)
+private val FrostTertiaryContainer = Color(0x14CAC4D0) // 8% opacity
+private val FrostOnTertiaryContainer = Color(0xFFE6E1E5)
 
-private val IceBlueLightBackground = Color(0xFFFDFCFF)
-private val IceBlueLightOnBackground = Color(0xFF1A1C1E)
-private val IceBlueLightSurface = Color(0xFFFDFCFF)
-private val IceBlueLightOnSurface = Color(0xFF1A1C1E)
-private val IceBlueLightSurfaceVariant = Color(0xFFDFE2EB)
-private val IceBlueLightOnSurfaceVariant = Color(0xFF43474E)
-private val IceBlueLightOutline = Color(0xFF73777F)
-private val IceBlueLightOutlineVariant = Color(0xFFC3C7CF)
-private val IceBlueLightSurfaceContainer = Color(0xFFEEF0F4)
-private val IceBlueLightSurfaceContainerHigh = Color(0xFFE8EAF0)
-private val IceBlueLightInverseSurface = Color(0xFF2F3033)
-private val IceBlueLightInverseOnSurface = Color(0xFFF1F0F3)
-private val IceBlueLightInversePrimary = Color(0xFF9ECAFF)
+private val FrostError = Color(0xFFFF453A)
+private val FrostOnError = Color(0xFF690005)
+private val FrostErrorContainer = Color(0x1FFF453A) // 12% opacity
+private val FrostOnErrorContainer = Color(0xFFFFDAD6)
 
-// ---- 深色配色（深色模式为主） ----
-private val IceBlueDarkPrimary = Color(0xFF9ECAFF)
-private val IceBlueDarkOnPrimary = Color(0xFF003258)
-private val IceBlueDarkPrimaryContainer = Color(0xFF00497D)
-private val IceBlueDarkOnPrimaryContainer = Color(0xFFD1E4FF)
-
-private val IceBlueDarkSecondary = Color(0xFFBBC7DB)
-private val IceBlueDarkOnSecondary = Color(0xFF253140)
-private val IceBlueDarkSecondaryContainer = Color(0xFF3B4858)
-private val IceBlueDarkOnSecondaryContainer = Color(0xFFD7E3F7)
-
-private val IceBlueDarkTertiary = Color(0xFFD6BEE4)
-private val IceBlueDarkOnTertiary = Color(0xFF3B2948)
-private val IceBlueDarkTertiaryContainer = Color(0xFF52405F)
-private val IceBlueDarkOnTertiaryContainer = Color(0xFFF2DAFF)
-
-private val IceBlueDarkError = Color(0xFFFFB4AB)
-private val IceBlueDarkOnError = Color(0xFF690005)
-private val IceBlueDarkErrorContainer = Color(0xFF93000A)
-private val IceBlueDarkOnErrorContainer = Color(0xFFFFDAD6)
-
-private val IceBlueDarkBackground = Color(0xFF101418)
-private val IceBlueDarkOnBackground = Color(0xFFE2E2E5)
-private val IceBlueDarkSurface = Color(0xFF131619)
-private val IceBlueDarkOnSurface = Color(0xFFE2E2E5)
-private val IceBlueDarkSurfaceVariant = Color(0xFF43474E)
-private val IceBlueDarkOnSurfaceVariant = Color(0xFFC3C7CF)
-private val IceBlueDarkOutline = Color(0xFF8D9199)
-private val IceBlueDarkOutlineVariant = Color(0xFF43474E)
-private val IceBlueDarkSurfaceContainer = Color(0xFF1F2226)
-private val IceBlueDarkSurfaceContainerHigh = Color(0xFF2A2D31)
-private val IceBlueDarkInverseSurface = Color(0xFFE2E2E5)
-private val IceBlueDarkInverseOnSurface = Color(0xFF2F3033)
-private val IceBlueDarkInversePrimary = Color(0xFF0061A4)
+private val FrostBackground = Color(0xFF121212)
+private val FrostOnBackground = Color(0xFFE6E1E5)
+private val FrostSurfaceColor = Color(0xFF1C1B1F)
+private val FrostOnSurface = Color(0xFFE6E1E5)
+private val FrostSurfaceVariant = Color(0xFF49454F)
+private val FrostOnSurfaceVariant = Color(0xFFCAC4D0)
+private val FrostOutline = Color(0xFF938F99)
+private val FrostOutlineVariant = Color(0xFF49454F)
+private val FrostSurfaceContainer = Color(0xFF242329)
+private val FrostSurfaceContainerHigh = Color(0xFF2B2930)
+private val FrostInverseSurface = Color(0xFFE6E1E5)
+private val FrostInverseOnSurface = Color(0xFF1C1B1F)
+private val FrostInversePrimary = Color(0xFF00E5FF)
 
 /**
- * 浅色配色方案（冰蓝色系）
+ * Frost Terminal 暗色配色方案
  */
-val IceBlueLightColorScheme = lightColorScheme(
-    primary = IceBlueLightPrimary,
-    onPrimary = IceBlueLightOnPrimary,
-    primaryContainer = IceBlueLightPrimaryContainer,
-    onPrimaryContainer = IceBlueLightOnPrimaryContainer,
-    secondary = IceBlueLightSecondary,
-    onSecondary = IceBlueLightOnSecondary,
-    secondaryContainer = IceBlueLightSecondaryContainer,
-    onSecondaryContainer = IceBlueLightOnSecondaryContainer,
-    tertiary = IceBlueLightTertiary,
-    onTertiary = IceBlueLightOnTertiary,
-    tertiaryContainer = IceBlueLightTertiaryContainer,
-    onTertiaryContainer = IceBlueLightOnTertiaryContainer,
-    error = IceBlueLightError,
-    onError = IceBlueLightOnError,
-    errorContainer = IceBlueLightErrorContainer,
-    onErrorContainer = IceBlueLightOnErrorContainer,
-    background = IceBlueLightBackground,
-    onBackground = IceBlueLightOnBackground,
-    surface = IceBlueLightSurface,
-    onSurface = IceBlueLightOnSurface,
-    surfaceVariant = IceBlueLightSurfaceVariant,
-    onSurfaceVariant = IceBlueLightOnSurfaceVariant,
-    outline = IceBlueLightOutline,
-    outlineVariant = IceBlueLightOutlineVariant,
-    surfaceContainer = IceBlueLightSurfaceContainer,
-    surfaceContainerHigh = IceBlueLightSurfaceContainerHigh,
-    inverseSurface = IceBlueLightInverseSurface,
-    inverseOnSurface = IceBlueLightInverseOnSurface,
-    inversePrimary = IceBlueLightInversePrimary,
-)
-
-/**
- * 深色配色方案（冰蓝色系，深色为主）
- */
-val IceBlueDarkColorScheme = darkColorScheme(
-    primary = IceBlueDarkPrimary,
-    onPrimary = IceBlueDarkOnPrimary,
-    primaryContainer = IceBlueDarkPrimaryContainer,
-    onPrimaryContainer = IceBlueDarkOnPrimaryContainer,
-    secondary = IceBlueDarkSecondary,
-    onSecondary = IceBlueDarkOnSecondary,
-    secondaryContainer = IceBlueDarkSecondaryContainer,
-    onSecondaryContainer = IceBlueDarkOnSecondaryContainer,
-    tertiary = IceBlueDarkTertiary,
-    onTertiary = IceBlueDarkOnTertiary,
-    tertiaryContainer = IceBlueDarkTertiaryContainer,
-    onTertiaryContainer = IceBlueDarkOnTertiaryContainer,
-    error = IceBlueDarkError,
-    onError = IceBlueDarkOnError,
-    errorContainer = IceBlueDarkErrorContainer,
-    onErrorContainer = IceBlueDarkOnErrorContainer,
-    background = IceBlueDarkBackground,
-    onBackground = IceBlueDarkOnBackground,
-    surface = IceBlueDarkSurface,
-    onSurface = IceBlueDarkOnSurface,
-    surfaceVariant = IceBlueDarkSurfaceVariant,
-    onSurfaceVariant = IceBlueDarkOnSurfaceVariant,
-    outline = IceBlueDarkOutline,
-    outlineVariant = IceBlueDarkOutlineVariant,
-    surfaceContainer = IceBlueDarkSurfaceContainer,
-    surfaceContainerHigh = IceBlueDarkSurfaceContainerHigh,
-    inverseSurface = IceBlueDarkInverseSurface,
-    inverseOnSurface = IceBlueDarkInverseOnSurface,
-    inversePrimary = IceBlueDarkInversePrimary,
+val FrostDarkColorScheme = darkColorScheme(
+    primary = FrostPrimary,
+    onPrimary = FrostOnPrimary,
+    primaryContainer = FrostPrimaryContainer,
+    onPrimaryContainer = FrostOnPrimaryContainer,
+    secondary = FrostSecondary,
+    onSecondary = FrostOnSecondary,
+    secondaryContainer = FrostSecondaryContainer,
+    onSecondaryContainer = FrostOnSecondaryContainer,
+    tertiary = FrostTertiary,
+    onTertiary = FrostOnTertiary,
+    tertiaryContainer = FrostTertiaryContainer,
+    onTertiaryContainer = FrostOnTertiaryContainer,
+    error = FrostError,
+    onError = FrostOnError,
+    errorContainer = FrostErrorContainer,
+    onErrorContainer = FrostOnErrorContainer,
+    background = FrostBackground,
+    onBackground = FrostOnBackground,
+    surface = FrostSurfaceColor,
+    onSurface = FrostOnSurface,
+    surfaceVariant = FrostSurfaceVariant,
+    onSurfaceVariant = FrostOnSurfaceVariant,
+    outline = FrostOutline,
+    outlineVariant = FrostOutlineVariant,
+    surfaceContainer = FrostSurfaceContainer,
+    surfaceContainerHigh = FrostSurfaceContainerHigh,
+    inverseSurface = FrostInverseSurface,
+    inverseOnSurface = FrostInverseOnSurface,
+    inversePrimary = FrostInversePrimary,
 )
 
 /* ------------------------------------------------------------------
@@ -265,30 +195,14 @@ val TombstoneXShapes = Shapes(
 )
 
 /**
- * TombstoneX 主题
- *
- * @param darkTheme 是否使用深色模式，默认跟随系统
- * @param dynamicColor 是否启用 Material You 动态取色（Android 12+），默认关闭以使用品牌冰蓝色主题
- * @param content Compose 内容
+ * TombstoneX 主题（暗色专用）
  */
 @Composable
 fun TombstoneXTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
-        // Android 12+ 支持 Material You 动态取色
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val ctx = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-        }
-        darkTheme -> IceBlueDarkColorScheme
-        else -> IceBlueLightColorScheme
-    }
-
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = FrostDarkColorScheme,
         typography = TombstoneXTypography,
         shapes = TombstoneXShapes,
         content = content,
