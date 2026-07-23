@@ -115,19 +115,19 @@ private fun SectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "白名单管理",
-            style = MaterialTheme.typography.labelSmall,
+            fontSize = 10.sp,
             fontFamily = FontFamily.Monospace,
             color = OnSurfaceMutedColor,
         )
         Text(
             text = "$tabItemCount 个",
-            style = MaterialTheme.typography.labelSmall,
+            fontSize = 10.sp,
             fontFamily = FontFamily.Monospace,
             color = OnSurfaceMutedColor,
         )
@@ -139,7 +139,8 @@ private fun SectionHeader(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp)
+            .padding(top = 4.dp, bottom = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         listOf("应用白名单", "进程白名单", "系统服务").forEachIndexed { index, label ->

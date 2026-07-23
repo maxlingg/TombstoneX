@@ -604,19 +604,19 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                                .padding(horizontal = 20.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
                                 text = "应用列表",
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = OnSurfaceMuted,
                             )
                             Text(
                                 text = "${filtered.size} 个",
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = OnSurfaceMuted,
                             )
                         }

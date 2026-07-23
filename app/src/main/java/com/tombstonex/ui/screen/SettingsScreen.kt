@@ -248,11 +248,11 @@ fun SettingsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
             ) {
                 Text(
                     "模块设置",
-                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
                     color = OnSurfaceMutedColor,
                 )
@@ -364,16 +364,15 @@ fun SettingsScreen(
         }
 
         // ---- 关于 ----
-        item { Spacer(modifier = Modifier.size(8.dp)) }
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
             ) {
                 Text(
                     "关于",
-                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
                     color = OnSurfaceMutedColor,
                 )
@@ -578,7 +577,7 @@ private fun SettingRow(
         border = BorderStroke(1.dp, OutlineVariantColor),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -628,13 +627,14 @@ private fun HookSwitchRow(
         border = BorderStroke(1.dp, OutlineVariantColor),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 title,
                 modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
                 color = OnSurfaceColor,
             )
             Switch(
