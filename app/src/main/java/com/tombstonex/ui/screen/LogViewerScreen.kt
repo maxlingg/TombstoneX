@@ -252,10 +252,10 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
 @Composable
 private fun LogLine(line: String) {
     val color = when {
-        line.startsWith("[E]") || line.startsWith("E/") -> ErrorColor
-        line.startsWith("[W]") || line.startsWith("W/") -> SecondaryColor
-        line.startsWith("[I]") || line.startsWith("I/") -> PrimaryColor
-        line.startsWith("[D]") || line.startsWith("D/") -> OnSurfaceMutedColor
+        line.startsWith("[错误]") || line.startsWith("E/") -> ErrorColor
+        line.startsWith("[警告]") || line.startsWith("W/") -> SecondaryColor
+        line.startsWith("[信息]") || line.startsWith("I/") -> PrimaryColor
+        line.startsWith("[调试]") || line.startsWith("D/") -> OnSurfaceMutedColor
         else -> OnSurfaceMutedColor
     }
     Text(

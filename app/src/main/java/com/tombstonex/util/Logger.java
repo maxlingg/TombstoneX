@@ -137,23 +137,23 @@ public class Logger {
     public static void d(String msg) {
         if (debugEnabled) {
             Log.d(TAG, msg);
-            writeFile("D", msg);
+            writeFile("调试", msg);
         }
     }
 
     public static void i(String msg) {
         Log.i(TAG, msg);
-        writeFile("I", msg);
+        writeFile("信息", msg);
     }
 
     public static void w(String msg) {
         Log.w(TAG, msg);
-        writeFile("W", msg);
+        writeFile("警告", msg);
     }
 
     public static void e(String msg) {
         Log.e(TAG, msg);
-        writeFile("E", msg);
+        writeFile("错误", msg);
     }
 
     public static void e(String msg, Throwable t) {
@@ -165,7 +165,7 @@ public class Logger {
             detail = safeMsg + " | " + (tMsg != null ? tMsg : t.toString());
         }
         Log.e(TAG, detail);
-        writeFile("E", detail);
+        writeFile("错误", detail);
     }
 
     private static void writeFile(String level, String msg) {
