@@ -30,6 +30,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -547,12 +548,15 @@ private fun WhitelistAppCard(
                 )
             }
 
-            TextButton(
+            OutlinedButton(
                 onClick = { onToggle() },
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.textButtonColors(
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.Transparent,
                     contentColor = ErrorColor,
                 ),
+                border = BorderStroke(1.dp, ErrorColor.copy(alpha = 0.2f)),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
             ) {
                 Text(if (isOn) "移除" else "加入")
             }

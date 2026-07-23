@@ -401,6 +401,7 @@ fun SettingsScreen(
             SettingRow(
                 title = "冻结方式",
                 value = modeDisplayName,
+                hint = "SystemAPI / CgroupV2 / SIGSTOP",
                 showChevron = true,
                 onClick = { showModeDialog = true },
             )

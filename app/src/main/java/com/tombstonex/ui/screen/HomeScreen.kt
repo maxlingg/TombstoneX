@@ -1125,7 +1125,7 @@ private fun AppCard(
                         }
                     }
                     Text(
-                        text = item.packageName + if (item.isSystem) " . 系统" else "",
+                        text = item.packageName + if (item.isSystem) " · 系统" else "",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         color = OnSurfaceMuted,
@@ -1152,7 +1152,7 @@ private fun AppCard(
                     modifier = Modifier
                         .size(38.dp)
                         .background(
-                            color = if (isFrozen) PrimaryContainer else Surface2,
+                            color = if (isFrozen) PrimaryContainer else Color.Transparent,
                             shape = RoundedCornerShape(10.dp),
                         )
                         .border(
@@ -1187,13 +1187,13 @@ private fun StateBadge(state: AppState?) {
             Tuple4("前台", SecondaryContainer, Secondary, Secondary.copy(alpha = 0.2f))
         }
         AppState.BACKGROUND -> {
-            Tuple4("后台", OnSurfaceVariant.copy(alpha = 0.08f), OnSurfaceVariant, Color.Transparent)
+            Tuple4("后台", OnSurfaceVariant.copy(alpha = 0.08f), OnSurfaceVariant, OnSurfaceVariant.copy(alpha = 0.12f))
         }
         AppState.KILLED -> {
-            Tuple4("已终止", OnSurfaceMuted.copy(alpha = 0.06f), OnSurfaceMuted, Color.Transparent)
+            Tuple4("已终止", OnSurfaceMuted.copy(alpha = 0.06f), OnSurfaceMuted, OnSurfaceMuted.copy(alpha = 0.08f))
         }
         null -> {
-            Tuple4("未运行", OnSurfaceMuted.copy(alpha = 0.06f), OnSurfaceMuted, Color.Transparent)
+            Tuple4("未运行", OnSurfaceMuted.copy(alpha = 0.06f), OnSurfaceMuted, OnSurfaceMuted.copy(alpha = 0.08f))
         }
     }
     Surface(
