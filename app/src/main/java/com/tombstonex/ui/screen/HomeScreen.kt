@@ -593,7 +593,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                                         selectedLeadingIconColor = Primary,
                                         containerColor = Surface2,
                                         labelColor = OnSurfaceVariant,
-                                        leadingIconColor = OnSurfaceMuted,
+                                        iconColor = OnSurfaceMuted,
                                     ),
                                 )
                             }
