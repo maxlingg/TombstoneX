@@ -24,12 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -38,6 +34,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -92,6 +90,21 @@ import org.json.JSONObject
 import kotlin.coroutines.coroutineContext
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+
+// ---- CSS Reference Colors ----
+private val Surface = Color(0xFF1C1B1F)
+private val Surface2 = Color(0xFF242329)
+private val Surface3 = Color(0xFF2B2930)
+private val Primary = Color(0xFF00E5FF)
+private val PrimaryContainer = Color(0x1F00E5FF) // rgba(0,229,255,0.12)
+private val Secondary = Color(0xFFFFB347)
+private val SecondaryContainer = Color(0x1FFFB347) // rgba(255,179,71,0.12)
+private val Error = Color(0xFFFF453A)
+private val ErrorContainer = Color(0x1FFF453A) // rgba(255,69,58,0.12)
+private val OnSurface = Color(0xFFE6E1E5)
+private val OnSurfaceVariant = Color(0xFFCAC4D0)
+private val OnSurfaceMuted = Color(0xFF938F99)
+private val OutlineVariant = Color(0xFF49454F)
 
 /**
  * 主页列表项：合并 [AppProvider.AppData] 与 [ServiceClient.ProcessInfo] 信息。
@@ -489,7 +502,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                 if (!loading) {
                     item { StatsCard(runningCount, frozenCount, whiteCount, totalCount) }
 
-                    // ---- 搜索栏 + 系统应用 Switch ----
+                    // ---- 搜索栏 + 系统应用 FilterChip ----
                     item {
                         Column(
                             modifier = Modifier
@@ -500,11 +513,17 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                                 value = searchQuery,
                                 onValueChange = { searchQuery = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("搜索应用名称或包名…") },
+                                placeholder = {
+                                    Text(
+                                        "搜索应用名称或包名…",
+                                        color = OnSurfaceMuted,
+                                    )
+                                },
                                 leadingIcon = {
                                     Icon(
                                         Icons.Filled.Search,
                                         contentDescription = null,
+                                        tint = OnSurfaceMuted,
                                     )
                                 },
                                 trailingIcon = {
@@ -513,6 +532,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                                             Icon(
                                                 Icons.Filled.Close,
                                                 contentDescription = "清除",
+                                                tint = OnSurfaceVariant,
                                             )
                                         }
                                     }
@@ -520,26 +540,61 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                                 singleLine = true,
                                 shape = RoundedCornerShape(24.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                    focusedBorderColor = Primary,
+                                    unfocusedBorderColor = OutlineVariant,
+                                    focusedContainerColor = Surface2,
+                                    unfocusedContainerColor = Surface2,
+                                    focusedTextColor = OnSurface,
+                                    unfocusedTextColor = OnSurface,
+                                    cursorColor = Primary,
                                 ),
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.Start,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    text = "系统应用",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Switch(
-                                    checked = includeSystem,
-                                    onCheckedChange = { includeSystem = it },
+                                FilterChip(
+                                    selected = includeSystem,
+                                    onClick = { includeSystem = !includeSystem },
+                                    label = {
+                                        Text(
+                                            "系统应用",
+                                            fontSize = 12.sp,
+                                        )
+                                    },
+                                    leadingIcon = if (includeSystem) {
+                                        {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .background(Primary, CircleShape),
+                                            )
+                                        }
+                                    } else {
+                                        {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .background(OnSurfaceMuted, CircleShape),
+                                            )
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(24.dp),
+                                    modifier = Modifier.border(
+                                        width = 1.dp,
+                                        color = if (includeSystem) Primary else OutlineVariant,
+                                        shape = RoundedCornerShape(24.dp),
+                                    ),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = PrimaryContainer,
+                                        selectedLabelColor = Primary,
+                                        selectedLeadingIconColor = Primary,
+                                        containerColor = Surface2,
+                                        labelColor = OnSurfaceVariant,
+                                        leadingIconColor = OnSurfaceMuted,
+                                    ),
                                 )
                             }
                         }
@@ -555,13 +610,13 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                         ) {
                             Text(
                                 text = "应用列表",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                color = OnSurfaceMuted,
                             )
                             Text(
                                 text = "${filtered.size} 个",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                color = OnSurfaceMuted,
                             )
                         }
                     }
@@ -576,7 +631,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                             ) {
                                 Text(
                                     text = "未找到匹配的应用",
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    color = OnSurface.copy(alpha = 0.6f),
                                 )
                             }
                         }
@@ -606,11 +661,11 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = Primary)
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = "正在加载应用列表...",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            color = OnSurface.copy(alpha = 0.6f),
                         )
                     }
                 }
@@ -646,7 +701,7 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                             }
                         }
                     }) {
-                        Text("重启", color = MaterialTheme.colorScheme.error)
+                        Text("重启", color = Error)
                     }
                 },
                 dismissButton = {
@@ -703,16 +758,13 @@ private fun ModuleNotActiveCard(
         else -> "模块已加载，通信通道未就绪，正在等待..."
     }
 
-    Box(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFF3D1F1F), Color(0xFF2A1010)),
-                ),
-                shape = RoundedCornerShape(12.dp),
-            ),
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Error.copy(alpha = 0.2f)),
+        color = ErrorContainer,
     ) {
         Column(
             modifier = Modifier
@@ -720,19 +772,26 @@ private fun ModuleNotActiveCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // 标题行：警告图标 + 标题 + 关闭按钮
+            // 标题行：圆形错误图标 + 标题 + 关闭按钮
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.Warning,
-                    contentDescription = null,
-                    tint = Color(0xFFFF4444),
-                    modifier = Modifier.size(20.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .background(Error, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "!",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                    )
+                }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "模块未激活",
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFF4444),
+                    fontWeight = FontWeight.SemiBold,
+                    color = Error,
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                 )
@@ -743,7 +802,7 @@ private fun ModuleNotActiveCard(
                     Text(
                         text = "\u00D7",
                         fontSize = 20.sp,
-                        color = Color.Gray,
+                        color = OnSurfaceMuted,
                     )
                 }
             }
@@ -752,7 +811,7 @@ private fun ModuleNotActiveCard(
             Text(
                 text = statusText,
                 fontSize = 12.sp,
-                color = Color.Gray,
+                color = OnSurfaceVariant,
                 lineHeight = 18.sp,
             )
 
@@ -765,9 +824,13 @@ private fun ModuleNotActiveCard(
                 OutlinedButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
-                    border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Error),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Error,
+                    ),
                 ) {
-                    Text("稍后", color = Color.Gray)
+                    Text("稍后")
                 }
 
                 if (isBinderFailed) {
@@ -776,8 +839,9 @@ private fun ModuleNotActiveCard(
                             showInstallDialog = true
                         },
                         modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(20.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF6B6B),
+                            containerColor = Error,
                             contentColor = Color.White,
                         ),
                     ) {
@@ -878,62 +942,70 @@ private fun ModuleNotActiveCard(
 
 @Composable
 private fun StatsCard(runningCount: Int, frozenCount: Int, whitelistCount: Int, totalCount: Int) {
-    Row(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, OutlineVariant),
+        color = Surface2,
     ) {
-        StatItem(
-            label = "运行中",
-            count = runningCount,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        StatItem(
-            label = "已冻结",
-            count = frozenCount,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f),
-        )
-        StatItem(
-            label = "白名单",
-            count = whitelistCount,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        StatItem(
-            label = "总应用",
-            count = totalCount,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            StatItem(
+                label = "运行中",
+                count = runningCount,
+                activeColor = Secondary,
+                modifier = Modifier.weight(1f),
+            )
+            StatItem(
+                label = "已冻结",
+                count = frozenCount,
+                activeColor = Primary,
+                modifier = Modifier.weight(1f),
+            )
+            StatItem(
+                label = "白名单",
+                count = whitelistCount,
+                activeColor = OnSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            StatItem(
+                label = "总应用",
+                count = totalCount,
+                activeColor = OnSurface,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
 @Composable
-private fun StatItem(label: String, count: Int, color: Color, modifier: Modifier = Modifier) {
-    Surface(
+private fun StatItem(
+    label: String,
+    count: Int,
+    activeColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    Column(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(
-            modifier = Modifier.padding(vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = count.toString(),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = color,
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            text = count.toString(),
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (count > 0) activeColor else OnSurfaceMuted,
+        )
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = OnSurfaceMuted,
+        )
     }
 }
 
@@ -952,122 +1024,151 @@ private fun AppCard(
     }
 
     val accentColor = when (item.state) {
-        AppState.FROZEN -> MaterialTheme.colorScheme.primary
-        AppState.FOREGROUND, AppState.BACKGROUND -> MaterialTheme.colorScheme.secondary
+        AppState.FROZEN -> Primary
+        AppState.FOREGROUND, AppState.BACKGROUND -> Secondary
         else -> Color.Transparent
     }
     val isFrozen = item.state == AppState.FROZEN
+    val hasAccent = accentColor != Color.Transparent
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 2.dp)
             .drawBehind {
-                if (accentColor != Color.Transparent) {
+                if (hasAccent) {
                     drawRect(
                         color = accentColor,
                         size = Size(3.dp.toPx(), size.height),
                     )
                 }
             },
-        shape = MaterialTheme.shapes.medium,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, OutlineVariant),
         colors = CardDefaults.cardColors(
-            containerColor = if (isFrozen)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            else
-                MaterialTheme.colorScheme.surface,
+            containerColor = Color.Transparent,
         ),
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .then(
+                    if (hasAccent) {
+                        Modifier.background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    if (isFrozen) PrimaryContainer else SecondaryContainer,
+                                    Surface,
+                                ),
+                                startX = 0f,
+                                endX = 0.3f,
+                            ),
+                        )
+                    } else {
+                        Modifier.background(color = Surface)
+                    }
+                ),
         ) {
-            // 应用图标
-            val bmp = icon
-            if (bmp != null) {
-                Image(
-                    bitmap = bmp,
-                    contentDescription = item.label,
-                    modifier = Modifier.size(40.dp),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(
-                            Color(0xFF00E5FF).copy(alpha = if (isFrozen) 1f else 0.12f),
-                            RoundedCornerShape(10.dp),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = item.label.firstOrNull()?.toString() ?: "?",
-                        color = if (isFrozen) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                // 应用图标
+                val bmp = icon
+                if (bmp != null) {
+                    Image(
+                        bitmap = bmp,
+                        contentDescription = item.label,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color.Transparent, RoundedCornerShape(12.dp)),
                     )
-                }
-            }
-
-            // 中间文字区
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = item.label,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White,
-                    )
-                    if (item.isWhiteListed) {
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(
+                                if (isFrozen) Primary.copy(alpha = 0.12f) else Primary.copy(alpha = 0.08f),
+                                RoundedCornerShape(12.dp),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Text(
-                            " \u2606",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 12.sp,
+                            text = item.label.firstOrNull()?.toString() ?: "?",
+                            color = if (isFrozen) Primary else OnSurfaceVariant,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
                         )
                     }
                 }
-                Text(
-                    text = item.packageName + if (item.isSystem) " . 系统" else "",
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
 
-            // 状态标签 + PID
-            Column(horizontalAlignment = Alignment.End) {
-                StateBadge(item.state)
-                if (item.pid > 0) {
+                // 中间文字区
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = item.label,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = OnSurface,
+                        )
+                        if (item.isWhiteListed) {
+                            Text(
+                                " \u2606",
+                                color = Primary,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
                     Text(
-                        text = "PID ${item.pid}",
+                        text = item.packageName + if (item.isSystem) " . 系统" else "",
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        color = OnSurfaceMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-            }
 
-            // 冻结按钮：圆形，38dp，深灰背景
-            IconButton(
-                onClick = { onFreezeClick(item) },
-                modifier = Modifier
-                    .size(38.dp)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceContainer,
-                        CircleShape,
-                    ),
-            ) {
-                Text(
-                    text = if (isFrozen) "\u2746" else "\u2745",
-                    fontSize = 18.sp,
-                )
+                // 状态标签 + PID
+                Column(horizontalAlignment = Alignment.End) {
+                    StateBadge(item.state)
+                    if (item.pid > 0) {
+                        Text(
+                            text = "PID ${item.pid}",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = OnSurfaceMuted,
+                        )
+                    }
+                }
+
+                // 冻结按钮：38dp，圆角矩形
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(
+                            color = if (isFrozen) PrimaryContainer else Surface2,
+                            shape = RoundedCornerShape(10.dp),
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = if (isFrozen) Primary else OutlineVariant,
+                            shape = RoundedCornerShape(10.dp),
+                        )
+                        .clickable { onFreezeClick(item) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (isFrozen) "\u2746" else "\u2745",
+                        fontSize = 18.sp,
+                        color = if (isFrozen) Primary else OnSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -1078,27 +1179,40 @@ private fun AppCard(
  */
 @Composable
 private fun StateBadge(state: AppState?) {
-    val (text, color) = when (state) {
-        AppState.FROZEN -> "已冻结" to MaterialTheme.colorScheme.primary
-        AppState.FOREGROUND -> "前台" to MaterialTheme.colorScheme.secondary
-        AppState.BACKGROUND -> "后台" to MaterialTheme.colorScheme.onSurfaceVariant
-        AppState.KILLED -> "已终止" to MaterialTheme.colorScheme.error
-        null -> "未运行" to MaterialTheme.colorScheme.onSurfaceVariant
+    val (text, bgColor, textColor, borderColor) = when (state) {
+        AppState.FROZEN -> {
+            Tuple4("已冻结", PrimaryContainer, Primary, Primary.copy(alpha = 0.2f))
+        }
+        AppState.FOREGROUND -> {
+            Tuple4("前台", SecondaryContainer, Secondary, Secondary.copy(alpha = 0.2f))
+        }
+        AppState.BACKGROUND -> {
+            Tuple4("后台", OnSurfaceVariant.copy(alpha = 0.08f), OnSurfaceVariant, Color.Transparent)
+        }
+        AppState.KILLED -> {
+            Tuple4("已终止", OnSurfaceMuted.copy(alpha = 0.06f), OnSurfaceMuted, Color.Transparent)
+        }
+        null -> {
+            Tuple4("未运行", OnSurfaceMuted.copy(alpha = 0.06f), OnSurfaceMuted, Color.Transparent)
+        }
     }
     Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = color.copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.2f)),
+        shape = RoundedCornerShape(6.dp),
+        color = bgColor,
+        border = if (borderColor != Color.Transparent) BorderStroke(1.dp, borderColor) else null,
     ) {
         Text(
             text = text,
             fontSize = 10.sp,
-            color = color,
+            color = textColor,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
         )
     }
 }
+
+/** 简单的四元组，用于 StateBadge 状态映射 */
+private data class Tuple4<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
 /**
  * 应用级配置 BottomSheet。
@@ -1262,12 +1376,12 @@ private fun AppConfigSheet(
             Text(
                 text = item.label,
                 fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                color = OnSurface.copy(alpha = 0.7f),
             )
             Text(
                 text = item.packageName,
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                color = OnSurface.copy(alpha = 0.5f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1295,12 +1409,12 @@ private fun AppConfigSheet(
                     Icon(
                         imageVector = Icons.Filled.Error,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
+                        tint = Error,
                         modifier = Modifier.size(32.dp),
                     )
                     Text(
                         text = "配置加载失败（模块未激活或无权限）",
-                        color = MaterialTheme.colorScheme.error,
+                        color = Error,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Button(onClick = { retryLoadConfig() }) {
@@ -1428,7 +1542,7 @@ private fun ConfigSwitchRow(
             Text(
                 text = subtitle,
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                color = OnSurface.copy(alpha = 0.5f),
             )
         }
         Switch(checked = checked, onCheckedChange = { onToggle() })

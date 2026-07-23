@@ -48,6 +48,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+// ---- 主题色常量 ----
+private val SurfaceColor = Color(0xFF1C1B1F)
+private val Surface2Color = Color(0xFF242329)
+private val PrimaryColor = Color(0xFF00E5FF)
+private val SecondaryColor = Color(0xFFFFB347)
+private val ErrorColor = Color(0xFFFF453A)
+private val OnSurfaceColor = Color(0xFFE6E1E5)
+private val OnSurfaceMutedColor = Color(0xFF938F99)
+private val OutlineVariantColor = Color(0xFF49454F)
+
 @Composable
 fun LogViewerScreen(showSnackbar: (String) -> Unit) {
     val scope = rememberCoroutineScope()
@@ -140,17 +150,17 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                 text = "运行日志",
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = OnSurfaceMutedColor,
                 modifier = Modifier.weight(1f),
             )
             OutlinedButton(
                 onClick = { showClearDialog = true },
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color(0xFF444444),
-                    contentColor = Color.White,
+                    containerColor = Surface2Color,
+                    contentColor = OnSurfaceColor,
                 ),
-                border = BorderStroke(1.dp, Color(0xFF444444)),
+                border = BorderStroke(1.dp, OutlineVariantColor),
             ) {
                 Text("清空")
             }
@@ -162,9 +172,9 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(horizontal = 16.dp),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(14.dp),
+            color = SurfaceColor,
+            border = BorderStroke(1.dp, OutlineVariantColor),
         ) {
             when {
                 loading -> {
@@ -192,9 +202,9 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                             Text(
                                 text = errorMessage ?: "",
                                 color = if (!moduleAvailable)
-                                    MaterialTheme.colorScheme.error
+                                    ErrorColor
                                 else
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    OnSurfaceColor.copy(alpha = 0.6f),
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             FilledTonalButton(onClick = { loadLogs() }) {
@@ -240,7 +250,7 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                 TextButton(onClick = {
                     showClearDialog = false
                     clearLogs()
-                }) { Text("清空", color = MaterialTheme.colorScheme.error) }
+                }) { Text("清空", color = ErrorColor) }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) { Text("取消") }
@@ -252,10 +262,11 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
 @Composable
 private fun LogLine(line: String) {
     val color = when {
-        line.startsWith("[E]") || line.startsWith("E/") -> MaterialTheme.colorScheme.error
-        line.startsWith("[W]") || line.startsWith("W/") -> MaterialTheme.colorScheme.secondary
-        line.startsWith("[I]") || line.startsWith("I/") -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        line.startsWith("[E]") || line.startsWith("E/") -> ErrorColor
+        line.startsWith("[W]") || line.startsWith("W/") -> SecondaryColor
+        line.startsWith("[I]") || line.startsWith("I/") -> PrimaryColor
+        line.startsWith("[D]") || line.startsWith("D/") -> OnSurfaceMutedColor
+        else -> OnSurfaceMutedColor
     }
     Text(
         text = line,

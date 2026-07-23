@@ -22,17 +22,17 @@ private val FrostSurface = Color(0xFF1C1B1F)
 private val FrostSurface2 = Color(0xFF242329)
 private val FrostSurface3 = Color(0xFF2B2930)
 private val FrostSurface4 = Color(0xFF333138)
-private val FrostSurface5 = Color(0xFF3B3942)
+private val FrostSurfaceContainerHighest = Color(0xFF3B3942)
 
 private val FrostPrimary = Color(0xFF00E5FF)
 private val FrostOnPrimary = Color(0xFF003543)
 private val FrostPrimaryContainer = Color(0x1F00E5FF) // 12% opacity
-private val FrostOnPrimaryContainer = Color(0xFFD1E4FF)
+private val FrostOnPrimaryContainer = Color(0xFF00E5FF)
 
 private val FrostSecondary = Color(0xFFFFB347)
 private val FrostOnSecondary = Color(0xFF3D2600)
 private val FrostSecondaryContainer = Color(0x1FFFB347) // 12% opacity
-private val FrostOnSecondaryContainer = Color(0xFFFFDEB8)
+private val FrostOnSecondaryContainer = Color(0xFFFFB347)
 
 private val FrostTertiary = Color(0xFFCAC4D0)
 private val FrostOnTertiary = Color(0xFF2B2930)
@@ -42,7 +42,7 @@ private val FrostOnTertiaryContainer = Color(0xFFE6E1E5)
 private val FrostError = Color(0xFFFF453A)
 private val FrostOnError = Color(0xFF690005)
 private val FrostErrorContainer = Color(0x1FFF453A) // 12% opacity
-private val FrostOnErrorContainer = Color(0xFFFFDAD6)
+private val FrostOnErrorContainer = Color(0xFFFF453A)
 
 private val FrostBackground = Color(0xFF121212)
 private val FrostOnBackground = Color(0xFFE6E1E5)
@@ -84,10 +84,12 @@ val FrostDarkColorScheme = darkColorScheme(
     onSurface = FrostOnSurface,
     surfaceVariant = FrostSurfaceVariant,
     onSurfaceVariant = FrostOnSurfaceVariant,
-    outline = FrostOutline,
-    outlineVariant = FrostOutlineVariant,
-    surfaceContainer = FrostSurfaceContainer,
-    surfaceContainerHigh = FrostSurfaceContainerHigh,
+    outline = Color(0xFF938F99),
+    outlineVariant = Color(0xFF49454F),
+    surfaceContainer = FrostSurfaceColor,
+    surfaceContainerLow = FrostSurfaceColor,
+    surfaceContainerHigh = FrostSurfaceContainerHighest,
+    surfaceContainerHighest = FrostSurfaceContainerHighest,
     inverseSurface = FrostInverseSurface,
     inverseOnSurface = FrostInverseOnSurface,
     inversePrimary = FrostInversePrimary,

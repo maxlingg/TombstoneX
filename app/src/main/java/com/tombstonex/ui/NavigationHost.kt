@@ -1,18 +1,18 @@
 package com.tombstonex.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,16 +21,16 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateListOf
@@ -38,9 +38,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -150,52 +150,61 @@ fun NavigationHost() {
         bottomBar = {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 3.dp,
-                shadowElevation = 8.dp,
+                shadowElevation = 0.dp,
+                border = BorderStroke(0.5.dp, Color(0xFF49454F)),
             ) {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF242329),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
                 ) {
-                    BottomTabs.forEachIndexed { index, dest ->
-                        NavigationBarItem(
-                            selected = selectedTabIndex == index,
-                            onClick = { navController.switchTab(dest) },
-                            icon = { Icon(dest.icon, contentDescription = dest.label) },
-                            label = { Text(dest.label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
+                    NavigationBar(
+                        containerColor = Color.Transparent,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        BottomTabs.forEachIndexed { index, dest ->
+                            NavigationBarItem(
+                                selected = selectedTabIndex == index,
+                                onClick = { navController.switchTab(dest) },
+                                icon = { Icon(dest.icon, contentDescription = dest.label) },
+                                label = { Text(dest.label) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = Color(0xFF2B2930),
+                                    unselectedIconColor = Color(0xFF938F99),
+                                    unselectedTextColor = Color(0xFF938F99),
+                                ),
+                            )
+                        }
                     }
                 }
             }
         },
         floatingActionButton = {
             if (currentDest == TxDestination.Home) {
-                SmallFloatingActionButton(
+                FloatingActionButton(
                     onClick = { /* freeze all logic */ },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.primary,
                     shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .size(52.dp)
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                            RoundedCornerShape(16.dp),
+                        ),
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = "冻结全部",
-                        modifier = Modifier.size(24.dp),
+                    Text(
+                        "\u2746",
+                        fontSize = 22.sp,
                     )
                 }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        // 由内部各页面的 Scaffold 单独处理顶部状态栏内边距
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             if (currentDest != TxDestination.About) {
                 TombstoneXTopBar()
@@ -230,17 +239,12 @@ fun NavigationHost() {
     }
 }
 
-// 未激活状态的专用红色
-private val InactiveRed = Color(0xFFFF5252)
-private val InactiveBg = Color(0xFF8B3A3A)
-
 @Composable
 private fun TombstoneXTopBar() {
     val moduleState = LocalModuleState.current
     val isActive = moduleState.activated
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
     ) {
         Row(
             modifier = Modifier
@@ -248,37 +252,41 @@ private fun TombstoneXTopBar() {
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // TX 圆角方形 logo
-            Surface(
-                modifier = Modifier.size(36.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF00E5FF).copy(alpha = 0.25f),
+            // TX 圆角方形 logo（渐变背景）
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(
+                        brush = Brush.linearGradient(
+                            listOf(Color(0xFF00E5FF), Color(0x9900E5FF)),
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                    ),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        "TX",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                    )
-                }
+                Text(
+                    "TX",
+                    color = Color(0xFF003543),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                )
             }
             Spacer(Modifier.width(12.dp))
             Text(
                 "TombstoneX",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.weight(1f))
-            // 状态芯片 —— pill 形状 16.dp 圆角
+            // 状态芯片 —— pill 形状 8.dp 圆角
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = if (isActive) MaterialTheme.colorScheme.primaryContainer
-                    else InactiveBg,
+                    else MaterialTheme.colorScheme.errorContainer,
                 border = BorderStroke(
                     1.dp,
                     if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                    else InactiveRed.copy(alpha = 0.25f),
+                        else MaterialTheme.colorScheme.error.copy(alpha = 0.25f),
                 ),
             ) {
                 Row(
@@ -291,16 +299,15 @@ private fun TombstoneXTopBar() {
                             .size(6.dp)
                             .background(
                                 if (isActive) MaterialTheme.colorScheme.primary
-                                else InactiveRed,
+                                    else MaterialTheme.colorScheme.error,
                                 CircleShape,
                             ),
                     )
                     Text(
                         text = if (isActive) "已激活" else "未激活",
                         style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
                         color = if (isActive) MaterialTheme.colorScheme.primary
-                            else InactiveRed,
+                            else MaterialTheme.colorScheme.error,
                     )
                 }
             }

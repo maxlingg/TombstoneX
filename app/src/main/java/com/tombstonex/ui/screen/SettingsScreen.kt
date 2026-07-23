@@ -17,13 +17,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,6 +57,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+
+// ---- 主题色常量 ----
+private val SurfaceColor = Color(0xFF1C1B1F)
+private val PrimaryColor = Color(0xFF00E5FF)
+private val PrimaryContainerColor = Color(0x1F00E5FF)
+private val OnSurfaceColor = Color(0xFFE6E1E5)
+private val OnSurfaceVariantColor = Color(0xFFCAC4D0)
+private val OnSurfaceMutedColor = Color(0xFF938F99)
+private val OutlineVariantColor = Color(0xFF49454F)
 
 @Composable
 fun SettingsScreen(
@@ -293,7 +306,7 @@ fun SettingsScreen(
                     "模块设置",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = OnSurfaceMutedColor,
                 )
             }
         }
@@ -380,7 +393,7 @@ fun SettingsScreen(
                     "冻结设置",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = OnSurfaceMutedColor,
                 )
             }
         }
@@ -400,9 +413,9 @@ fun SettingsScreen(
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    shape = RoundedCornerShape(14.dp),
+                    color = SurfaceColor,
+                    border = BorderStroke(1.dp, OutlineVariantColor),
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -411,19 +424,20 @@ fun SettingsScreen(
                                     "冻结延迟",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium,
+                                    color = OnSurfaceColor,
                                 )
                                 Text(
                                     "1-10 秒可调",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = OnSurfaceMutedColor,
                                 )
                             }
                             Text(
                                 "${freezeDelay.toInt()} 秒",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = PrimaryColor,
                             )
                         }
                         Slider(
@@ -451,6 +465,10 @@ fun SettingsScreen(
                             },
                             valueRange = 1f..10f,
                             steps = 8,
+                            colors = SliderDefaults.colors(
+                                thumbColor = PrimaryColor,
+                                activeTrackColor = PrimaryColor,
+                            ),
                         )
                     }
                 }
@@ -464,9 +482,9 @@ fun SettingsScreen(
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    shape = RoundedCornerShape(14.dp),
+                    color = SurfaceColor,
+                    border = BorderStroke(1.dp, OutlineVariantColor),
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -475,12 +493,13 @@ fun SettingsScreen(
                                     "轮番解冻间隔",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium,
+                                    color = OnSurfaceColor,
                                 )
                                 Text(
                                     "60-3600 秒",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = OnSurfaceMutedColor,
                                 )
                             }
                             val totalSec = rotationInterval.toInt()
@@ -490,7 +509,7 @@ fun SettingsScreen(
                                 if (secs == 0) "$mins 分钟" else "$mins 分 $secs 秒",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = PrimaryColor,
                             )
                         }
                         Slider(
@@ -518,6 +537,10 @@ fun SettingsScreen(
                             },
                             valueRange = 60f..3600f,
                             steps = 58,
+                            colors = SliderDefaults.colors(
+                                thumbColor = PrimaryColor,
+                                activeTrackColor = PrimaryColor,
+                            ),
                         )
                     }
                 }
@@ -610,7 +633,7 @@ fun SettingsScreen(
                     "关于",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = OnSurfaceMutedColor,
                 )
             }
         }
@@ -673,7 +696,7 @@ fun SettingsScreen(
                                 Text(
                                     desc,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    color = OnSurfaceColor.copy(alpha = 0.6f),
                                 )
                             }
                         }
@@ -707,9 +730,9 @@ private fun SettingRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 2.dp)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(14.dp),
+        color = SurfaceColor,
+        border = BorderStroke(1.dp, OutlineVariantColor),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -720,13 +743,14 @@ private fun SettingRow(
                     title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
+                    color = OnSurfaceColor,
                 )
                 if (hint != null) {
                     Text(
                         hint,
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = OnSurfaceMutedColor,
                     )
                 }
             }
@@ -734,12 +758,12 @@ private fun SettingRow(
                 value,
                 style = MaterialTheme.typography.bodyMedium,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.primary,
+                color = PrimaryColor,
             )
             if (showChevron) {
                 Text(
                     " \u203A",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = OnSurfaceVariantColor,
                 )
             }
         }
@@ -748,7 +772,7 @@ private fun SettingRow(
 
 @Composable
 private fun StatusDot(active: Boolean) {
-    val color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+    val color = if (active) PrimaryColor else OutlineVariantColor
     Box(
         modifier = Modifier
             .padding(end = 4.dp)
@@ -767,9 +791,9 @@ private fun HookSwitchRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 2.dp),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(14.dp),
+        color = SurfaceColor,
+        border = BorderStroke(1.dp, OutlineVariantColor),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -779,8 +803,16 @@ private fun HookSwitchRow(
                 title,
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
+                color = OnSurfaceColor,
             )
-            Switch(checked = checked, onCheckedChange = onToggle)
+            Switch(
+                checked = checked,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = PrimaryColor,
+                    checkedTrackColor = PrimaryContainerColor,
+                ),
+            )
         }
     }
 }

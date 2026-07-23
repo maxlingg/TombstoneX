@@ -2,6 +2,7 @@ package com.tombstonex.ui.screen
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,6 +58,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+// ---- 主题色常量 ----
+private val SurfaceColor = Color(0xFF1C1B1F)
+private val Surface2Color = Color(0xFF242329)
+private val PrimaryColor = Color(0xFF00E5FF)
+private val PrimaryContainerColor = Color(0x1F00E5FF)
+private val ErrorColor = Color(0xFFFF453A)
+private val OnSurfaceVariantColor = Color(0xFFCAC4D0)
+private val OnSurfaceMutedColor = Color(0xFF938F99)
+private val OutlineVariantColor = Color(0xFF49454F)
 
 /** 白名单页面渲染所用的应用条目 */
 @Immutable
@@ -92,13 +104,13 @@ private fun SectionHeader(
             text = "白名单管理",
             style = MaterialTheme.typography.labelSmall,
             fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = OnSurfaceMutedColor,
         )
         Text(
             text = "$tabItemCount 个",
             style = MaterialTheme.typography.labelSmall,
             fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = OnSurfaceMutedColor,
         )
     }
 
@@ -123,17 +135,16 @@ private fun SectionHeader(
                     )
                 },
                 shape = RoundedCornerShape(24.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                    containerColor = Color.Transparent,
-                    selectedContainerColor = Color.Transparent,
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    selectedLabelColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.border(
+                    width = 1.dp,
+                    color = if (selected) PrimaryColor else OutlineVariantColor,
+                    shape = RoundedCornerShape(24.dp),
                 ),
-                border = FilterChipDefaults.filterChipBorder(
-                    borderColor = MaterialTheme.colorScheme.outlineVariant,
-                    selectedBorderColor = MaterialTheme.colorScheme.primary,
-                    enabled = true,
-                    selected = selected,
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = Surface2Color,
+                    selectedContainerColor = PrimaryContainerColor,
+                    labelColor = OnSurfaceVariantColor,
+                    selectedLabelColor = PrimaryColor,
                 ),
             )
         }
@@ -152,18 +163,18 @@ private fun EmptyState() {
         Text(
             text = "\u2606",
             fontSize = 40.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+            color = OnSurfaceVariantColor.copy(alpha = 0.2f),
         )
         Spacer(Modifier.height(12.dp))
         Text(
             text = "白名单为空",
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = OnSurfaceVariantColor,
         )
         Text(
             text = "白名单中的应用不会被冻结。",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = OnSurfaceVariantColor,
         )
     }
 }
@@ -339,6 +350,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(24.dp),
             placeholder = { Text("搜索应用名称或包名") },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             trailingIcon = {
@@ -349,6 +361,12 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                 }
             },
             singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = Surface2Color,
+                unfocusedContainerColor = Surface2Color,
+                focusedBorderColor = OutlineVariantColor,
+                unfocusedBorderColor = OutlineVariantColor,
+            ),
         )
 
         if (loading) {
@@ -481,14 +499,11 @@ private fun WhitelistAppCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isOn)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            else
-                MaterialTheme.colorScheme.surface,
+            containerColor = SurfaceColor,
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = BorderStroke(1.dp, OutlineVariantColor),
     ) {
         Row(
             modifier = Modifier
@@ -501,14 +516,14 @@ private fun WhitelistAppCard(
                 modifier = Modifier
                     .size(40.dp)
                     .background(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        PrimaryContainerColor,
                         RoundedCornerShape(10.dp),
                     ),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = label.firstOrNull()?.toString() ?: "?",
-                    color = MaterialTheme.colorScheme.primary,
+                    color = PrimaryColor,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                 )
@@ -526,7 +541,7 @@ private fun WhitelistAppCard(
                     text = subtitle,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = OnSurfaceVariantColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -536,7 +551,7 @@ private fun WhitelistAppCard(
                 onClick = { onToggle() },
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
+                    contentColor = ErrorColor,
                 ),
             ) {
                 Text(if (isOn) "移除" else "加入")
@@ -555,14 +570,11 @@ private fun WhitelistProcessCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isOn)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            else
-                MaterialTheme.colorScheme.surface,
+            containerColor = SurfaceColor,
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = BorderStroke(1.dp, OutlineVariantColor),
     ) {
         Row(
             modifier = Modifier
@@ -575,14 +587,14 @@ private fun WhitelistProcessCard(
                 modifier = Modifier
                     .size(40.dp)
                     .background(
-                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f),
+                        PrimaryContainerColor,
                         RoundedCornerShape(10.dp),
                     ),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = ":",
-                    color = MaterialTheme.colorScheme.tertiary,
+                    color = PrimaryColor,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                 )
@@ -600,7 +612,7 @@ private fun WhitelistProcessCard(
                     text = "$packageName (pid=$pid)",
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = OnSurfaceVariantColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -610,7 +622,7 @@ private fun WhitelistProcessCard(
                 onClick = { onToggle() },
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
+                    contentColor = ErrorColor,
                 ),
             ) {
                 Text(if (isOn) "移除" else "加入")
