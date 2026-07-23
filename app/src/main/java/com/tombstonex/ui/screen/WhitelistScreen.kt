@@ -3,6 +3,7 @@ package com.tombstonex.ui.screen
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,22 +18,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,7 +51,6 @@ import com.tombstonex.provider.AppProvider
 import com.tombstonex.service.ServiceClient
 import com.tombstonex.ui.safeRunCatching
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -69,6 +63,30 @@ private val ErrorColor = Color(0xFFFF453A)
 private val OnSurfaceVariantColor = Color(0xFFCAC4D0)
 private val OnSurfaceMutedColor = Color(0xFF938F99)
 private val OutlineVariantColor = Color(0xFF49454F)
+
+/** 应用图标背景色调色板，根据包名确定性选取，模拟"应用自身颜色" */
+private val AppIconPalette = listOf(
+    Color(0xFF5E60CE),
+    Color(0xFF4361EE),
+    Color(0xFF4895EF),
+    Color(0xFF4CC9F0),
+    Color(0xFF7209B7),
+    Color(0xFFF72585),
+    Color(0xFFEF476F),
+    Color(0xFFFF6B6B),
+    Color(0xFFFF8C42),
+    Color(0xFFFFD166),
+    Color(0xFF06D6A0),
+    Color(0xFF118AB2),
+    Color(0xFF2D6A4F),
+    Color(0xFF40916C),
+)
+
+/** 根据包名生成确定性的图标背景色，无匹配时回退到调色板首色（默认色） */
+private fun colorForApp(packageName: String): Color {
+    if (packageName.isBlank()) return AppIconPalette[0]
+    return AppIconPalette[Math.floorMod(packageName.hashCode(), AppIconPalette.size)]
+}
 
 /** 白名单页面渲染所用的应用条目 */
 @Immutable
@@ -116,9 +134,11 @@ private fun SectionHeader(
     }
 
     // Pill 标签页
+    val scrollState = rememberScrollState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(scrollState)
             .padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -131,7 +151,7 @@ private fun SectionHeader(
                     Text(
                         text = label,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Medium,
                     )
                 },
@@ -188,8 +208,6 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
     var apps by remember { mutableStateOf<List<WhitelistAppItem>>(emptyList()) }
     var processes by remember { mutableStateOf<List<ProcessDisplayItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var searchQuery by remember { mutableStateOf("") }
-    var debouncedQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(0) }
 
     // 三类名单的当前条目集合
@@ -212,12 +230,6 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
         if (wa != null) whiteApps = wa
         if (wp != null) whiteProcesses = wp
         if (bs != null) blackSystem = bs
-    }
-
-    // 搜索防抖：延迟 300ms 后同步 debouncedQuery，避免每次按键都触发过滤
-    LaunchedEffect(searchQuery) {
-        delay(300)
-        debouncedQuery = searchQuery
     }
 
     LaunchedEffect(Unit) {
@@ -330,7 +342,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
 
     // 当前 Tab 下总条目数（用于分区标题右侧计数）
     val tabItemCount = when (selectedTab) {
-        0 -> apps.count { !it.isSystem }
+        0 -> apps.count { whiteApps.contains(it.packageName) }
         1 -> processes.size
         else -> apps.count { it.isSystem }
     }
@@ -343,31 +355,6 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
             selectedIndex = selectedTab,
             onSelect = { selectedTab = it },
             tabItemCount = tabItemCount,
-        )
-
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            shape = RoundedCornerShape(24.dp),
-            placeholder = { Text("搜索应用名称或包名") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Filled.Close, contentDescription = "清除")
-                    }
-                }
-            },
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Surface2Color,
-                unfocusedContainerColor = Surface2Color,
-                focusedBorderColor = OutlineVariantColor,
-                unfocusedBorderColor = OutlineVariantColor,
-            ),
         )
 
         if (loading) {
@@ -386,21 +373,16 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
             }
         } else {
             // 各 Tab 对应的数据与名单集合
-            // Tab 0：仅非系统应用（系统应用在 Tab 2 管理）
+            // Tab 0：已加入白名单的应用（仅"移除"操作）
             // Tab 1：运行进程名（来自 ServiceClient.getAllProcesses()）
             // Tab 2：系统应用
             when (selectedTab) {
                 0 -> {
-                    val visibleApps = remember(apps) { apps.filter { !it.isSystem } }
-                    val filtered = remember(visibleApps, debouncedQuery) {
-                        if (debouncedQuery.isBlank()) visibleApps else {
-                            visibleApps.filter {
-                                it.label.contains(debouncedQuery, ignoreCase = true) ||
-                                    it.packageName.contains(debouncedQuery, ignoreCase = true)
-                            }
-                        }
+                    // 应用白名单 Tab：仅展示已加入白名单的应用，按钮始终为"移除"
+                    val visibleApps = remember(apps, whiteApps) {
+                        apps.filter { whiteApps.contains(it.packageName) }
                     }
-                    if (filtered.isEmpty()) {
+                    if (visibleApps.isEmpty()) {
                         EmptyState()
                     } else {
                         LazyColumn(
@@ -410,28 +392,19 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            items(filtered, key = { it.packageName }) { app ->
-                                val isOn = whiteApps.contains(app.packageName)
+                            items(visibleApps, key = { it.packageName }) { app ->
                                 WhitelistAppCard(
                                     label = app.label,
                                     subtitle = app.packageName,
-                                    isOn = isOn,
-                                    onToggle = { toggleWhiteApp(app.packageName, isOn) },
+                                    isOn = true,
+                                    onToggle = { toggleWhiteApp(app.packageName, true) },
                                 )
                             }
                         }
                     }
                 }
                 1 -> {
-                    val filtered = remember(processes, debouncedQuery) {
-                        if (debouncedQuery.isBlank()) processes else {
-                            processes.filter {
-                                it.processName.contains(debouncedQuery, ignoreCase = true) ||
-                                    it.packageName.contains(debouncedQuery, ignoreCase = true)
-                            }
-                        }
-                    }
-                    if (filtered.isEmpty()) {
+                    if (processes.isEmpty()) {
                         EmptyState()
                     } else {
                         LazyColumn(
@@ -441,7 +414,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            items(filtered, key = { it.processName }) { proc ->
+                            items(processes, key = { it.processName }) { proc ->
                                 val isOn = whiteProcesses.contains(proc.processName)
                                 WhitelistProcessCard(
                                     processName = proc.processName,
@@ -456,15 +429,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                 }
                 else -> {
                     val visibleApps = remember(apps) { apps.filter { it.isSystem } }
-                    val filtered = remember(visibleApps, debouncedQuery) {
-                        if (debouncedQuery.isBlank()) visibleApps else {
-                            visibleApps.filter {
-                                it.label.contains(debouncedQuery, ignoreCase = true) ||
-                                    it.packageName.contains(debouncedQuery, ignoreCase = true)
-                            }
-                        }
-                    }
-                    if (filtered.isEmpty()) {
+                    if (visibleApps.isEmpty()) {
                         EmptyState()
                     } else {
                         LazyColumn(
@@ -474,7 +439,7 @@ fun WhitelistScreen(showSnackbar: (String) -> Unit) {
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            items(filtered, key = { it.packageName }) { app ->
+                            items(visibleApps, key = { it.packageName }) { app ->
                                 val isOn = blackSystem.contains(app.packageName)
                                 WhitelistAppCard(
                                     label = app.label,
@@ -515,16 +480,16 @@ private fun WhitelistAppCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .background(
-                        PrimaryContainerColor,
-                        RoundedCornerShape(10.dp),
+                        colorForApp(subtitle),
+                        RoundedCornerShape(12.dp),
                     ),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = label.firstOrNull()?.toString() ?: "?",
-                    color = PrimaryColor,
+                    color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                 )
@@ -556,9 +521,12 @@ private fun WhitelistAppCard(
                     contentColor = ErrorColor,
                 ),
                 border = BorderStroke(1.dp, ErrorColor.copy(alpha = 0.2f)),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                contentPadding = PaddingValues(horizontal = 13.dp, vertical = 6.dp),
             ) {
-                Text(if (isOn) "移除" else "加入")
+                Text(
+                    text = if (isOn) "移除" else "加入",
+                    fontSize = 11.sp,
+                )
             }
         }
     }

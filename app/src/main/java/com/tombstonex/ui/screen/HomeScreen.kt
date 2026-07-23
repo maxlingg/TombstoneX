@@ -504,15 +504,18 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
 
                     // ---- 搜索栏 + 系统应用 FilterChip ----
                     item {
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             OutlinedTextField(
                                 value = searchQuery,
                                 onValueChange = { searchQuery = it },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp),
                                 placeholder = {
                                     Text(
                                         "搜索应用名称或包名…",
@@ -549,54 +552,50 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                                     cursorColor = Primary,
                                 ),
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Start,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                FilterChip(
-                                    selected = includeSystem,
-                                    onClick = { includeSystem = !includeSystem },
-                                    label = {
-                                        Text(
-                                            "系统应用",
-                                            fontSize = 12.sp,
+                            Spacer(modifier = Modifier.width(8.dp))
+                            FilterChip(
+                                selected = includeSystem,
+                                onClick = { includeSystem = !includeSystem },
+                                label = {
+                                    Text(
+                                        "系统应用",
+                                        fontSize = 12.sp,
+                                    )
+                                },
+                                leadingIcon = if (includeSystem) {
+                                    {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .background(Primary, CircleShape),
                                         )
-                                    },
-                                    leadingIcon = if (includeSystem) {
-                                        {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(7.dp)
-                                                    .background(Primary, CircleShape),
-                                            )
-                                        }
-                                    } else {
-                                        {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(7.dp)
-                                                    .background(OnSurfaceMuted, CircleShape),
-                                            )
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(24.dp),
-                                    modifier = Modifier.border(
+                                    }
+                                } else {
+                                    {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .background(OnSurfaceMuted, CircleShape),
+                                        )
+                                    }
+                                },
+                                shape = RoundedCornerShape(24.dp),
+                                modifier = Modifier
+                                    .height(44.dp)
+                                    .border(
                                         width = 1.dp,
                                         color = if (includeSystem) Primary else OutlineVariant,
                                         shape = RoundedCornerShape(24.dp),
                                     ),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = PrimaryContainer,
-                                        selectedLabelColor = Primary,
-                                        selectedLeadingIconColor = Primary,
-                                        containerColor = Surface2,
-                                        labelColor = OnSurfaceVariant,
-                                        iconColor = OnSurfaceMuted,
-                                    ),
-                                )
-                            }
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = PrimaryContainer,
+                                    selectedLabelColor = Primary,
+                                    selectedLeadingIconColor = Primary,
+                                    containerColor = Surface2,
+                                    labelColor = OnSurfaceVariant,
+                                    iconColor = OnSurfaceMuted,
+                                ),
+                            )
                         }
                     }
 
@@ -610,11 +609,13 @@ fun HomeScreen(showSnackbar: (String) -> Unit) {
                         ) {
                             Text(
                                 text = "应用列表",
+                                fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 color = OnSurfaceMuted,
                             )
                             Text(
                                 text = "${filtered.size} 个",
+                                fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 color = OnSurfaceMuted,
                             )
@@ -942,45 +943,36 @@ private fun ModuleNotActiveCard(
 
 @Composable
 private fun StatsCard(runningCount: Int, frozenCount: Int, whitelistCount: Int, totalCount: Int) {
-    Surface(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, OutlineVariant),
-        color = Surface2,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            StatItem(
-                label = "运行中",
-                count = runningCount,
-                activeColor = Secondary,
-                modifier = Modifier.weight(1f),
-            )
-            StatItem(
-                label = "已冻结",
-                count = frozenCount,
-                activeColor = Primary,
-                modifier = Modifier.weight(1f),
-            )
-            StatItem(
-                label = "白名单",
-                count = whitelistCount,
-                activeColor = OnSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            StatItem(
-                label = "总应用",
-                count = totalCount,
-                activeColor = OnSurface,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        StatItem(
+            label = "运行中",
+            count = runningCount,
+            activeColor = Secondary,
+            modifier = Modifier.weight(1f),
+        )
+        StatItem(
+            label = "已冻结",
+            count = frozenCount,
+            activeColor = Primary,
+            modifier = Modifier.weight(1f),
+        )
+        StatItem(
+            label = "白名单",
+            count = whitelistCount,
+            activeColor = OnSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        StatItem(
+            label = "总应用",
+            count = totalCount,
+            activeColor = OnSurface,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -991,21 +983,29 @@ private fun StatItem(
     activeColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    Surface(
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, OutlineVariant),
+        color = Surface2,
     ) {
-        Text(
-            text = count.toString(),
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (count > 0) activeColor else OnSurfaceMuted,
-        )
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            color = OnSurfaceMuted,
-        )
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = count.toString(),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (count > 0) activeColor else OnSurfaceMuted,
+            )
+            Text(
+                text = label.uppercase(),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                color = OnSurfaceMuted,
+            )
+        }
     }
 }
 
@@ -1152,7 +1152,7 @@ private fun AppCard(
                     modifier = Modifier
                         .size(38.dp)
                         .background(
-                            color = if (isFrozen) PrimaryContainer else Color.Transparent,
+                            color = if (isFrozen) PrimaryContainer else Surface2,
                             shape = RoundedCornerShape(10.dp),
                         )
                         .border(
@@ -1184,7 +1184,7 @@ private fun StateBadge(state: AppState?) {
             Tuple4("已冻结", PrimaryContainer, Primary, Primary.copy(alpha = 0.2f))
         }
         AppState.FOREGROUND -> {
-            Tuple4("前台", SecondaryContainer, Secondary, Secondary.copy(alpha = 0.2f))
+            Tuple4("运行中", SecondaryContainer, Secondary, Secondary.copy(alpha = 0.2f))
         }
         AppState.BACKGROUND -> {
             Tuple4("后台", OnSurfaceVariant.copy(alpha = 0.08f), OnSurfaceVariant, OnSurfaceVariant.copy(alpha = 0.12f))
@@ -1203,6 +1203,7 @@ private fun StateBadge(state: AppState?) {
     ) {
         Text(
             text = text,
+            fontFamily = FontFamily.Monospace,
             fontSize = 10.sp,
             color = textColor,
             fontWeight = FontWeight.Medium,

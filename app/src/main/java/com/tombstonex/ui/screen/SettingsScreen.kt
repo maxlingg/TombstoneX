@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tombstonex.BuildConfig
 import com.tombstonex.model.FreezeMode
 import com.tombstonex.service.ServiceClient
@@ -247,7 +248,7 @@ fun SettingsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
             ) {
                 Text(
                     "模块设置",
@@ -368,7 +369,7 @@ fun SettingsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
             ) {
                 Text(
                     "关于",
@@ -583,14 +584,14 @@ private fun SettingRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     title,
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = OnSurfaceColor,
                 )
                 if (hint != null) {
                     Text(
                         hint,
-                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
                         color = OnSurfaceMutedColor,
                     )
@@ -598,14 +599,14 @@ private fun SettingRow(
             }
             Text(
                 value,
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
                 color = PrimaryColor,
             )
             if (showChevron) {
                 Text(
                     " \u203A",
-                    color = OnSurfaceVariantColor,
+                    color = OnSurfaceMutedColor,
                 )
             }
         }
@@ -640,8 +641,10 @@ private fun HookSwitchRow(
                 checked = checked,
                 onCheckedChange = onToggle,
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = PrimaryColor,
-                    checkedTrackColor = PrimaryContainerColor,
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = PrimaryColor,
+                    uncheckedTrackColor = Color(0xFF333138),
+                    uncheckedBorderColor = OutlineVariantColor,
                 ),
             )
         }
