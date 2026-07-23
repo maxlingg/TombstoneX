@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -155,14 +156,15 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
             )
             OutlinedButton(
                 onClick = { showClearDialog = true },
-                shape = RoundedCornerShape(50),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = Surface2Color,
                     contentColor = OnSurfaceColor,
                 ),
                 border = BorderStroke(1.dp, OutlineVariantColor),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             ) {
-                Text("清空")
+                Text("清空", fontSize = 11.sp)
             }
         }
 
@@ -227,19 +229,6 @@ fun LogViewerScreen(showSnackbar: (String) -> Unit) {
                 }
             }
         }
-
-        // 刷新按钮
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            OutlinedButton(onClick = { loadLogs() }) {
-                Text("刷新")
-            }
-        }
-    }
 
     if (showClearDialog) {
         AlertDialog(

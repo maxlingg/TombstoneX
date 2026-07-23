@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
@@ -48,15 +46,12 @@ import androidx.compose.ui.unit.dp
 import com.tombstonex.BuildConfig
 import com.tombstonex.model.FreezeMode
 import com.tombstonex.service.ServiceClient
-import com.tombstonex.ui.LocalModuleState
 import com.tombstonex.ui.safeRunCatching
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 // ---- 主题色常量 ----
 private val SurfaceColor = Color(0xFF1C1B1F)
@@ -73,7 +68,6 @@ fun SettingsScreen(
     onNavigateAbout: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val moduleState = LocalModuleState.current
 
     // 首次组合时通过 produceState 异步加载配置
     // P3-R4: 使用 @Immutable data class 替代 Pair，提升 Compose 稳定性
@@ -126,9 +120,6 @@ fun SettingsScreen(
     // R7-2 修复：rotation 也使用独立的交互标志，与其他配置项保持一致
     var rotationInteracted by remember { mutableStateOf(false) }
 
-    // ReKernel 状态：null=检测中，true=可用，false=未安装
-    var rekernelAvailable by remember { mutableStateOf<Boolean?>(null) }
-
     // 当配置首次加载完成时同步到本地状态
     LaunchedEffect(initialConfig) {
         val (cfg, freezer) = initialConfig
@@ -170,52 +161,6 @@ fun SettingsScreen(
             committedRotationInterval = interval.toFloat()
             rotationLoaded = true
         }
-    }
-
-    // 异步检测 ReKernel 状态（通过 su 检查设备节点是否存在）
-    // M1 修复：使用并行线程消费 stdout/stderr，避免 readLine() 在 waitFor 之前阻塞导致超时失效
-    LaunchedEffect(Unit) {
-        val available = withContext(Dispatchers.IO) {
-            safeRunCatching {
-                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "ls /data/adb/rekernel"))
-                val stdoutBuilder = StringBuffer()
-                // m-14: 守护线程，避免 JVM 退出时被阻塞
-                val stdoutThread = Thread {
-                    try {
-                        process.inputStream.bufferedReader().use { reader ->
-                            val line = reader.readLine()
-                            if (line != null) stdoutBuilder.append(line)
-                        }
-                    } catch (e: IOException) {
-                        // m-15: 记录管道关闭异常，便于排查
-                        android.util.Log.w("SettingsScreen", "ReKernel stdout read interrupted", e)
-                    }
-                }.apply { isDaemon = true }
-                val stderrThread = Thread {
-                    try {
-                        process.errorStream.bufferedReader().use { it.readText() }
-                    } catch (e: IOException) {
-                        // m-15: 记录管道关闭异常
-                        android.util.Log.w("SettingsScreen", "ReKernel stderr read interrupted", e)
-                    }
-                }.apply { isDaemon = true }
-                stdoutThread.start()
-                stderrThread.start()
-                val exited = process.waitFor(5, TimeUnit.SECONDS)
-                if (!exited) {
-                    process.destroyForcibly()
-                    // M-44: 超时路径中 join 读取线程，避免线程泄漏
-                    stdoutThread.join(1000)
-                    stderrThread.join(1000)
-                    "0"
-                } else {
-                    stdoutThread.join(3000)
-                    stderrThread.join(3000)
-                    if (process.exitValue() == 0) "1" else "0"
-                }
-            }.getOrDefault("0")
-        }
-        rekernelAvailable = available == "1"
     }
 
     val modeDisplayName = freezeMode.displayLabel()
@@ -304,93 +249,6 @@ fun SettingsScreen(
             ) {
                 Text(
                     "模块设置",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = OnSurfaceMutedColor,
-                )
-            }
-        }
-        item {
-            ListItem(
-                headlineContent = { Text("激活状态") },
-                supportingContent = {
-                    Text(
-                        when {
-                            moduleState.activated -> "已激活（${moduleState.entryClass}）"
-                            moduleState.moduleLoaded -> "模块已加载到系统框架，但 Binder 服务未就绪\n请检查 LSPosed 日志"
-                            moduleState.moduleEnabled -> "LSPosed 已启用模块，但未加载到系统框架\n请在作用域中勾选「Android 系统」并重启设备"
-                            moduleState.installed -> "已安装但 LSPosed 未启用\n请在 LSPosed 管理器中启用模块并重启设备"
-                            else -> "未检测到模块入口\n请在 LSPosed 中启用模块"
-                        }
-                    )
-                },
-                trailingContent = {
-                    StatusDot(moduleState.activated)
-                },
-            )
-        }
-        item {
-            ListItem(
-                headlineContent = { Text("模块版本") },
-                supportingContent = { Text("v${BuildConfig.VERSION_NAME}（build ${BuildConfig.VERSION_CODE}）") },
-            )
-        }
-        item {
-            // 已启用的 Hook 列表（依据已加载的子 Hook 开关）
-            val enabledHooksText = if (!configLoaded) {
-                "加载中…"
-            } else {
-                buildList {
-                    if (hookActivitySwitch) add("Activity 切换")
-                    if (hookScreenState) add("锁屏冻结")
-                    if (hookBroadcast) add("广播拦截")
-                    if (hookWakeLock) add("WakeLock 拦截")
-                    if (hookAnr) add("ANR 拦截")
-                }.joinToString("、").ifEmpty { "无" }
-            }
-            ListItem(
-                headlineContent = { Text("已启用 Hook") },
-                supportingContent = { Text(enabledHooksText) },
-            )
-        }
-        item {
-            // 后台管理器运行状态：模块激活后由 MainHook 启动
-            ListItem(
-                headlineContent = { Text("后台管理器") },
-                supportingContent = {
-                    Text(
-                        if (moduleState.activated)
-                            "ScheduledFreezeManager、RotationThawManager（运行中）"
-                        else "未运行（模块未激活）"
-                    )
-                },
-            )
-        }
-        item {
-            // ReKernel 状态：检测内核模块设备节点是否存在
-            ListItem(
-                headlineContent = { Text("ReKernel 状态") },
-                supportingContent = {
-                    Text(
-                        when (rekernelAvailable) {
-                            null -> "检测中…"
-                            true -> "可用（网络包通知已集成）"
-                            false -> "未安装"
-                        }
-                    )
-                },
-            )
-        }
-
-        // ---- 冻结设置 ----
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    "冻结设置",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = OnSurfaceMutedColor,
@@ -769,17 +627,6 @@ private fun SettingRow(
             }
         }
     }
-}
-
-@Composable
-private fun StatusDot(active: Boolean) {
-    val color = if (active) PrimaryColor else OutlineVariantColor
-    Box(
-        modifier = Modifier
-            .padding(end = 4.dp)
-            .size(10.dp)
-            .background(color, CircleShape),
-    )
 }
 
 @Composable
